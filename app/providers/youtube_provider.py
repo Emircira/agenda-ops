@@ -7,6 +7,10 @@ from googleapiclient.errors import HttpError
 from loguru import logger
 
 
+class YouTubeQuotaExceeded(RuntimeError):
+    """YouTube quota dolduğunda diğer kaynakların devam edebilmesi için özel hata."""
+
+
 class YouTubeProvider:
     """
     YouTube veri sağlayıcısı — Sayfalama (pagination) destekli.
@@ -26,6 +30,16 @@ class YouTubeProvider:
         if not self.api_key:
             raise RuntimeError("YOUTUBE_API_KEY zorunludur; YouTube için boş/mock fallback yoktur.")
         self.youtube = build('youtube', 'v3', developerKey=self.api_key)
+
+    @staticmethod
+    def _is_quota_error(error: HttpError) -> bool:
+        text = str(error).lower()
+        return error.resp.status in (403, 429) and (
+            "quotaexceeded" in text or
+            "quota exceeded" in text or
+            "daily limit" in text or
+            error.resp.status == 429
+        )
 
     async def _safe_execute(self, request, context: str = ""):
         """
@@ -51,6 +65,8 @@ class YouTubeProvider:
                     await asyncio.sleep(wait)
                     if attempt == self.MAX_RETRIES - 1:
                         logger.error(f"❌ YouTube API quota aşıldı [{context}], tüm denemeler tükendi.")
+                        if self._is_quota_error(e):
+                            raise YouTubeQuotaExceeded(f"YouTube kotası doldu [{context}]") from e
                         raise
                 elif status >= 500:
                     wait = 10 * (attempt + 1)
@@ -115,6 +131,9 @@ class YouTubeProvider:
             else:
                 logger.error(f"❌ YouTube Video Hatası ({channel_id}): {e}")
             raise
+        except YouTubeQuotaExceeded:
+            logger.error(f"❌ YouTube kotası doldu (kanal {channel_id}); diğer kaynaklara geçilmeli.")
+            raise
         except Exception as e:
             logger.error(f"❌ YouTube Video Hatası ({channel_id}): {e}")
             raise
@@ -140,7 +159,7 @@ class YouTubeProvider:
             while remaining > 0:
                 batch_size = min(remaining, 50)
                 req = self.youtube.search().list(
-                    part="id,snippet",
+                    part="id",
                     q=keyword,
                     maxResults=batch_size,
                     order="date",
@@ -185,6 +204,9 @@ class YouTubeProvider:
                 raise
             logger.error(f"❌ YouTube Keyword Hatası ({keyword}): {e}")
             raise
+        except YouTubeQuotaExceeded:
+            logger.error(f"❌ YouTube kotası doldu (arama: {keyword}); diğer kaynaklara geçilmeli.")
+            raise
         except Exception as e:
             logger.error(f"❌ YouTube Keyword Hatası ({keyword}): {e}")
             raise
@@ -204,7 +226,7 @@ class YouTubeProvider:
             while remaining > 0:
                 batch_size = min(remaining, 100)  # commentThreads API max 100
                 req = self.youtube.commentThreads().list(
-                    part="snippet,replies",
+                    part="snippet",
                     videoId=video_id,
                     maxResults=batch_size,
                     order="relevance",
@@ -229,6 +251,9 @@ class YouTubeProvider:
                 logger.error(f"❌ YouTube yorum erişim/quota hatası: {video_id}")
             else:
                 logger.error(f"❌ YouTube Yorum Hatası ({video_id}): {e}")
+            raise
+        except YouTubeQuotaExceeded:
+            logger.error(f"❌ YouTube kotası doldu (yorumlar: {video_id}); diğer kaynaklara geçilmeli.")
             raise
         except Exception as e:
             logger.error(f"❌ YouTube Yorum Hatası ({video_id}): {e}")

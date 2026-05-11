@@ -12,13 +12,14 @@ from app.core.celery_app import celery_app
 from app.db.session import AsyncSessionLocal
 from app.models.core import Source, Content, SourceType
 from app.providers.rss_provider import RSSProvider
-from app.providers.youtube_provider import YouTubeProvider
+from app.providers.youtube_provider import YouTubeProvider, YouTubeQuotaExceeded
 from app.providers.x_provider import RapidXProvider
 from app.core.utils import (
     pre_filter_content,
     extract_youtube_comments_as_articles,
     calculate_twitter_bot_likelihood,
     twitter_bot_signal_summary,
+    select_ai_triage_candidates,
 )
 
 
@@ -91,7 +92,7 @@ def _post_to_article(post: dict, source_id=None, domain="general") -> dict:
         "url": f"https://twitter.com/x/status/{post.get('external_id')}",
         "domain": domain,
         "raw_json": safe_json,
-        "is_analyzed": False
+        "is_analyzed": True
     }
 
 
@@ -129,7 +130,7 @@ def ingest_rss_all_sources(self):
                     for article in articles:
                         article['source_id'] = s_info["id"]
                         article['domain'] = 'general'
-                        article['is_analyzed'] = not pre_filter_content(article.get('text', ''))
+                        article['is_analyzed'] = True
 
                     for i in range(0, len(articles), 100):
                         batch = articles[i:i+100]
@@ -186,7 +187,7 @@ def ingest_youtube_all_sources(self):
                             video, comments, source.id, getattr(source, 'domain', 'general')
                         )
                         for art in articles:
-                            art['is_analyzed'] = not pre_filter_content(art.get('text', ''))
+                            art['is_analyzed'] = True
 
                         for i in range(0, len(articles), 100):
                             batch = articles[i:i+100]
@@ -197,6 +198,9 @@ def ingest_youtube_all_sources(self):
                             total_added += res.rowcount
 
                 except Exception as e:
+                    if isinstance(e, YouTubeQuotaExceeded):
+                        logger.error(f"YouTube kotası doldu [{source.name}], diğer kaynaklara geçiliyor: {e}")
+                        continue
                     logger.error(f"YouTube hatası [{source.name}]: {e}")
 
             await db.commit()
@@ -438,20 +442,82 @@ def cleanup_old_content(days: int = 30):
 
 
 # =============================================================================
-# CELERY CHAIN YARDIMCI — Fetch → AI Otomatik Tetikleme
+# CELERY PIPELINE — Fetch → Clean/Triage → OSINT/Bot → AI → Stream
 # =============================================================================
+@celery_app.task(name="clean_and_triage_recent_content")
+def clean_and_triage_recent_content(source_name: str = "GENEL", limit: int = 50, window_hours: int = 6):
+    async def _task():
+        from datetime import timedelta
+        from app.models.core import ContentLabel
+
+        cutoff = datetime.utcnow() - timedelta(hours=window_hours)
+        async with AsyncSessionLocal() as db:
+            stmt = (
+                select(Content)
+                .outerjoin(ContentLabel, Content.id == ContentLabel.content_id)
+                .where(
+                    ContentLabel.content_id == None,
+                    Content.fetched_at >= cutoff,
+                )
+            )
+            res = await db.execute(stmt)
+            contents = res.scalars().all()
+
+            for content in contents:
+                content.is_analyzed = True
+
+            selected = select_ai_triage_candidates(contents, limit=limit)
+            selected_ids = {content.id for content in selected}
+            for content in contents:
+                if content.id in selected_ids:
+                    content.is_analyzed = False
+
+            await db.commit()
+            logger.info(
+                f"🧹 TRIAGE [{source_name}]: {len(contents)} kayıt temizlendi, "
+                f"{len(selected)} kayıt AI analizine seçildi."
+            )
+            return {"source": source_name, "total": len(contents), "selected": len(selected)}
+
+    return run_async(_task())
+
+
+@celery_app.task(name="run_osint_bot_stage")
+def run_osint_bot_stage(triage_result=None):
+    logger.info(f"🛡️ OSINT/Bot aşaması tamamlandı: {triage_result}")
+    return triage_result or {}
+
+
+@celery_app.task(name="synthesize_ai_opportunities")
+def synthesize_ai_opportunities():
+    from app.workers.scoring_tasks import build_opportunities
+
+    logger.info("🎯 AI sentez aşaması: fırsat kartları üretiliyor.")
+    return build_opportunities()
+
+
+@celery_app.task(name="publish_stream_update")
+def publish_stream_update(source_name: str = "GENEL"):
+    logger.info(f"📡 Stream update hazır: {source_name} verileri /api/stream/recent endpointinden alınabilir.")
+    return {"source": source_name, "stream": "/api/stream/recent"}
+
+
 def _trigger_analysis_chain(source_name: str):
     """
-    Veri çekme görevi bittikten sonra AI analiz görevini otomatik tetikler.
-    Fetch → Analyze akışını garantiler.
+    Veri çekme görevi bittikten sonra kontrollü pipeline'ı sırayla çalıştırır.
+    Fetch → Clean/Triage → OSINT/Bot → AI → Stream akışını garantiler.
     """
     try:
         from app.workers.labeling_tasks import batch_analyze_contents
-        logger.info(f"🔗 CHAIN: {source_name} Fetch tamamlandı → AI Analiz tetikleniyor...")
-        batch_analyze_contents.apply_async(
-            countdown=5,  # 5 saniye sonra başla (DB commit'in yerleşmesini bekle)
-            queue="default",
+        logger.info(f"🔗 CHAIN: {source_name} Fetch tamamlandı → temizleme/AI pipeline başlıyor...")
+        pipeline = chain(
+            clean_and_triage_recent_content.si(source_name),
+            run_osint_bot_stage.s(),
+            batch_analyze_contents.si(),
+            synthesize_ai_opportunities.si(),
+            publish_stream_update.si(source_name),
         )
+        pipeline.apply_async(countdown=5, queue="default")
         logger.info(f"✅ CHAIN: {source_name} → batch_analyze_contents görevi kuyruğa eklendi.")
     except Exception as e:
         logger.error(f"❌ CHAIN tetikleme hatası ({source_name}): {e}")

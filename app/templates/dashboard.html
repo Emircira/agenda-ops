@@ -361,6 +361,8 @@
                     this.loadHotTopics();
                     this.loadOsintIntelligence();
                     this.restoreStates();
+                    this.loadDataStreams();
+                    setInterval(() => this.loadDataStreams(), 15000);
                 } catch (e) {
                     console.error("Dashboard constructor error:", e);
                 }
@@ -930,6 +932,49 @@
                     }
                 } catch(e) { alert('Bağlantı hatası: ' + e.message); }
                 finally { btn.innerHTML = orig; btn.disabled = false; }
+            }
+
+            escapeHtml(value) {
+                return String(value || '').replace(/[&<>"']/g, (ch) => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#039;'
+                }[ch]));
+            }
+
+            renderStreamCard(item) {
+                const time = item.published_at ? new Date(item.published_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '';
+                return `
+                    <div class="p-4 bg-panel/80 rounded-lg border border-slate-700/60">
+                        <div class="flex items-center gap-3 mb-2">
+                            <span class="text-white text-sm font-semibold">${this.escapeHtml(item.author_name)}</span>
+                            <span class="text-slate-500 text-xs ml-auto">${time}</span>
+                        </div>
+                        <p class="text-sm text-slate-300 whitespace-pre-line">${this.escapeHtml(item.text).slice(0, 700)}</p>
+                    </div>
+                `;
+            }
+
+            async loadDataStreams() {
+                try {
+                    const res = await fetch('/api/stream/recent?limit=30');
+                    const data = await res.json();
+                    if (!data.success || !data.streams) return;
+                    const map = {
+                        twitter: document.getElementById('stream-twitter'),
+                        youtube: document.getElementById('stream-youtube'),
+                        rss: document.getElementById('stream-rss')
+                    };
+                    Object.keys(map).forEach(key => {
+                        const container = map[key];
+                        if (!container || !data.streams[key]) return;
+                        container.innerHTML = data.streams[key].map(item => this.renderStreamCard(item)).join('');
+                    });
+                } catch (e) {
+                    console.error('Data stream refresh error:', e);
+                }
             }
 
             async runPlatformAnalyze(platform, inputId, resultId, btn) {
