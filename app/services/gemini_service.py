@@ -32,7 +32,7 @@ class GeminiAIClient:
         else:
             try:
                 genai.configure(api_key=self.api_key)
-                self.model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.0-flash")
+                self.model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-flash")
                 self.model = genai.GenerativeModel(self.model_name)
                 logger.info(f"✅ Gemini AI Hazır: {self.model_name}")
             except Exception as e:

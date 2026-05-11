@@ -15,7 +15,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, inspect
+from sqlalchemy import select, desc, inspect, func
 from pydantic import BaseModel, Field
 from typing import Optional, List
 import google.generativeai as genai
@@ -31,7 +31,12 @@ from app.models.core import (
     CityDemographics, DistrictDemographics, ElectionResult, 
     CandidateDemographic, RegionAnalysis, ElectionCategory
 )
-from app.core.utils import pre_filter_content, extract_youtube_comments_as_articles
+from app.core.utils import (
+    pre_filter_content,
+    extract_youtube_comments_as_articles,
+    calculate_twitter_bot_likelihood,
+    twitter_bot_signal_summary,
+)
 
 # --- TÜRKÇE KARAKTER YARDIMCISI ---
 def normalize_tr(text):
@@ -148,7 +153,7 @@ def get_gemini_model():
         logger.error("GEMINI_API_KEY bulunamadı!")
         return None
     genai.configure(api_key=api_key)
-    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.0-flash")
+    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-flash")
     return genai.GenerativeModel(model_name)
 
 async def gemini_generate_content(prompt: str):
@@ -818,12 +823,160 @@ async def complaints_radar(req: ComplaintRadarRequest, db: AsyncSession = Depend
 class DeepResearchRequest(BaseModel):
     keyword: str
 
+
+DEEP_RESEARCH_MULTIPLIER = 5
+DEEP_X_LIMIT = 100 * DEEP_RESEARCH_MULTIPLIER
+DEEP_X_REPLY_THREADS = 5 * DEEP_RESEARCH_MULTIPLIER
+DEEP_RSS_MAX_ITEMS = 200 * DEEP_RESEARCH_MULTIPLIER
+DEEP_YOUTUBE_VIDEO_LIMIT = 100 * DEEP_RESEARCH_MULTIPLIER
+DEEP_YOUTUBE_COMMENT_LIMIT = 50 * DEEP_RESEARCH_MULTIPLIER
+DEEP_YOUTUBE_COMMENT_VIDEO_LIMIT = 10 * DEEP_RESEARCH_MULTIPLIER
+
 @app.post("/api/deep-research", tags=["Veri Çekme"])
 async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get_db)):
-    """Derin araştırma başlatır."""
-    RESEARCH_PROGRESS[req.keyword] = {"status": "Analiz ediliyor...", "percent": 50}
-    # Arka planda bir task başlatılabilir
-    return {"success": True, "message": f"'{req.keyword}' için derin araştırma başlatıldı."}
+    """Anahtar kelime için YouTube, X ve RSS üzerinde 5x derin tarama yapar."""
+    keyword = (req.keyword or "").strip()
+    if not keyword:
+        return {"success": False, "error": "Anahtar kelime zorunludur."}
+
+    from urllib.parse import quote_plus
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.providers.rss_provider import RSSProvider
+    from app.providers.youtube_provider import YouTubeProvider
+    from app.workers.ingest_tasks import get_x_provider, _post_to_article
+
+    stats = {"youtube": 0, "rss": 0, "twitter": 0}
+    added = {"youtube": 0, "rss": 0, "twitter": 0}
+    skipped = {"youtube": 0, "rss": 0, "twitter": 0}
+    errors = []
+
+    async def insert_article(article: dict, bucket: str):
+        article["is_analyzed"] = False
+        try:
+            stmt = pg_insert(Content).values(**article).on_conflict_do_nothing(index_elements=["external_id"])
+            res = await db.execute(stmt)
+            await db.commit()
+            if res.rowcount > 0:
+                added[bucket] += 1
+            else:
+                skipped[bucket] += 1
+        except Exception as e:
+            await db.rollback()
+            skipped[bucket] += 1
+            logger.warning(f"Deep Research kayıt hatası [{bucket}]: {e}")
+
+    RESEARCH_PROGRESS[keyword] = {"status": "RSS kaynakları 5x derinlikte taranıyor...", "percent": 10}
+
+    rss_provider = RSSProvider()
+    rss_sources = [{
+        "name": f"Google News Search: {keyword}",
+        "url": f"https://news.google.com/rss/search?q={quote_plus(keyword)}&hl=tr&gl=TR&ceid=TR:tr",
+        "id": None,
+        "domain": "general",
+        "filter": False,
+    }]
+    try:
+        res = await db.execute(select(Source).where(Source.type == "rss", Source.active == True))
+        for source in res.scalars().all():
+            rss_sources.append({
+                "name": source.name,
+                "url": source.url,
+                "id": source.id,
+                "domain": getattr(source, "domain", "general") or "general",
+                "filter": True,
+            })
+    except Exception as e:
+        await db.rollback()
+        errors.append(f"RSS kaynak listesi: {e}")
+
+    for source in rss_sources:
+        try:
+            articles = await rss_provider.fetch_feed(source["url"], source["name"], max_items=DEEP_RSS_MAX_ITEMS)
+            for article in articles:
+                if source["filter"] and keyword.lower() not in (article.get("text") or "").lower():
+                    continue
+                article["source_id"] = source["id"]
+                article["domain"] = source["domain"]
+                stats["rss"] += 1
+                await insert_article(article, "rss")
+        except Exception as e:
+            errors.append(f"RSS {source['name']}: {e}")
+
+    RESEARCH_PROGRESS[keyword] = {"status": "YouTube videoları ve yorumları 5x derinlikte taranıyor...", "percent": 35}
+    try:
+        yt_provider = YouTubeProvider()
+        videos = await yt_provider.fetch_keyword_videos(keyword, max_results=DEEP_YOUTUBE_VIDEO_LIMIT)
+        for video in videos[:DEEP_YOUTUBE_COMMENT_VIDEO_LIMIT]:
+            vid_id = video["id"] if isinstance(video.get("id"), str) else video["id"]["videoId"]
+            comments = await yt_provider.fetch_video_comments(vid_id, max_results=DEEP_YOUTUBE_COMMENT_LIMIT)
+            articles = extract_youtube_comments_as_articles(video, comments, None, "general")
+            stats["youtube"] += len(articles)
+            for article in articles:
+                await insert_article(article, "youtube")
+    except Exception as e:
+        errors.append(f"YouTube: {e}")
+
+    RESEARCH_PROGRESS[keyword] = {"status": "X gönderileri ve reply threadleri 5x derinlikte taranıyor...", "percent": 65}
+    try:
+        x_provider = get_x_provider()
+        posts = await x_provider.fetch_keyword_posts(keyword, limit=DEEP_X_LIMIT)
+        seen_ids = {p.get("external_id") for p in posts}
+        reply_threads = 0
+        for post in list(posts):
+            if reply_threads >= DEEP_X_REPLY_THREADS:
+                break
+            if post.get("_replies", 0) <= 0:
+                continue
+            if reply_threads > 0:
+                await asyncio.sleep(getattr(x_provider, "API_DELAY", 3.0))
+            replies = await x_provider.fetch_tweet_replies(post["external_id"])
+            reply_threads += 1
+            for reply in replies:
+                if reply.get("external_id") not in seen_ids:
+                    reply["target_type"] = "twitter_reply"
+                    reply["target_name"] = keyword
+                    posts.append(reply)
+                    seen_ids.add(reply.get("external_id"))
+
+        for post in posts:
+            stats["twitter"] += 1
+            article = _post_to_article(post, source_id=None, domain="general")
+            await insert_article(article, "twitter")
+    except Exception as e:
+        errors.append(f"X/Twitter: {e}")
+
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        errors.append(f"DB commit: {e}")
+
+    try:
+        from app.workers.labeling_tasks import batch_analyze_contents
+        batch_analyze_contents.apply_async(countdown=5, queue="default")
+    except Exception as e:
+        logger.warning(f"Deep Research analiz kuyruğu tetiklenemedi: {e}")
+
+    RESEARCH_PROGRESS[keyword] = {"status": "Derin araştırma tamamlandı, AI analiz kuyruğu tetiklendi.", "percent": 100}
+    analysis = (
+        f"**Derin Tarama Özeti**\n"
+        f"{keyword} için 5x derinlikte tarama yapıldı. "
+        f"RSS {stats['rss']}, YouTube {stats['youtube']} yorum, X/Twitter {stats['twitter']} gönderi/reply işlendi.\n\n"
+        f"**Kayıt Durumu**\n"
+        f"Yeni kayıt: {sum(added.values())}, mevcut/atlanan: {sum(skipped.values())}. "
+        f"AI etiketleme kuyruğu tetiklendi; bot ve dijital ayak izi göstergeleri analiz sonrası OSINT paneline yansır."
+    )
+    if errors:
+        analysis += f"\n\n**Uyarılar**\n" + "\n".join(f"- {e}" for e in errors[:5])
+
+    return {
+        "success": True,
+        "message": f"'{keyword}' için 5x derin araştırma tamamlandı.",
+        "stats": stats,
+        "added": added,
+        "skipped": skipped,
+        "analysis": analysis,
+    }
 
 
 @app.get("/api/deep-research/status/{keyword}", tags=["Veri Çekme"])
@@ -1000,9 +1153,8 @@ async def scrape_latest_poll():
 # =======================================================
 @app.get("/api/osint/intelligence", tags=["OSINT"])
 async def get_osint_intelligence(window: int = 48, db: AsyncSession = Depends(get_db)):
-    """Yapay zeka tarafından üretilen OSINT metriklerini özetler."""
+    """AI etiketleri ve Twitter hesap metriklerinden OSINT göstergeleri üretir."""
     try:
-        from sqlalchemy import func
         from app.models.core import ContentLabel, Content
         
         time_threshold = datetime.utcnow() - timedelta(hours=window)
@@ -1019,12 +1171,37 @@ async def get_osint_intelligence(window: int = 48, db: AsyncSession = Depends(ge
         
         sarcasm_query = select(func.count(ContentLabel.content_id)).where(ContentLabel.sarcasm_detected == True).join(Content, Content.id == ContentLabel.content_id).where(Content.published_at >= time_threshold)
         sarcasm_count = (await db.execute(sarcasm_query)).scalar() or 0
+
+        twitter_res = await db.execute(
+            select(Content.raw_json)
+            .where(Content.platform == "twitter", Content.published_at >= time_threshold)
+            .limit(1000)
+        )
+        twitter_raw_items = [row[0] for row in twitter_res.all() if isinstance(row[0], dict)]
+        bot_signals = [
+            twitter_bot_signal_summary(raw)
+            for raw in twitter_raw_items
+            if raw.get("account_metrics")
+        ]
+        metadata_bot_avg = (
+            sum(item["score"] for item in bot_signals) / len(bot_signals)
+            if bot_signals else 0.0
+        )
+        label_bot_avg = float(stats.avg_bot or 0)
+        combined_bot = max(label_bot_avg, metadata_bot_avg)
+        avg_ratio = sum(item["ratio"] for item in bot_signals) / len(bot_signals) if bot_signals else 0.0
+        avg_tweets_per_day = sum(item["tweets_per_day"] for item in bot_signals) / len(bot_signals) if bot_signals else 0.0
         
         return {
             "success": True,
             "sentiment": round(float(stats.avg_sentiment or 0) * 100, 1),
             "manipulation": round(float(stats.avg_manipulation or 0) * 100, 1),
-            "bot_likelihood": round(float(stats.avg_bot or 0) * 100, 1),
+            "bot_likelihood": round(combined_bot * 100, 1),
+            "bot_likelihood_ai": round(label_bot_avg * 100, 1),
+            "bot_likelihood_metadata": round(metadata_bot_avg * 100, 1),
+            "bot_accounts_sampled": len(bot_signals),
+            "bot_follow_ratio_avg": round(avg_ratio, 2),
+            "bot_tweets_per_day_avg": round(avg_tweets_per_day, 2),
             "sarcasm_rate": round((sarcasm_count / (stats.total_labeled or 1)) * 100, 1),
             "total_analyzed": stats.total_labeled
         }

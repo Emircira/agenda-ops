@@ -8,7 +8,7 @@ class LabelingService:
         self.api_key = os.getenv("GEMINI_API_KEY")
         if self.api_key:
             genai.configure(api_key=self.api_key)
-            model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.0-flash")
+            model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-flash")
             self.model = genai.GenerativeModel(model_name)
             self.is_llm_active = True
             logger.info("🚀 Gemini API Aktif: LabelingService tam kapasite çalışıyor.")

@@ -7,6 +7,7 @@ from app.core.celery_app import celery_app
 from app.db.session import AsyncSessionLocal
 from app.models.core import Content, ContentLabel
 from app.services.gemini_service import GeminiAIClient
+from app.core.utils import calculate_twitter_bot_likelihood
 
 
 def run_async(coro):
@@ -130,7 +131,7 @@ def batch_analyze_contents(self):
                                 summary=match.get("summary", ""),
                                 sentiment_score=_safe_float(match.get("sentiment_score"), 0.0),
                                 manipulation_prob=_safe_float(match.get("manipulation_prob"), 0.0),
-                                bot_likelihood=_safe_float(match.get("bot_likelihood"), 0.0),
+                                bot_likelihood=_combined_bot_likelihood(match, content),
                                 sarcasm_detected=bool(match.get("sarcasm_detected", False)),
                                 crisis_score=_safe_int(match.get("crisis_score"), 0),
                                 sentiment=match.get("sentiment", "Nötr"),
@@ -244,7 +245,7 @@ def analyze_twitter_contents(self, fetch_result=None):
                                 summary=match.get("summary", ""),
                                 sentiment_score=_safe_float(match.get("sentiment_score"), 0.0),
                                 manipulation_prob=_safe_float(match.get("manipulation_prob"), 0.0),
-                                bot_likelihood=_safe_float(match.get("bot_likelihood"), 0.0),
+                                bot_likelihood=_combined_bot_likelihood(match, content),
                                 sarcasm_detected=bool(match.get("sarcasm_detected", False)),
                                 crisis_score=_safe_int(match.get("crisis_score"), 0),
                                 sentiment=match.get("sentiment", "Nötr"),
@@ -331,7 +332,7 @@ def analyze_youtube_contents(self, fetch_result=None):
                                 summary=match.get("summary", ""),
                                 sentiment_score=_safe_float(match.get("sentiment_score"), 0.0),
                                 manipulation_prob=_safe_float(match.get("manipulation_prob"), 0.0),
-                                bot_likelihood=_safe_float(match.get("bot_likelihood"), 0.0),
+                                bot_likelihood=_combined_bot_likelihood(match, content),
                                 sarcasm_detected=bool(match.get("sarcasm_detected", False)),
                                 crisis_score=_safe_int(match.get("crisis_score"), 0),
                                 sentiment=match.get("sentiment", "Nötr"),
@@ -373,3 +374,10 @@ def _safe_int(value, default: int = 0) -> int:
         return int(float(value))
     except (ValueError, TypeError):
         return default
+
+
+def _combined_bot_likelihood(match: dict, content: Content) -> float:
+    """LLM skorunu Twitter metadata heuristiği ile güçlendirir."""
+    llm_score = _safe_float(match.get("bot_likelihood"), 0.0)
+    metadata_score = calculate_twitter_bot_likelihood(content.raw_json)
+    return max(0.0, min(max(llm_score, metadata_score), 1.0))

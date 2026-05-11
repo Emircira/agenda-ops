@@ -55,3 +55,93 @@ def extract_youtube_comments_as_articles(video, comments, source_id, domain='gen
         except Exception:
             pass
     return articles
+
+
+def _safe_int(value, default: int = 0) -> int:
+    if value is None:
+        return default
+    try:
+        return int(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_date(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    try:
+        import email.utils
+        parsed = email.utils.parsedate_to_datetime(str(value))
+        return parsed.replace(tzinfo=None)
+    except Exception:
+        pass
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+    except Exception:
+        return None
+
+
+def calculate_twitter_bot_likelihood(raw_json: Dict[str, Any] | None) -> float:
+    """Twitter hesap metriklerinden 0.0-1.0 arası bot olasılığı üretir."""
+    if not isinstance(raw_json, dict):
+        return 0.0
+
+    account = raw_json.get("account_metrics") or raw_json.get("account") or {}
+    if not isinstance(account, dict):
+        return 0.0
+
+    followers = _safe_int(account.get("followers_count"))
+    following = _safe_int(account.get("following_count") or account.get("friends_count"))
+    tweet_count = _safe_int(account.get("tweet_count") or account.get("statuses_count"))
+    created_at = _safe_date(account.get("account_created_at") or account.get("created_at"))
+
+    score = 0.0
+    if created_at:
+        age_days = max(1, (datetime.utcnow() - created_at).days)
+        tweets_per_day = tweet_count / age_days if tweet_count else 0
+        if age_days < 30:
+            score += 0.30
+        elif age_days < 180:
+            score += 0.18
+        if tweets_per_day > 80:
+            score += 0.30
+        elif tweets_per_day > 30:
+            score += 0.22
+        elif tweets_per_day > 10:
+            score += 0.12
+
+    ratio = following / max(followers, 1)
+    if following > 200 and followers < 25:
+        score += 0.25
+    elif ratio > 10:
+        score += 0.25
+    elif ratio > 5:
+        score += 0.18
+    elif ratio > 2.5:
+        score += 0.10
+
+    if followers == 0 and following > 50:
+        score += 0.15
+
+    return round(max(0.0, min(score, 1.0)), 3)
+
+
+def twitter_bot_signal_summary(raw_json: Dict[str, Any] | None) -> Dict[str, Any]:
+    """Dashboard ve raporlar için bot skorunu açıklayan temel sinyalleri döndürür."""
+    account = (raw_json or {}).get("account_metrics") or {}
+    followers = _safe_int(account.get("followers_count"))
+    following = _safe_int(account.get("following_count") or account.get("friends_count"))
+    tweet_count = _safe_int(account.get("tweet_count") or account.get("statuses_count"))
+    created_at = _safe_date(account.get("account_created_at") or account.get("created_at"))
+    age_days = max(1, (datetime.utcnow() - created_at).days) if created_at else None
+    tweets_per_day = round(tweet_count / age_days, 2) if age_days and tweet_count else 0
+    return {
+        "score": calculate_twitter_bot_likelihood(raw_json),
+        "followers": followers,
+        "following": following,
+        "ratio": round(following / max(followers, 1), 2) if following else 0,
+        "account_age_days": age_days,
+        "tweets_per_day": tweets_per_day,
+    }
