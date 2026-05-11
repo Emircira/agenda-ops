@@ -362,6 +362,7 @@ class RapidXProvider(XProvider):
             seen_ids = set()
             seven_days_ago = datetime.utcnow() - timedelta(days=7)
             tweets_with_replies = 0
+            reply_requests_sent = 0
 
             for tweet in raw_tweets[:30]:  # Son 30 tweet
                 parsed = self._parse_tweet(tweet, keyword=screen_name, target_type="twitter_self")
@@ -383,11 +384,16 @@ class RapidXProvider(XProvider):
 
                 all_posts.append(parsed)
 
-                # ↓↓↓ HER TWEET İÇİN YORUMLARI ÇEK ↓↓↓
-                # Rate-limit koruması: Her reply isteği arasında bekle
-                await asyncio.sleep(self.API_DELAY)
+                if parsed.get("_replies", 0) <= 0:
+                    logger.debug(f"  └── Tweet {parsed['external_id'][:12]}... yorum yok, reply API atlandı")
+                    continue
+
+                # Sadece yorumu olan tweetler için reply API çağrısı yap.
+                if reply_requests_sent > 0:
+                    await asyncio.sleep(self.API_DELAY)
 
                 try:
+                    reply_requests_sent += 1
                     replies = await self.fetch_tweet_replies(parsed["external_id"])
                     if replies:
                         tweets_with_replies += 1

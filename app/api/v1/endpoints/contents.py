@@ -10,7 +10,7 @@ router = APIRouter()
 @router.get("/")
 async def get_analyzed_contents(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
-        select(Content).options(joinedload(Content.labels)).order_by(Content.published_at.desc())
+        select(Content).options(joinedload(Content.labels)).order_by(Content.id.desc()).limit(300)
     )
     contents = result.scalars().unique().all()
     

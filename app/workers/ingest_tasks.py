@@ -76,7 +76,7 @@ def _post_to_article(post: dict, source_id=None, domain="general") -> dict:
         "url": f"https://twitter.com/x/status/{post.get('external_id')}",
         "domain": domain,
         "raw_json": safe_json,
-        "is_analyzed": not pre_filter_content(post.get("text", ""))
+        "is_analyzed": False
     }
 
 
@@ -266,12 +266,17 @@ def ingest_x_all_sources(self):
                                 index_elements=['external_id']
                             )
                             res = await db.execute(stmt)
+                            await db.commit()
                             if res.rowcount > 0:
                                 source_added += 1
                             else:
                                 source_skipped += 1
                         except Exception as e:
-                            logger.warning(f"  ⚠️ Kayıt hatası (atlandı): {e}")
+                            await db.rollback()
+                            logger.warning(
+                                "  ⚠️ Tweet kayıt hatası (atlandı) "
+                                f"external_id={post.get('external_id')} text={post.get('text', '')[:120]!r}: {e}"
+                            )
                             source_skipped += 1
 
                     await db.commit()
@@ -281,6 +286,7 @@ def ingest_x_all_sources(self):
                     logger.info(f"  ✅ {source_name}: {source_added} yeni, {source_skipped} mevcut.")
 
                 except Exception as e:
+                    await db.rollback()
                     source_results.append(f"❌ {source_name}: HATA — {str(e)[:80]}")
                     logger.error(f"  ❌ {source_name} HATA (atlanıyor): {e}")
 
