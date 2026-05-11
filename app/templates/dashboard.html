@@ -482,9 +482,22 @@
                 }
             }
 
+            saveState(key, value) {
+                try {
+                    localStorage.setItem(`agenda_ops_state_${key}`, JSON.stringify(value));
+                } catch (e) {
+                    console.error("State save error:", e);
+                }
+            }
+
             loadState(key) {
-                const saved = localStorage.getItem(`agenda_ops_state_${key}`);
-                return saved ? JSON.parse(saved) : null;
+                try {
+                    const saved = localStorage.getItem(`agenda_ops_state_${key}`);
+                    return saved ? JSON.parse(saved) : null;
+                } catch (e) {
+                    console.error("State load error:", e);
+                    return null;
+                }
             }
 
             restoreStates() {
@@ -1020,9 +1033,9 @@
                     
                     if(data.success) {
                         document.getElementById('deep-msg').innerText = data.message;
-                        document.getElementById('stat-yt').innerText = data.stats.youtube;
-                        document.getElementById('stat-rss').innerText = data.stats.rss;
-                        document.getElementById('stat-tw').innerText = data.stats.twitter;
+                        document.getElementById('stat-yt').innerText = data.stats?.youtube || 0;
+                        document.getElementById('stat-rss').innerText = data.stats?.rss || 0;
+                        document.getElementById('stat-tw').innerText = data.stats?.twitter || 0;
                         
                         const analysisDiv = document.getElementById('deep-analysis');
                         if (data.analysis) {
@@ -1035,7 +1048,7 @@
                         this.saveState('deep_research', {
                             keyword: keyword,
                             message: data.message,
-                            stats: data.stats,
+                            stats: data.stats || {},
                             analysis: data.analysis
                         });
                     } else {
