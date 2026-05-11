@@ -804,6 +804,8 @@ async def complaints_radar(req: ComplaintRadarRequest, db: AsyncSession = Depend
         
         analysis = await gemini_generate_content(prompt)
         return {"success": True, "analysis": analysis}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Complaints radar error: {e}")
         return {"success": False, "error": str(e)}
@@ -1074,6 +1076,8 @@ async def analyze_election(province: str, election_type: str, district: str = ""
         
         await db.commit()
         return {"success": True, "analysis": analysis, "cached": False}
+    except HTTPException:
+        raise
     except Exception as e: 
         logger.error(f"Election analyze error: {e}")
         return {"success": False, "error": str(e)}
@@ -1246,6 +1250,8 @@ async def get_entity_graph(db: AsyncSession = Depends(get_db)):
             mermaid += f'  {s_id}["{source}"] -- "{rel.relation_type}" --> {t_id}["{target}"]\n'
             
         return {"success": True, "mermaid": mermaid}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "error": str(e)}
 
