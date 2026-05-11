@@ -60,7 +60,7 @@ def batch_analyze_contents(self):
         total_analyzed = 0
         total_failed = 0
         total_skipped = 0
-        max_iterations = 10  # Sonsuz döngü koruması
+        max_iterations = 1  # Triage sonrası tek çalışmada en fazla 50 içerik analiz edilir.
 
         async with AsyncSessionLocal() as db:
             for iteration in range(max_iterations):

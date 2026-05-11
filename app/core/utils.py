@@ -19,6 +19,81 @@ def pre_filter_content(text: str) -> bool:
 
     return True
 
+
+def _extract_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    return str(value or "")
+
+
+def is_retweet_like(text: str, raw_json: Dict[str, Any] | None = None) -> bool:
+    normalized = _extract_text(text).strip().lower()
+    if normalized.startswith("rt @") or normalized.startswith("retweet "):
+        return True
+    raw = raw_json or {}
+    target_type = str(raw.get("target_type") or "").lower()
+    return target_type in {"retweet", "repost"}
+
+
+def content_engagement_score(platform: str, raw_json: Dict[str, Any] | None = None) -> int:
+    raw = raw_json or {}
+    platform = (platform or "").lower()
+
+    if platform in {"twitter", "x"}:
+        metrics = raw.get("metrics") if isinstance(raw.get("metrics"), dict) else raw
+        return (
+            _safe_int(metrics.get("likes") or metrics.get("favorite_count"))
+            + _safe_int(metrics.get("retweets") or metrics.get("retweet_count")) * 2
+            + _safe_int(metrics.get("replies") or metrics.get("reply_count")) * 3
+        )
+
+    if platform in {"youtube", "youtube_comment"}:
+        try:
+            snippet = raw["snippet"]["topLevelComment"]["snippet"]
+        except Exception:
+            snippet = raw.get("snippet", {}) if isinstance(raw, dict) else {}
+        return _safe_int(snippet.get("likeCount") or raw.get("likeCount"))
+
+    return 0
+
+
+def content_quality_score(platform: str, text: str, raw_json: Dict[str, Any] | None = None) -> int:
+    """AI triage için kalite/etkileşim skoru üretir; sahte veri üretmez."""
+    text_value = _extract_text(text).strip()
+    if not pre_filter_content(text_value) or is_retweet_like(text_value, raw_json):
+        return 0
+
+    words = re.findall(r"\w+", text_value, flags=re.UNICODE)
+    if len(words) < 4 or len(text_value) < 25:
+        return 0
+
+    platform_key = (platform or "").lower()
+    engagement = content_engagement_score(platform_key, raw_json)
+    if platform_key in {"twitter", "x", "youtube", "youtube_comment"} and engagement <= 0:
+        return 0
+
+    richness = min(len(text_value), 800) // 20
+    platform_bonus = 10 if platform_key == "rss" else 0
+    return int(engagement + richness + platform_bonus)
+
+
+def should_send_to_ai(platform: str, text: str, raw_json: Dict[str, Any] | None = None) -> bool:
+    return content_quality_score(platform, text, raw_json) > 0
+
+
+def select_ai_triage_candidates(contents: List[Any], limit: int = 50) -> List[Any]:
+    scored = []
+    for content in contents:
+        score = content_quality_score(
+            getattr(content, "platform", ""),
+            getattr(content, "text", ""),
+            getattr(content, "raw_json", None),
+        )
+        if score > 0:
+            scored.append((score, getattr(content, "fetched_at", None) or datetime.utcnow(), content))
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [content for _, _, content in scored[:limit]]
+
 def extract_youtube_comments_as_articles(video, comments, source_id, domain='general'):
     articles = []
     vid_id = video["id"] if isinstance(video.get("id"), str) else video["id"]["videoId"]

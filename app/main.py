@@ -319,7 +319,7 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                     for article in articles:
                         article['domain'] = s_info['domain']
                         article['source_id'] = s_info['id']
-                        article['is_analyzed'] = not pre_filter_content(article.get('text', ''))
+                        article['is_analyzed'] = True
                         try:
                             stmt = pg_insert(Content).values(**article)
                             stmt = stmt.on_conflict_do_nothing(index_elements=['external_id'])
@@ -336,6 +336,8 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                     logger.error(f"RSS çekim hatası [{s_info['name']}]: {src_err}")
             
             await db.commit()
+            from app.workers.ingest_tasks import _trigger_analysis_chain
+            _trigger_analysis_chain("RSS")
             msg = f"✅ {len(sources)} kaynak tarandı. {total_added} yeni içerik eklendi, {total_skipped} zaten mevcuttu."
             if errors:
                 msg += f" ⚠️ {len(errors)} kaynakta hata: {'; '.join(errors[:3])}"
@@ -343,7 +345,7 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
             return {"success": True, "message": msg, "added": total_added, "skipped": total_skipped}
         
         elif worker_name == 'youtube':
-            from app.providers.youtube_provider import YouTubeProvider
+            from app.providers.youtube_provider import YouTubeProvider, YouTubeQuotaExceeded
             from sqlalchemy.dialects.postgresql import insert as pg_insert
             
             provider = YouTubeProvider()
@@ -369,14 +371,19 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                         articles = extract_youtube_comments_as_articles(video, comments, source.id, domain)
                         
                         for article in articles:
-                            article['is_analyzed'] = not pre_filter_content(article.get('text', ''))
+                            article['is_analyzed'] = True
                             stmt = pg_insert(Content).values(**article).on_conflict_do_nothing(index_elements=['external_id'])
                             result = await db.execute(stmt)
                             if result.rowcount > 0: total_added += 1
                             else: total_skipped += 1
                 except Exception as e:
+                    if isinstance(e, YouTubeQuotaExceeded):
+                        logger.error(f"YouTube kotası doldu [{source.name}], diğer kaynaklara geçiliyor: {e}")
+                        continue
                     logger.error(f"YouTube hatası [{source.name}]: {e}")
             await db.commit()
+            from app.workers.ingest_tasks import _trigger_analysis_chain
+            _trigger_analysis_chain("YouTube")
             return {"success": True, "message": f"✅ {len(sources)} YouTube kaynağı tarandı. {total_added} içerik eklendi.", "added": total_added, "skipped": total_skipped}
         
         elif worker_name == 'twitter':
@@ -442,6 +449,8 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                     logger.error(f"Gündem taraması hatası: {e}")
             
             await db.commit()
+            from app.workers.ingest_tasks import _trigger_analysis_chain
+            _trigger_analysis_chain("Twitter")
             src_count = len(sources) if sources else 1
             msg = f"✅ {src_count} Twitter kaynağı tarandı. {total_added} içerik eklendi, {total_skipped} mevcut."
             if errors:
@@ -764,6 +773,38 @@ async def volume_stats(db: AsyncSession = Depends(get_db)):
         }
     except Exception as e: return {"success": False, "error": str(e)}
 
+
+@app.get("/api/stream/recent", tags=["Dashboard Verileri"])
+async def recent_content_stream(limit: int = 30, db: AsyncSession = Depends(get_db)):
+    """AI analizini beklemeden son kaydedilen gerçek içerikleri stream panellerine döndürür."""
+    safe_limit = max(1, min(limit, 100))
+    res = await db.execute(
+        select(Content)
+        .where(Content.platform.in_(["twitter", "x", "youtube", "youtube_comment", "rss"]))
+        .order_by(desc(Content.fetched_at), desc(Content.published_at))
+        .limit(safe_limit * 3)
+    )
+    rows = res.scalars().all()
+
+    grouped = {"twitter": [], "youtube": [], "rss": []}
+    for item in rows:
+        platform = item.platform or ""
+        key = "youtube" if platform in {"youtube", "youtube_comment"} else "twitter" if platform in {"twitter", "x"} else "rss"
+        if len(grouped[key]) >= safe_limit:
+            continue
+        grouped[key].append({
+            "id": str(item.id),
+            "platform": platform,
+            "author_name": item.author_name or "Unknown",
+            "text": item.text or "",
+            "published_at": item.published_at.isoformat() if item.published_at else None,
+            "fetched_at": item.fetched_at.isoformat() if item.fetched_at else None,
+            "url": item.url,
+            "is_analyzed": bool(item.is_analyzed),
+        })
+
+    return {"success": True, "streams": grouped}
+
 # =======================================================
 # 5. ŞİKAYET RADARI (Complaints Radar — YENİ MODÜL)
 # =======================================================
@@ -836,7 +877,7 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
     from urllib.parse import quote_plus
     from sqlalchemy.dialects.postgresql import insert as pg_insert
     from app.providers.rss_provider import RSSProvider
-    from app.providers.youtube_provider import YouTubeProvider
+    from app.providers.youtube_provider import YouTubeProvider, YouTubeQuotaExceeded
     from app.workers.ingest_tasks import get_x_provider, _post_to_article
 
     stats = {"youtube": 0, "rss": 0, "twitter": 0}
@@ -845,7 +886,7 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
     errors = []
 
     async def insert_article(article: dict, bucket: str):
-        article["is_analyzed"] = False
+        article["is_analyzed"] = True
         try:
             stmt = pg_insert(Content).values(**article).on_conflict_do_nothing(index_elements=["external_id"])
             res = await db.execute(stmt)
@@ -907,6 +948,9 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
             stats["youtube"] += len(articles)
             for article in articles:
                 await insert_article(article, "youtube")
+    except YouTubeQuotaExceeded as e:
+        logger.error(f"Deep Research: YouTube kotası doldu, RSS/X akışı devam ediyor: {e}")
+        errors.append("YouTube Kotası Doldu, diğer kaynaklara geçiliyor.")
     except Exception as e:
         errors.append(f"YouTube: {e}")
 
@@ -946,8 +990,8 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
         errors.append(f"DB commit: {e}")
 
     try:
-        from app.workers.labeling_tasks import batch_analyze_contents
-        batch_analyze_contents.apply_async(countdown=5, queue="default")
+        from app.workers.ingest_tasks import _trigger_analysis_chain
+        _trigger_analysis_chain("Deep Research")
     except Exception as e:
         logger.warning(f"Deep Research analiz kuyruğu tetiklenemedi: {e}")
 
