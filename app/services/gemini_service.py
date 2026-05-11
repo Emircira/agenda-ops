@@ -176,8 +176,7 @@ KURALLAR:
         • Kısmi başarıda veri kaybı olmaz
         """
         if not self.api_key or not self.model:
-            logger.warning("Gemini API Key veya model eksik, boş sonuç dönülüyor.")
-            return []
+            raise RuntimeError("Gemini API Key veya model eksik; sahte/boş analiz sonucu dönülmez.")
 
         if not contents:
             return []

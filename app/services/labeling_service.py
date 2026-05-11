@@ -13,22 +13,22 @@ class LabelingService:
         else:
             self.is_llm_active = False
             self.model = None
-            logger.warning("⚠️ GEMINI_API_KEY bulunamadı: LabelingService Fallback modunda çalışıyor.")
+            logger.error("GEMINI_API_KEY bulunamadı: AI etiketleme sahte fallback üretmez.")
 
 
     def analyze_content(self, text: str, platform: str) -> dict:
-        """İçeriği LLM ile analiz eder, başarısız olursa kural tabanlı yedeğe geçer."""
+        """İçeriği yalnızca gerçek LLM ile analiz eder."""
         if not text or len(text) < 10:
-            return self._deterministic_fallback(text)
+            raise ValueError("Analiz için yeterli gerçek içerik yok.")
 
-        if self.is_llm_active:
-            try:
-                return self._llm_analysis(text, platform)
-            except Exception as e:
-                logger.error(f"❌ LLM Analiz Hatası, Fallback devrede: {e}")
-                return self._deterministic_fallback(text)
-        else:
-            return self._deterministic_fallback(text)
+        if not self.is_llm_active:
+            raise RuntimeError("Gemini modeli aktif değil; sahte/kural tabanlı etiket üretilmez.")
+
+        try:
+            return self._llm_analysis(text, platform)
+        except Exception as e:
+            logger.error(f"❌ LLM Analiz Hatası: {e}")
+            raise
 
     def _llm_analysis(self, text: str, platform: str) -> dict:
         prompt = f"""
@@ -57,31 +57,3 @@ class LabelingService:
         # Olası format hatalarını temizleme (Markdown tagleri vb.)
         raw_json = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(raw_json)
-
-    def _deterministic_fallback(self, text: str) -> dict:
-        """LLM çökerse sistemi ayakta tutacak Regex/Keyword tabanlı güvenilir analizci."""
-        text_lower = text.lower()
-        
-        # Basit Kural Seti
-        if any(w in text_lower for w in ["enflasyon", "zam", "fiyat", "maaş"]):
-            topic, frame, risk = "Ekonomi", "Hayat Pahalılığı", "high"
-        elif any(w in text_lower for w in ["sığınmacı", "mülteci", "suriyeli"]):
-            topic, frame, risk = "Göçmenler", "Demografik Tehdit", "high"
-        elif any(w in text_lower for w in ["terör", "operasyon", "şehit", "pkk"]):
-            topic, frame, risk = "Güvenlik", "Terörle Mücadele", "med"
-        else:
-            topic, frame, risk = "Genel Gündem", "Haber Bildirimi", "low"
-
-        return {
-            "topic": topic,
-            "frame": frame,
-            "stance": "neutral",
-            "target": "Bilinmiyor",
-            "risk_level": risk,
-            "confidence": 0.4,
-            "summary": text[:100] + "..." if text else "İçerik yok.",
-            "sentiment_score": 0.0,
-            "manipulation_prob": 0.0,
-            "bot_likelihood": 0.0,
-            "sarcasm_detected": False
-        }

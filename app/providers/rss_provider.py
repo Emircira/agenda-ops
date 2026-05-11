@@ -28,9 +28,11 @@ class RSSProvider:
         try:
             feed = feedparser.parse(source_url)
 
+            if getattr(feed, "bozo", False):
+                raise RuntimeError(f"RSS parse hatası [{source_name}]: {getattr(feed, 'bozo_exception', 'bilinmeyen hata')}")
+
             if not feed.entries:
-                logger.warning(f"⚠️ RSS [{source_name}]: Hiç entry bulunamadı. URL kontrol edin: {source_url}")
-                return []
+                raise RuntimeError(f"RSS [{source_name}] hiç entry döndürmedi. URL kontrol edin: {source_url}")
 
             for entry in feed.entries[:max_items]:  # Derin Araştırma: 200 → 1000
                 pub_parsed = entry.get("published_parsed")
@@ -53,4 +55,5 @@ class RSSProvider:
             logger.info(f"✅ RSS [{source_name}]: {len(parsed_data)} haber çekildi (feed'de toplam {len(feed.entries)} entry var).")
         except Exception as e:
             logger.error(f"❌ RSS Çekim Hatası [{source_name}]: {e}")
+            raise
         return parsed_data

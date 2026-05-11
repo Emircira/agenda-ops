@@ -160,7 +160,7 @@ async def gemini_generate_content(prompt: str):
     """Gemini ile içerik üretir."""
     model = get_gemini_model()
     if not model:
-        return "Gemini API Key eksik."
+        raise RuntimeError("Gemini API Key eksik; sahte analiz metni üretilemez.")
     response = await model.generate_content_async(prompt)
     return response.text
 
@@ -548,8 +548,8 @@ class NewsScanRequest(BaseModel): keyword: str
 @app.post("/api/news-scan", tags=["Yapay Zeka Analiz"])
 async def news_scan(req: NewsScanRequest, db: AsyncSession = Depends(get_db)):
     """Belirli bir kelime için haber taraması ve analizi yapar."""
-    # Burada hem veri çekme hem analiz tetiklenebilir
-    return {"success": True, "message": f"'{req.keyword}' için tarama başlatıldı."}
+    logger.error("news_scan endpoint'i gerçek haber taraması uygulamıyor; sahte başarı döndürülmedi.")
+    raise HTTPException(status_code=501, detail="Gerçek haber taraması bu endpoint'te uygulanmamış. Sahte başarı döndürülmez.")
 
 # --- GÜNDEM ÖZETİ CACHE SİSTEMİ ---
 _hot_topics_cache = {"data": None, "timestamp": None}
@@ -710,11 +710,8 @@ async def platform_analyze(req: PlatformAnalyzeRequest, db: AsyncSession = Depen
 @app.post("/api/leader-comparison", tags=["Yapay Zeka Analiz"])
 async def leader_comparison(db: AsyncSession = Depends(get_db)):
     """Lider vs Rakip duygu analizi yapar."""
-    try:
-        # Bu genelde daha karmaşık bir mantık gerektirir ama basitçe özetleyelim
-        return {"success": True, "analysis": "Lider ve rakip arasındaki güncel duygu dengesi analiz edildi. (Gemini)"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    logger.error("leader_comparison endpoint'i gerçek veri analizi yapmıyor; statik sahte analiz kaldırıldı.")
+    raise HTTPException(status_code=501, detail="Gerçek lider/rakip duygu analizi uygulanmamış. Sahte analiz döndürülmez.")
 
 # 4. Gerçek Platform Hacim İstatistikleri (Volume Chart)
 @app.get("/api/volume-stats", tags=["Dashboard Verileri"])
@@ -788,13 +785,8 @@ async def complaints_radar(req: ComplaintRadarRequest, db: AsyncSession = Depend
         city_name = req.city if req.city else "Genel Türkiye"
         
         if not contents:
-            # Veritabanında veri yoksa, Gemini'nin genel bilgi birikimiyle o şehrin kronik sorunlarını analiz et
-            prompt = f"""
-            {city_name} şehri için şu anki dijital ortamda (veya genel kronik sorunlar çerçevesinde) 
-            halkın en çok şikayet ettiği, rakip siyasi aktörlerin zayıf kaldığı 3 temel zafiyet/sorun başlığını analiz et.
-            Veritabanımızda henüz canlı veri bulunamadığı için genel stratejik bilgi birikiminle bir 'Zafiyet Öngörü Raporu' oluştur.
-            Yanıtı kısa, maddeler halinde ve profesyonel bir dille ver.
-            """
+            logger.error(f"Complaints radar için gerçek veri bulunamadı: {city_name}")
+            raise HTTPException(status_code=404, detail=f"{city_name} için canlı veri bulunamadı. Sahte öngörü raporu üretilmez.")
         else:
             text_blob = "\n".join([f"[{c.platform}] {c.text[:300]}" for c in contents])
             prompt = f"""
@@ -812,6 +804,8 @@ async def complaints_radar(req: ComplaintRadarRequest, db: AsyncSession = Depend
         
         analysis = await gemini_generate_content(prompt)
         return {"success": True, "analysis": analysis}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Complaints radar error: {e}")
         return {"success": False, "error": str(e)}
@@ -1046,8 +1040,27 @@ async def analyze_election(province: str, election_type: str, district: str = ""
         if not force_refresh and cached_data and cached_data.ai_summary:
             return {"success": True, "analysis": cached_data.ai_summary, "cached": True}
 
-        # Ham verileri topla ve Gemini'ye gönder
-        prompt = f"{province} {district} bölgesi için {election_type} seçim verilerini analiz et. (Gemini)"
+        result_query = select(ElectionResult).where(ElectionResult.province == province)
+        if district:
+            result_query = result_query.where(ElectionResult.district == district)
+        result_query = result_query.limit(50)
+        election_rows = (await db.execute(result_query)).scalars().all()
+        if not election_rows:
+            logger.error(f"Election analyze için gerçek seçim verisi bulunamadı: {province} {district}")
+            raise HTTPException(status_code=404, detail="Gerçek seçim verisi bulunamadı. Sahte analiz üretilmez.")
+
+        real_rows = [
+            {
+                "year": row.election_year,
+                "type": str(row.election_type),
+                "province": row.province,
+                "district": row.district,
+                "party": row.party,
+                "vote_count": row.vote_count,
+            }
+            for row in election_rows
+        ]
+        prompt = f"{province} {district} bölgesi için gerçek seçim verilerini analiz et.\n\nVERİ:\n{json.dumps(real_rows, ensure_ascii=False)}"
         analysis = await gemini_generate_content(prompt)
         
         # Cache'e kaydet (Basitleştirilmiş)
@@ -1063,6 +1076,8 @@ async def analyze_election(province: str, election_type: str, district: str = ""
         
         await db.commit()
         return {"success": True, "analysis": analysis, "cached": False}
+    except HTTPException:
+        raise
     except Exception as e: 
         logger.error(f"Election analyze error: {e}")
         return {"success": False, "error": str(e)}
@@ -1222,7 +1237,7 @@ async def get_entity_graph(db: AsyncSession = Depends(get_db)):
         relations = relations_res.scalars().all()
         
         if not entities or not relations:
-            return {"success": True, "mermaid": "graph TD\n  A[Veri] --> B[Yok]"}
+            raise HTTPException(status_code=404, detail="Digital Footprint için gerçek entity/relation verisi bulunamadı.")
             
         mermaid = "graph LR\n"
         entity_map = {str(e.id).replace('-', ''): e.name for e in entities}
@@ -1235,6 +1250,8 @@ async def get_entity_graph(db: AsyncSession = Depends(get_db)):
             mermaid += f'  {s_id}["{source}"] -- "{rel.relation_type}" --> {t_id}["{target}"]\n'
             
         return {"success": True, "mermaid": mermaid}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "error": str(e)}
 

@@ -23,7 +23,9 @@ class YouTubeProvider:
 
     def __init__(self):
         self.api_key = os.getenv("YOUTUBE_API_KEY", "").strip()
-        self.youtube = build('youtube', 'v3', developerKey=self.api_key) if self.api_key else None
+        if not self.api_key:
+            raise RuntimeError("YOUTUBE_API_KEY zorunludur; YouTube için boş/mock fallback yoktur.")
+        self.youtube = build('youtube', 'v3', developerKey=self.api_key)
 
     async def _safe_execute(self, request, context: str = ""):
         """
@@ -63,16 +65,12 @@ class YouTubeProvider:
                     await asyncio.sleep(wait)
                 else:
                     raise
-        return None
+        raise RuntimeError(f"YouTube API isteği başarısız oldu [{context}]")
 
     async def fetch_channel_videos(self, channel_id: str, max_results: int = 50) -> list:
         """
         Kanal bazlı video çekimi — sayfalama + rate limit koruması.
         """
-        if not self.youtube:
-            logger.warning("⚠️ YOUTUBE_API_KEY yok.")
-            return []
-
         try:
             all_videos = []
             page_token = None
@@ -113,13 +111,13 @@ class YouTubeProvider:
             return all_videos
         except HttpError as e:
             if e.resp.status == 403:
-                logger.error(f"❌ YouTube Quota aşıldı (kanal {channel_id}), sonraki çekim döngüsünde devam edilecek.")
+                logger.error(f"❌ YouTube Quota/erişim hatası (kanal {channel_id}).")
             else:
                 logger.error(f"❌ YouTube Video Hatası ({channel_id}): {e}")
-            return []
+            raise
         except Exception as e:
             logger.error(f"❌ YouTube Video Hatası ({channel_id}): {e}")
-            return []
+            raise
 
     async def fetch_keyword_videos(self, keyword: str, max_results: int = 100) -> list:
         """
@@ -127,10 +125,6 @@ class YouTubeProvider:
         En az 50–100 video toplayana kadar sayfalama devam eder.
         Rate limit koruması ve retry mekanizması mevcut.
         """
-        if not self.youtube:
-            logger.warning("⚠️ YOUTUBE_API_KEY yok.")
-            return []
-
         try:
             all_videos = []
             seen_ids = set()
@@ -187,13 +181,13 @@ class YouTubeProvider:
             return all_videos
         except HttpError as e:
             if e.resp.status == 403:
-                logger.error(f"❌ YouTube Quota aşıldı (arama: {keyword}), mevcut {len(all_videos)} video ile devam.")
-                return all_videos  # Mevcut veriyi kaybet etme
+                logger.error(f"❌ YouTube Quota/erişim hatası (arama: {keyword}).")
+                raise
             logger.error(f"❌ YouTube Keyword Hatası ({keyword}): {e}")
-            return all_videos
+            raise
         except Exception as e:
             logger.error(f"❌ YouTube Keyword Hatası ({keyword}): {e}")
-            return all_videos
+            raise
 
     async def fetch_video_comments(self, video_id: str, max_results: int = 100) -> list:
         """
@@ -201,9 +195,6 @@ class YouTubeProvider:
         max_results kadar yorum çeker (her sayfada 100'e kadar).
         Rate limit koruması ve retry mekanizması mevcut.
         """
-        if not self.youtube:
-            return []
-
         try:
             all_comments = []
             page_token = None
@@ -235,10 +226,10 @@ class YouTubeProvider:
             return all_comments
         except HttpError as e:
             if e.resp.status == 403:
-                logger.info(f"🔇 Video yorumlara kapalı veya quota aşıldı: {video_id}")
+                logger.error(f"❌ YouTube yorum erişim/quota hatası: {video_id}")
             else:
                 logger.error(f"❌ YouTube Yorum Hatası ({video_id}): {e}")
-            return all_comments if all_comments else []
+            raise
         except Exception as e:
             logger.error(f"❌ YouTube Yorum Hatası ({video_id}): {e}")
-            return all_comments if all_comments else []
+            raise

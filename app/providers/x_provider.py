@@ -46,8 +46,10 @@ class RapidXProvider(XProvider):
     MAX_RETRIES = 3
 
     def __init__(self):
-        self.api_key = os.getenv("RAPIDAPI_KEY")
-        self.api_host = os.getenv("RAPIDAPI_HOST", "twitter-api45.p.rapidapi.com")
+        self.api_key = os.getenv("RAPIDAPI_KEY") or os.getenv("RAPID_API_KEY")
+        self.api_host = os.getenv("RAPIDAPI_HOST") or os.getenv("RAPID_API_HOST", "twitter-api45.p.rapidapi.com")
+        if not self.api_key:
+            raise RuntimeError("RAPIDAPI_KEY/RAPID_API_KEY zorunludur; X verisi için mock fallback yoktur.")
         self.base_url = f"https://{self.api_host}"
 
     def _get_headers(self):
@@ -214,7 +216,7 @@ class RapidXProvider(XProvider):
         Merkezi API istek fonksiyonu.
         • 429 alırsa kademeli bekleme ile yeniden dener (3 deneme).
         • Timeout ve bağlantı hatalarında retry.
-        • Diğer hatalarda None döner (çökertmez).
+        • Diğer hatalarda exception fırlatır; production'da sahte/boş başarı yoktur.
         """
         for attempt in range(self.MAX_RETRIES):
             try:
@@ -241,7 +243,7 @@ class RapidXProvider(XProvider):
 
                     if response.status_code >= 400:
                         logger.error(f"RapidX API hatası [{endpoint}]: HTTP {response.status_code}")
-                        return None
+                        raise RuntimeError(f"RapidX API hatası [{endpoint}]: HTTP {response.status_code} - {response.text[:300]}")
 
                     data = response.json()
                     logger.debug(f"RapidX [{endpoint}] yanıt anahtarları: {list(data.keys()) if isinstance(data, dict) else type(data)}")
@@ -261,7 +263,7 @@ class RapidXProvider(XProvider):
                     await asyncio.sleep(5)
 
         logger.error(f"RapidX API [{endpoint}]: Tüm denemeler tükendi!")
-        return None
+        raise RuntimeError(f"RapidX API [{endpoint}]: Tüm denemeler tükendi.")
 
     # ------------------------------------------------------------------ #
     #  YANIT PARSE (GÜÇLENDİRİLMİŞ CURSOR ALGILAMA)
@@ -323,8 +325,6 @@ class RapidXProvider(XProvider):
         logger.info("RapidXProvider: X Trendleri çekiliyor...")
         try:
             data = await self._api_request("trends.php", {"country": "turkey"})
-            if not data:
-                return []
             trends = data if isinstance(data, list) else data.get("trends", [])
             results = []
             for i, trend in enumerate(trends[:50]):
@@ -340,7 +340,7 @@ class RapidXProvider(XProvider):
             return results
         except Exception as e:
             logger.error(f"RapidX fetch_trends hatası: {e}")
-            return []
+            raise
 
     # ------------------------------------------------------------------ #
     #  TWEET YORUMLARI (Hit odaklı)
@@ -349,8 +349,6 @@ class RapidXProvider(XProvider):
         """Bir tweet'in altındaki en etkili yorumları çeker."""
         try:
             data = await self._api_request("tweet_thread.php", {"id": str(tweet_id)})
-            if not data:
-                return []
 
             raw_items = []
             if isinstance(data, list):
@@ -372,7 +370,7 @@ class RapidXProvider(XProvider):
             return replies[:100]  # Derin araştırma için en etkili 100 yorum
         except Exception as e:
             logger.error(f"RapidX fetch_tweet_replies hatası (tweet {tweet_id}): {e}")
-            return []
+            raise
 
     # ------------------------------------------------------------------ #
     #  HESAP TAKİBİ: Timeline + Yorumlar (ANA FONKSİYON)
@@ -397,9 +395,6 @@ class RapidXProvider(XProvider):
 
         try:
             data = await self._api_request("timeline.php", {"screenname": screen_name})
-            if not data:
-                logger.warning(f"RapidX @{screen_name}: API yanıtı boş!")
-                return []
 
             raw_tweets, _ = self._extract_tweets_from_response(data)
             logger.info(f"RapidX @{screen_name}: Timeline'da {len(raw_tweets)} ham tweet bulundu.")
@@ -455,6 +450,7 @@ class RapidXProvider(XProvider):
                         logger.info(f"  └── Tweet {parsed['external_id'][:12]}... → {len(replies)} yorum çekildi")
                 except Exception as e:
                     logger.warning(f"  └── Tweet {parsed['external_id'][:12]}... yorum hatası: {e}")
+                    raise
 
             logger.info(
                 f"✅ RapidX @{screen_name}: TOPLAM {len(all_posts)} veri çekildi "
@@ -464,7 +460,7 @@ class RapidXProvider(XProvider):
 
         except Exception as e:
             logger.error(f"RapidX fetch_mentions GENEL hatası (@{screen_name}): {e}")
-            return []
+            raise
 
     # ------------------------------------------------------------------ #
     #  ANAHTAR KELİME ARAMASI (GÜÇLENDİRİLMİŞ DEEPScan Pagination)
@@ -497,18 +493,9 @@ class RapidXProvider(XProvider):
                     params["cursor"] = cursor
 
                 data = await self._api_request("search.php", params)
-                if not data:
-                    logger.warning(f"RapidX: API yanıtı None geldi, sayfa {pages_fetched + 1}")
-                    empty_pages_streak += 1
-                    if empty_pages_streak >= 2:
-                        logger.info(f"RapidX: Ardışık {empty_pages_streak} boş yanıt, aramayı sonlandırıyorum.")
-                        break
-                    await asyncio.sleep(self.API_DELAY)
-                    continue
-
                 raw_tweets, next_cursor = self._extract_tweets_from_response(data)
 
-                # Fallback: Latest boşsa Top'a geç
+                # Latest boşsa aynı gerçek API üzerinde Top aramasına geç.
                 if not raw_tweets and pages_fetched == 0 and search_type == "Latest":
                     logger.warning(f"RapidX: Latest boş, '{keyword}' için Top'a geçiliyor.")
                     search_type = "Top"
@@ -569,30 +556,10 @@ class RapidXProvider(XProvider):
 
             except Exception as e:
                 logger.error(f"RapidX arama hatası sayfa {pages_fetched}: {e}")
-                # Hata sonrası biraz bekle ve devam etmeyi dene
-                await asyncio.sleep(self.API_DELAY * 2)
-                empty_pages_streak += 1
-                if empty_pages_streak >= 2:
-                    break
+                raise
 
         logger.info(
             f"✅ RapidX '{keyword}' DEEP-SCAN TAMAMLANDI: "
             f"{len(all_posts)} tweet ({pages_fetched} sayfa tarandı, {len(seen_ids)} benzersiz ID)"
         )
         return all_posts[:limit]
-
-
-class MockXProvider(XProvider):
-    """API anahtarı yokken test verisi döner."""
-
-    async def fetch_trends(self) -> List[Dict[str, Any]]:
-        return [{"external_id": f"mock_trend_{i}", "text": f"Mock Trend #{i}", "author": "MockBot", "published_at": datetime.utcnow().isoformat(), "target_type": "twitter_trend", "target_name": f"MockTrend{i}"} for i in range(10)]
-
-    async def fetch_mentions(self, target: str) -> List[Dict[str, Any]]:
-        return [{"external_id": f"mock_mention_{target}_{i}", "text": f"{target} hakkında mock yorum #{i}", "author": f"MockUser_{i}", "published_at": datetime.utcnow().isoformat(), "target_type": "twitter_self", "target_name": target} for i in range(10)]
-
-    async def fetch_tweet_replies(self, tweet_id: str) -> List[Dict[str, Any]]:
-        return [{"external_id": f"mock_reply_{tweet_id}_{i}", "text": f"Mock yorum #{i}", "author": f"MockYorumcu_{i}", "published_at": datetime.utcnow().isoformat(), "target_type": "twitter_reply", "target_name": tweet_id} for i in range(5)]
-
-    async def fetch_keyword_posts(self, keyword: str, limit: int = 100) -> List[Dict[str, Any]]:
-        return [{"external_id": f"mock_search_{keyword}_{i}", "text": f"[MOCK] {keyword} #{i}", "author": f"MockKullanici_{i}", "published_at": datetime.utcnow().isoformat(), "target_type": "twitter_trend", "target_name": keyword} for i in range(min(limit, 50))]
