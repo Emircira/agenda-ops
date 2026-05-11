@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 import google.generativeai as genai
 from app.services.gemini_service import GeminiAIClient
+from app.services.gemini_model import create_gemini_model
 
 # KARARGAH ANA MİMARİ İMPORTLARI
 from app.db.session import get_db, engine
@@ -152,9 +153,8 @@ def get_gemini_model():
     if not api_key:
         logger.error("GEMINI_API_KEY bulunamadı!")
         return None
-    genai.configure(api_key=api_key)
-    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-flash")
-    return genai.GenerativeModel(model_name)
+    model, _ = create_gemini_model(api_key)
+    return model
 
 async def gemini_generate_content(prompt: str):
     """Gemini ile içerik üretir."""

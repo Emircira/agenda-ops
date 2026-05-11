@@ -1,17 +1,15 @@
 import os
 import json
-import google.generativeai as genai
 from loguru import logger
+from app.services.gemini_model import create_gemini_model
 
 class LabelingService:
     def __init__(self):
         self.api_key = os.getenv("GEMINI_API_KEY")
         if self.api_key:
-            genai.configure(api_key=self.api_key)
-            model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-flash")
-            self.model = genai.GenerativeModel(model_name)
-            self.is_llm_active = True
-            logger.info("🚀 Gemini API Aktif: LabelingService tam kapasite çalışıyor.")
+            self.model, self.model_name = create_gemini_model(self.api_key)
+            self.is_llm_active = self.model is not None
+            logger.info(f"🚀 Gemini API Aktif: LabelingService modeli={self.model_name}")
         else:
             self.is_llm_active = False
             self.model = None

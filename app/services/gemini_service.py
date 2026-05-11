@@ -1,9 +1,9 @@
 import os
 import json
 import time
-import google.generativeai as genai
 from loguru import logger
 from typing import List, Dict, Any, Optional
+from app.services.gemini_model import create_gemini_model
 
 
 class GeminiAIClient:
@@ -31,9 +31,7 @@ class GeminiAIClient:
             logger.error("GEMINI_API_KEY bulunamadı!")
         else:
             try:
-                genai.configure(api_key=self.api_key)
-                self.model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-flash")
-                self.model = genai.GenerativeModel(self.model_name)
+                self.model, self.model_name = create_gemini_model(self.api_key)
                 logger.info(f"✅ Gemini AI Hazır: {self.model_name}")
             except Exception as e:
                 logger.error(f"Gemini model başlatma hatası: {e}")
