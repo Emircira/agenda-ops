@@ -1,0 +1,32 @@
+<div id="view-complaints" class="view-section flex-1 flex flex-col w-full overflow-y-auto p-6 z-10 relative scroll-smooth">
+    <div class="bg-panel rounded-xl border border-slate-800 shadow-lg p-6 mb-6">
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">🚨 Rakip Zafiyetleri ve Saha Krizleri Panosu</h3>
+                <p class="text-slate-400 text-sm mt-1">Vatandaş şikayetlerini NLP ile filtreler, trol söylemleri ayıklar.</p>
+            </div>
+            <div class="flex gap-3 items-center">
+                <select id="complaintCity" class="bg-dark border border-slate-700 text-white rounded-lg px-4 py-2.5 text-sm focus:border-danger outline-none">
+                    <option value="">Tüm Türkiye (Genel)</option>
+                    <option value="İstanbul">İstanbul</option>
+                    <option value="Ankara">Ankara</option>
+                    <option value="İzmir">İzmir</option>
+                    <option value="Bursa">Bursa</option>
+                    <option value="Antalya">Antalya</option>
+                    <option value="Adana">Adana</option>
+                    <option value="Konya">Konya</option>
+                    <option value="Gaziantep">Gaziantep</option>
+                    <option value="Kocaeli">Kocaeli</option>
+                    <option value="Mersin">Mersin</option>
+                </select>
+                <button id="btnComplaintsRadar" onclick="window.AgendaOps.runComplaintsRadar(this)" class="bg-danger/20 hover:bg-danger/30 text-danger border border-danger/30 px-5 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">🔍 Taramayı Başlat</button>
+            </div>
+        </div>
+        <div id="complaints-loader" class="hidden flex flex-col items-center justify-center py-10 text-danger"><div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-danger mb-3"></div><p class="animate-pulse text-sm">Vatandaş verileri NLP ile analiz ediliyor...</p></div>
+        <div id="complaints-results" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 hidden"></div>
+        <div id="complaints-empty" class="hidden text-center py-10 text-slate-500">
+            <p class="text-lg mb-2">📭</p>
+            <p class="text-sm">Henüz tarama yapılmadı. "Taramayı Başlat" butonuna tıklayın.</p>
+        </div>
+    </div>
+</div>

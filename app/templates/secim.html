@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <title>Seçim Radarı | AgendaOps</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        body { background-color: #0B1120; color: white; font-family: 'Inter', sans-serif; }
+        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+        .leaflet-container { background: #0B1120; font-family: inherit; }
+        .leaflet-bar a { background-color: #1E293B !important; color: #fff !important; border-color: #334155 !important;}
+        .city-label { background: transparent; border: none; box-shadow: none; color: rgba(255, 255, 255, 0.4); font-size: 9px; font-weight: bold; text-shadow: 1px 1px 2px #000; pointer-events: none; }
+        .leaflet-interactive:hover + .leaflet-tooltip.city-label { color: #fff; font-size: 10px; text-shadow: 0px 0px 6px #3B82F6; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0B1120; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="p-8 min-h-screen flex flex-col">
+    <div class="max-w-screen-2xl mx-auto w-full flex-1 flex flex-col">
+        <div class="flex justify-between items-center mb-8 border-b border-slate-800 pb-4">
+            <a href="/dashboard" class="group block w-fit cursor-pointer">
+                <h1 class="text-3xl font-black bg-gradient-to-r from-slate-200 to-slate-400 bg-clip-text text-transparent tracking-widest uppercase transition-all duration-300 group-hover:text-white group-hover:from-white group-hover:to-slate-300 group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">STRATEJİK SEÇİM RADARI</h1>
+                <p class="text-slate-500 text-xs mt-1.5 tracking-[0.2em] font-semibold group-hover:text-slate-400 transition-colors uppercase">Strateji Kontrol Paneli</p>
+            </a>
+            <div class="flex items-center gap-4">
+                <a href="/dashboard" class="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 px-4 py-3 rounded-xl transition-all shadow-lg font-medium text-sm hover:text-white hover:border-slate-500 group">
+                    <span class="text-lg group-hover:scale-110 transition-transform">🏛️</span> Ana Sayfaya Dön
+                </a>
+                <div class="relative w-72 lg:w-80">
+                    <input type="text" id="searchInput" placeholder="İl Ara (Örn: Ankara)" class="w-full bg-slate-800/80 border border-slate-700 p-3 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none text-white shadow-lg transition-all placeholder:text-slate-500 text-sm font-medium">
+                    <button onclick="searchRegion()" class="absolute right-3 top-3 text-slate-500 hover:text-white transition-colors">🔍</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-12 gap-6 mb-6">
+            <div class="col-span-12 lg:col-span-9 glass-panel rounded-2xl relative overflow-hidden shadow-2xl border border-slate-700 h-[450px]">
+                <div id="map" class="w-full h-full z-0 absolute inset-0"></div>
+            </div>
+
+            <div class="col-span-12 lg:col-span-3 flex flex-col space-y-4 h-[450px] overflow-y-auto pr-2">
+                <div class="glass-panel rounded-2xl p-4 flex flex-col space-y-2 border border-slate-700 shadow-xl shrink-0">
+                    <span class="text-slate-300 font-bold text-xs uppercase tracking-wider">📊 Analiz Türü:</span>
+                    <select id="electionTypeSelect" class="w-full bg-slate-800 border border-slate-600 text-white text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-purple-500">
+    <option value="local">Belediye (Yerel) Seçimleri</option>
+    <option value="presidential">Cumhurbaşkanlığı Seçimleri</option>
+    <option value="parliamentary">Milletvekili (Genel) Seçimleri</option>
+</select>
+                </div>
+
+                <div id="district-container" class="hidden glass-panel p-4 rounded-2xl border border-purple-500/50 shadow-xl shrink-0">
+                    <label class="text-purple-300 text-xs font-bold mb-2 block uppercase tracking-wider">🎯 Kılcal Damar</label>
+                    <select id="districtSelect" class="w-full bg-slate-800 text-white p-2 rounded-lg border border-slate-600 focus:border-purple-500 outline-none transition" onchange="changeDistrict()">
+                        <option value="">TÜM İL (Makro Analiz)</option>
+                    </select>
+                </div>
+
+                <div class="glass-panel p-4 rounded-2xl border border-red-500/50 shadow-xl flex flex-col shrink-0 relative overflow-hidden">
+                    <div class="absolute inset-0 bg-red-900/10 pointer-events-none"></div>
+                    <div class="flex items-center gap-2 mb-3 z-10">
+                        <span class="text-xl">🚨</span>
+                        <h3 class="text-red-400 font-bold text-sm tracking-wide">SAHA ANKETİ GİRİŞİ</h3>
+                    </div>
+                    <div class="space-y-2 z-10">
+                        <div class="flex items-center justify-between text-xs"><span class="text-orange-400">İktidar/Mhfz:</span> <input type="number" id="poll-a" placeholder="%" class="w-16 bg-slate-900 border border-slate-600 rounded p-1 text-center text-white outline-none focus:border-red-500"></div>
+                        <div class="flex items-center justify-between text-xs"><span class="text-red-500">Ana Muhalefet:</span> <input type="number" id="poll-b" placeholder="%" class="w-16 bg-slate-900 border border-slate-600 rounded p-1 text-center text-white outline-none focus:border-red-500"></div>
+                        <div class="flex items-center justify-between text-xs"><span class="text-blue-400">Tepki/Mllytçi:</span> <input type="number" id="poll-c" placeholder="%" class="w-16 bg-slate-900 border border-slate-600 rounded p-1 text-center text-white outline-none focus:border-red-500"></div>
+                        <div class="flex items-center justify-between text-xs"><span class="text-gray-400">Kararsız:</span> <input type="number" id="poll-d" placeholder="%" class="w-16 bg-slate-900 border border-slate-600 rounded p-1 text-center text-white outline-none focus:border-red-500"></div>
+                    </div>
+                    
+                    <button onclick="fetchWikiPoll(event)" class="mt-4 w-full bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 font-bold py-2 rounded-lg text-xs transition z-10 flex justify-center items-center gap-2">
+                        <span class="text-lg text-blue-400">🕸️</span> Wikipedia'dan Çek
+                    </button>
+
+                    <button onclick="triggerPollRadar()" class="mt-2 w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded-lg text-xs transition z-10 shadow-[0_0_15px_rgba(220,38,38,0.5)]">
+                        ÇAPRAZ ANALİZİ BAŞLAT
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="intelligence-center" class="hidden grid-cols-12 gap-6 pb-8 relative items-start">
+            <div id="export-area" class="col-span-12 lg:col-span-8 glass-panel rounded-2xl p-6 border border-slate-700 shadow-xl bg-[#0B1120] min-h-[400px] flex flex-col transition-colors duration-500">
+                <div class="flex justify-between items-center mb-4 border-b border-slate-800 pb-3">
+                    <h2 class="text-lg font-bold flex items-center text-purple-400" id="title-wrapper">
+                        <span class="mr-2 text-xl" id="title-icon">🤖</span> <span id="currentRegionTitle">RAPOR YÜKLENİYOR...</span>
+                    </h2>
+                    <div class="flex items-center gap-3">
+                        <div id="ai-status" class="hidden px-2 py-1 bg-emerald-900/30 text-emerald-400 text-xs rounded border border-emerald-800/50 flex items-center font-medium"><span class="mr-1">⚡</span> Hafıza</div>
+                    </div>
+                </div>
+
+                <div id="loadingIndicator" class="hidden flex-1 flex flex-col items-center justify-center text-purple-400 py-12">
+                    <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500 mb-4" id="spinner-icon"></div>
+                    <p class="animate-pulse text-sm font-medium" id="loading-text">İstihbarat Ağları Taranıyor...</p>
+                </div>
+
+                <div id="ai-content" class="text-slate-300 leading-relaxed text-sm flex-1"></div>
+                
+                <div class="flex gap-3 mt-6 pt-4 border-t border-slate-800">
+                    <button id="re-analyze-btn" onclick="forceReAnalyze()" class="flex-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white py-2 rounded-lg font-bold transition flex justify-center items-center gap-2 text-sm"><span>🔄</span> Yeniden Analiz Et (Zorla)</button>
+                    <button id="download-pdf-btn" onclick="downloadPDF()" class="flex-1 bg-purple-600 hover:bg-purple-700 border border-purple-500 text-white py-2 rounded-lg font-bold transition flex justify-center items-center gap-2 text-sm"><span>📄</span> Raporu PDF İndir</button>
+                </div>
+            </div>
+
+            <div class="col-span-12 lg:col-span-4 glass-panel rounded-2xl p-6 border border-slate-700 shadow-xl h-fit sticky top-6" id="simulator-box">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-purple-400 font-bold text-sm tracking-widest uppercase">🎛️ Gelecek Simülatörü</h3>
+                    <span class="text-[9px] bg-slate-800 text-slate-400 px-2 py-1 rounded">Canlı</span>
+                </div>
+                <div class="space-y-5 mb-8">
+                    <div><div class="flex justify-between text-xs text-slate-400 mb-2"><span>İşsizlik Oranı Değişimi</span><span id="val-unemployment" class="text-white font-bold">% 0</span></div><input type="range" id="sim-unemployment" min="-10" max="10" value="0" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500" oninput="runSimulation()"></div>
+                    <div><div class="flex justify-between text-xs text-slate-400 mb-2"><span>Yabancı Nüfus Değişimi</span><span id="val-foreign" class="text-white font-bold">% 0</span></div><input type="range" id="sim-foreign" min="-10" max="10" value="0" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500" oninput="runSimulation()"></div>
+                    <div><div class="flex justify-between text-xs text-slate-400 mb-2"><span>Üniversite Mezunu Artışı</span><span id="val-uni" class="text-white font-bold">% 0</span></div><input type="range" id="sim-uni" min="-5" max="15" value="0" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500" oninput="runSimulation()"></div>
+                </div>
+                <div class="space-y-3 bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                    <div><div class="flex justify-between text-xs font-bold mb-1"><span class="text-orange-400">İktidar / Muhafazakar</span><span id="vote-a" class="text-orange-400">% 45.0</span></div><div class="w-full bg-slate-800 rounded-full h-2"><div id="bar-a" class="bg-orange-500 h-2 rounded-full transition-all duration-300" style="width: 45%"></div></div></div>
+                    <div><div class="flex justify-between text-xs font-bold mb-1"><span class="text-red-500">Ana Muhalefet</span><span id="vote-b" class="text-red-500">% 30.0</span></div><div class="w-full bg-slate-800 rounded-full h-2"><div id="bar-b" class="bg-red-500 h-2 rounded-full transition-all duration-300" style="width: 30%"></div></div></div>
+                    <div><div class="flex justify-between text-xs font-bold mb-1"><span class="text-blue-400">Tepki / Milliyetçi</span><span id="vote-c" class="text-blue-400">% 15.0</span></div><div class="w-full bg-slate-800 rounded-full h-2"><div id="bar-c" class="bg-blue-500 h-2 rounded-full transition-all duration-300" style="width: 15%"></div></div></div>
+                    <div><div class="flex justify-between text-xs font-bold mb-1"><span class="text-gray-400">Kararsız / Diğer</span><span id="vote-d" class="text-gray-400">% 10.0</span></div><div class="w-full bg-slate-800 rounded-full h-2"><div id="bar-d" class="bg-gray-500 h-2 rounded-full transition-all duration-300" style="width: 10%"></div></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSelectedProvince = "";
+        let baseVotes = { a: 45.0, b: 30.0, c: 15.0, d: 10.0 };
+        let lastAnalyzedState = { province: "", district: "", type: "" };
+
+        async function loadDistricts(provinceName) {
+            try {
+                const res = await fetch(`/api/districts?province=${encodeURIComponent(provinceName)}`);
+                const data = await res.json();
+                const distSelect = document.getElementById('districtSelect');
+                const distContainer = document.getElementById('district-container');
+                distSelect.innerHTML = '<option value="">TÜM İL (Makro Analiz)</option>'; 
+                if(data.districts && data.districts.length > 0) {
+                    data.districts.forEach(d => { distSelect.innerHTML += `<option value="${d}">${d}</option>`; });
+                    distContainer.classList.remove('hidden'); 
+                } else {
+                    distContainer.classList.add('hidden'); 
+                }
+            } catch(e) { console.error("İlçe yükleme hatası:", e); }
+        }
+        
+        const turkeyBounds = L.latLngBounds([35.5, 25.5], [42.5, 45.0]);
+        const map = L.map('map', { center: [39.2, 35.0], zoom: 6, minZoom: 6, maxBounds: turkeyBounds, maxBoundsViscosity: 1.0 });
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { bounds: turkeyBounds }).addTo(map);
+
+        let geojsonLayer;
+        fetch('https://raw.githubusercontent.com/alpers/Turkey-Maps-GeoJSON/master/tr-cities.json')
+            .then(response => response.json())
+            .then(data => {
+                geojsonLayer = L.geoJSON(data, {
+                    style: function (feature) { return { color: '#475569', weight: 1, fillColor: '#1E293B', fillOpacity: 0.6 }; },
+                    onEachFeature: function (feature, layer) {
+                        layer.bindTooltip(feature.properties.name, { permanent: true, direction: 'center', className: 'city-label' });
+                        layer.on('mouseover', function (e) {
+                            const l = e.target; l.setStyle({ fillColor: '#3B82F6', fillOpacity: 0.8, weight: 2, color: '#fff' }); l.bringToFront();
+                        });
+                        layer.on('mouseout', function (e) { geojsonLayer.resetStyle(e.target); });
+                        layer.on('click', function (e) { triggerAnalysis(feature.properties.name); });
+                    }
+                }).addTo(map);
+            });
+
+        document.getElementById('searchInput').addEventListener('keypress', function (e) { if (e.key === 'Enter') searchRegion(); });
+        function searchRegion() { const query = document.getElementById('searchInput').value.trim().toUpperCase(); if(query) triggerAnalysis(query); }
+        function forceReAnalyze() { if(currentSelectedProvince) triggerAnalysis(currentSelectedProvince, true); }
+        function changeDistrict() { if(currentSelectedProvince) triggerAnalysis(currentSelectedProvince, false); }
+
+        function downloadPDF() {
+            if(!currentSelectedProvince) return;
+            const element = document.getElementById('export-area');
+            const opt = { margin: 0.5, filename: `AgendaOps_${currentSelectedProvince}_Raporu.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, backgroundColor: '#0B1120' }, jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' } };
+            html2pdf().set(opt).from(element).save();
+        }
+
+        // UNUTULAN BOT JS FONKSİYONU
+        async function fetchWikiPoll(event) {
+            const btn = event.currentTarget;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<div class="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-blue-400 mr-2"></div> İstihbarat Çekiliyor...';
+            btn.classList.add('pointer-events-none', 'opacity-50');
+
+            try {
+                const res = await fetch('/api/election/scrape-poll');
+                const data = await res.json();
+                
+                if(data.status === "success") {
+                    document.getElementById('poll-a').value = data.data.a;
+                    document.getElementById('poll-b').value = data.data.b;
+                    document.getElementById('poll-c').value = data.data.c;
+                    document.getElementById('poll-d').value = data.data.d;
+                    
+                    alert(`📡 CANLI VERİ YAKALANDI!\n\nAnket Firması: ${data.firma}\nTarih: ${data.tarih}\n\nRakamlar kutulara otomatik dolduruldu. Şimdi 'Çapraz Analizi Başlat' butonuna basabilirsiniz.`);
+                } else {
+                    alert("⚠️ İstihbarat Hatası: " + data.message);
+                }
+            } catch(e) {
+                alert("⚠️ Wikipedia bağlantısı kurulamadı!");
+            }
+            
+            btn.innerHTML = originalText;
+            btn.classList.remove('pointer-events-none', 'opacity-50');
+        }
+
+        function resetSimulation() {
+            document.getElementById('sim-unemployment').value = 0; document.getElementById('sim-foreign').value = 0; document.getElementById('sim-uni').value = 0;
+            runSimulation();
+        }
+
+        function runSimulation() {
+            const unemp = parseFloat(document.getElementById('sim-unemployment').value);
+            const foreign = parseFloat(document.getElementById('sim-foreign').value);
+            const uni = parseFloat(document.getElementById('sim-uni').value);
+
+            document.getElementById('val-unemployment').innerText = (unemp > 0 ? "+" : "") + unemp + " Puan";
+            document.getElementById('val-foreign').innerText = (foreign > 0 ? "+" : "") + foreign + " Puan";
+            document.getElementById('val-uni').innerText = (uni > 0 ? "+" : "") + uni + " Puan";
+
+            let newA = baseVotes.a - (unemp * 0.8) - (foreign * 1.2) - (uni * 0.3);
+            let newB = baseVotes.b + (unemp * 0.2) + (uni * 1.5);
+            let newC = baseVotes.c + (foreign * 1.0) + (unemp * 0.4);
+            let newD = baseVotes.d + (unemp * 0.2) + (foreign * 0.2) - (uni * 0.2);
+
+            newA = Math.max(0, newA); newB = Math.max(0, newB); newC = Math.max(0, newC); newD = Math.max(0, newD);
+            const total = newA + newB + newC + newD;
+            newA = (newA / total) * 100; newB = (newB / total) * 100; newC = (newC / total) * 100; newD = (newD / total) * 100;
+
+            document.getElementById('vote-a').innerText = "% " + newA.toFixed(1); document.getElementById('bar-a').style.width = newA + "%";
+            document.getElementById('vote-b').innerText = "% " + newB.toFixed(1); document.getElementById('bar-b').style.width = newB + "%";
+            document.getElementById('vote-c').innerText = "% " + newC.toFixed(1); document.getElementById('bar-c').style.width = newC + "%";
+            document.getElementById('vote-d').innerText = "% " + newD.toFixed(1); document.getElementById('bar-d').style.width = newD + "%";
+        }
+
+        function resetUITheme() {
+            const exportArea = document.getElementById('export-area');
+            const titleIcon = document.getElementById('title-icon');
+            const titleText = document.getElementById('currentRegionTitle');
+            const spinner = document.getElementById('spinner-icon');
+            
+            exportArea.classList.remove('border-red-500', 'bg-red-900/10');
+            exportArea.classList.add('border-slate-700', 'bg-[#0B1120]');
+            titleIcon.innerText = "🤖";
+            titleText.classList.remove('text-red-400');
+            titleText.classList.add('text-purple-400');
+            spinner.classList.remove('border-red-500');
+            spinner.classList.add('border-purple-500');
+        }
+
+        async function triggerPollRadar() {
+            if (!currentSelectedProvince) { alert("Lütfen önce haritadan bir il seçin!"); return; }
+            
+            const pa = parseFloat(document.getElementById('poll-a').value) || 0;
+            const pb = parseFloat(document.getElementById('poll-b').value) || 0;
+            const pc = parseFloat(document.getElementById('poll-c').value) || 0;
+            const pd = parseFloat(document.getElementById('poll-d').value) || 0;
+
+            if(pa+pb+pc+pd === 0) { alert("Lütfen en az bir anket verisi girin."); return; }
+
+            const districtElement = document.getElementById('districtSelect');
+            const districtName = districtElement && !districtElement.parentElement.classList.contains('hidden') ? districtElement.value : "";
+            
+            document.getElementById('intelligence-center').style.display = 'grid';
+            document.getElementById('ai-content').classList.add('hidden');
+            document.getElementById('simulator-box').classList.add('hidden'); 
+            
+            const exportArea = document.getElementById('export-area');
+            exportArea.classList.remove('border-slate-700', 'bg-[#0B1120]');
+            exportArea.classList.add('border-red-500', 'bg-red-900/10'); 
+
+            document.getElementById('title-icon').innerText = "🚨";
+            const titleText = document.getElementById('currentRegionTitle');
+            titleText.classList.remove('text-purple-400');
+            titleText.classList.add('text-red-400');
+            titleText.innerText = districtName ? `${currentSelectedProvince.toUpperCase()} / ${districtName} - KRİZ RAPORU` : `${currentSelectedProvince.toUpperCase()} - KRİZ RAPORU`;
+
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            loadingIndicator.classList.remove('hidden');
+            document.getElementById('spinner-icon').classList.remove('border-purple-500');
+            document.getElementById('spinner-icon').classList.add('border-red-500');
+            document.getElementById('loading-text').innerText = "Anket ve YSK verileri çaprazlanıyor, kriz senaryosu yazılıyor...";
+
+            try {
+                const payload = { province: currentSelectedProvince, district: districtName, party_a: pa, party_b: pb, party_c: pc, party_d: pd };
+                const response = await fetch('/api/election/poll-radar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+
+                loadingIndicator.classList.add('hidden');
+                document.getElementById('ai-content').classList.remove('hidden');
+
+                if(data.analysis) {
+                     document.getElementById('ai-content').innerHTML = data.analysis.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white block mt-3 mb-1 text-red-400">$1</strong>').replace(/\n/g, '<br/>');
+                }
+            } catch (error) {
+                loadingIndicator.classList.add('hidden');
+                document.getElementById('ai-content').classList.remove('hidden');
+                document.getElementById('ai-content').innerHTML = `<span class="text-red-400">Alarm Sistemi Hatası!</span>`;
+            }
+        }
+
+        async function triggerAnalysis(provinceName, forceRefresh = false) {
+            if (currentSelectedProvince !== provinceName) await loadDistricts(provinceName);
+            currentSelectedProvince = provinceName;
+            
+            const electionType = document.getElementById('electionTypeSelect').value;
+            const districtElement = document.getElementById('districtSelect');
+            const districtName = districtElement && !districtElement.parentElement.classList.contains('hidden') ? districtElement.value : "";
+            
+            // Eğer daha önce analiz edilmiş olan yer ve tür tamamen aynıysa ve forceRefresh kapalıysa hiçbir şey yapma (gereksiz yüklemeyi engelle)
+            if (!forceRefresh && lastAnalyzedState.province === provinceName && lastAnalyzedState.district === districtName && lastAnalyzedState.type === electionType) {
+                return;
+            }
+            
+            resetUITheme(); 
+            
+            document.getElementById('currentRegionTitle').innerText = districtName ? `${provinceName.toUpperCase()} / ${districtName}` : provinceName.toUpperCase();
+            
+            document.getElementById('intelligence-center').style.display = 'grid';
+            document.getElementById('simulator-box').classList.remove('hidden'); 
+            document.getElementById('ai-content').classList.add('hidden');
+            if(document.getElementById('ai-status')) document.getElementById('ai-status').classList.add('hidden');
+            
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            loadingIndicator.classList.remove('hidden');
+            document.getElementById('loading-text').innerText = "Makro Analiz: TÜİK ve YSK verileri taranıyor...";
+
+            try {
+                const url = `/api/election/analyze?province=${encodeURIComponent(provinceName)}&election_type=${electionType}&force_refresh=${forceRefresh}&district=${encodeURIComponent(districtName)}`;
+                const response = await fetch(url, { method: 'POST' });
+                const data = await response.json();
+
+                loadingIndicator.classList.add('hidden');
+                document.getElementById('ai-content').classList.remove('hidden');
+                
+                if(data.base_votes) { baseVotes = data.base_votes; } 
+                else { baseVotes = { a: 40.0, b: 35.0, c: 15.0, d: 10.0 }; }
+                resetSimulation();
+
+                if (data.status === "cached" && !forceRefresh && document.getElementById('ai-status')) {
+                    document.getElementById('ai-status').classList.remove('hidden');
+                }
+
+                if(data.analysis) {
+                     document.getElementById('ai-content').innerHTML = data.analysis.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white block mt-3 mb-1 text-purple-400">$1</strong>').replace(/\n/g, '<br/>');
+                }
+                
+                lastAnalyzedState = { province: provinceName, district: districtName, type: electionType };
+            } catch (error) {
+                loadingIndicator.classList.add('hidden');
+                document.getElementById('ai-content').classList.remove('hidden');
+                document.getElementById('ai-content').innerHTML = `<span class="text-red-400">Bağlantı hatası. API'yi kontrol edin.</span>`;
+            }
+        }
+    </script>
+</body>
+</html>

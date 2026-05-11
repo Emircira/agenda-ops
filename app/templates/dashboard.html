@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgendaOps | Yönetim Paneli</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class', theme: { extend: { colors: { dark: '#0B1120', panel: '#1E293B', primary: '#3B82F6', ai: '#8B5CF6', danger: '#EF4444', success: '#10B981', warning: '#F59E0B' } } } };
+        mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
+    </script>
+    <style>
+        .radar-scan { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(180deg, rgba(59, 130, 246, 0) 0%, rgba(59, 130, 246, 0.05) 50%, rgba(59, 130, 246, 0) 100%); animation: scan 6s linear infinite; pointer-events: none; z-index: 0; }
+        @keyframes scan { 0% { transform: translateY(-100%); } 100% { transform: translateY(100%); } }
+        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #0F172A; } ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        .toast-enter { animation: slideIn 0.3s ease-out forwards; } @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .view-section { display: none; min-height: 100%; } .view-section.active { display: flex; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.1); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(59, 130, 246, 0.5); border-radius: 10px; }
+        
+        /* PREMIUM AI ENHANCEMENTS */
+        .mermaid-block { position: relative; overflow: hidden; }
+        .mermaid-block svg { max-width: 100% !important; height: auto !important; }
+        .glass-card { background: rgba(30, 41, 59, 0.4); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .ai-gradient-text { background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .report-section-header { border-left: 4px solid #8B5CF6; padding-left: 1rem; margin-top: 1.5rem; margin-bottom: 0.5rem; font-weight: bold; color: white; }
+    </style>
+</head>
+<body class="bg-dark text-slate-300 font-sans antialiased overflow-hidden h-screen flex relative">
+
+    <div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none"></div>
+
+    <aside class="w-64 bg-panel border-r border-slate-800 flex flex-col justify-between hidden md:flex z-10 relative shadow-2xl">
+        <div>
+            <div class="h-16 flex items-center px-6 border-b border-slate-800 bg-slate-900/50">
+                <div class="w-3 h-3 rounded-full bg-primary shadow-[0_0_8px_rgba(59,130,246,0.8)] animate-pulse mr-3"></div>
+                <h1 class="text-white font-bold text-xl tracking-wider">AGENDA<span class="text-primary">OPS</span></h1>
+            </div>
+            <nav class="p-4 space-y-2 overflow-y-auto max-h-[calc(100vh-140px)]">
+                <button onclick="window.AgendaOps.switchTab('dashboard', 'Genel Durum Özeti')" id="nav-dashboard" class="w-full flex items-center gap-3 bg-primary/10 text-primary px-4 py-3 rounded-lg font-medium border border-primary/20 transition-all nav-btn"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012-2h-2a2 2 0 01-2-2z"></path></svg> Ana Sayfa</button>
+                
+                <a href="/secim" class="w-full flex items-center gap-3 text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-3 rounded-lg font-medium transition-colors">
+                    <svg class="w-5 h-5 text-ai" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg> 
+                    Seçim ve Demografi Analizi
+                    <span class="ml-auto bg-ai/20 text-ai text-[10px] px-2 py-0.5 rounded font-bold">YENİ</span>
+                </a>
+
+                <button onclick="window.AgendaOps.switchTab('newsradar', 'Medya Radarı')" id="nav-newsradar" class="w-full flex items-center gap-3 text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-3 rounded-lg font-medium transition-colors nav-btn"><svg class="w-5 h-5 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg> Medya Radarı</button>
+                <button onclick="window.AgendaOps.switchTab('polls', 'Seçim Anket Merkezi')" id="nav-polls" class="w-full flex items-center gap-3 text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-3 rounded-lg font-medium transition-colors nav-btn"><svg class="w-5 h-5 text-ai" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012-2h-2a2 2 0 01-2-2z"></path></svg> Anket Merkezi</button>
+                <button onclick="window.AgendaOps.switchTab('twitter', 'X (Twitter) Veri Akışı')" id="nav-twitter" class="w-full flex items-center gap-3 text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-3 rounded-lg font-medium transition-colors nav-btn border-t border-slate-700 mt-2 pt-2"><svg class="w-5 h-5 text-[#1DA1F2]" fill="currentColor" viewBox="0 0 24 24"><path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/></svg> X (Twitter) Verileri</button>
+                <button onclick="window.AgendaOps.switchTab('youtube', 'YouTube Toplum Radarı')" id="nav-youtube" class="w-full flex items-center gap-3 text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-3 rounded-lg font-medium transition-colors nav-btn"><svg class="w-5 h-5 text-[#FF0000]" fill="currentColor" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg> YouTube Verileri</button>
+                <button onclick="window.AgendaOps.switchTab('rss', 'RSS Medya Taraması')" id="nav-rss" class="w-full flex items-center gap-3 text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-3 rounded-lg font-medium transition-colors nav-btn"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg> RSS Haberleri</button>
+                
+                <button onclick="window.AgendaOps.switchTab('deepresearch', 'Derin Araştırma Harekâtı')" id="nav-deepresearch" class="w-full flex items-center gap-3 text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-3 rounded-lg font-medium transition-colors nav-btn border border-primary/20 bg-primary/5 mt-4">
+                    <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg> 
+                    Derin Araştırma
+                </button>
+
+                <button onclick="window.AgendaOps.switchTab('complaints', 'Şikayet ve Zafiyet Radarı')" id="nav-complaints" class="w-full flex items-center gap-3 text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-3 rounded-lg font-medium transition-colors nav-btn">
+                    <svg class="w-5 h-5 text-danger" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path></svg> 
+                    Şikayet Radarı<span class="ml-auto bg-danger/20 text-danger text-[10px] px-2 py-0.5 rounded font-bold">YENİ</span>
+                </button>
+
+                <button onclick="window.AgendaOps.openDigitalFootprintReport()" class="w-full flex items-center gap-3 text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-3 rounded-lg font-medium transition-colors border-t border-slate-700 mt-2 pt-2">
+                    <svg class="w-5 h-5 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg> 
+                    Digital Footprint Raporu
+                </button>
+
+                <button onclick="window.AgendaOps.switchTab('targets', 'Kaynak ve Hedef Yönetimi')" id="nav-targets" class="w-full flex items-center gap-3 text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-3 rounded-lg font-medium transition-colors nav-btn mt-2 border-t border-slate-700 pt-2">
+                    <svg class="w-5 h-5 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg> 
+                    Kaynak / Hedef Ekle
+                </button>
+
+                <button onclick="window.AgendaOps.switchTab('systemstatus', 'Sistem ve Veri Akış Durumu')" id="nav-systemstatus" class="w-full flex items-center gap-3 text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-3 rounded-lg font-medium transition-colors nav-btn border-t border-slate-700 mt-2 pt-2">
+                    <svg class="w-5 h-5 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> 
+                    Sistem Durumu
+                </button>
+
+            </nav>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col overflow-hidden relative">
+        <div class="radar-scan"></div>
+        
+        <header class="h-16 bg-panel/90 backdrop-blur border-b border-slate-800 flex items-center justify-between px-6 z-10 shadow-sm shrink-0">
+            <h2 id="header-title" class="text-lg font-medium text-white flex items-center gap-2">Genel Durum Özeti</h2>
+            <button onclick="window.AgendaOps.openGeneralAiReport()" class="bg-ai hover:bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shadow-[0_0_15px_rgba(139,92,246,0.2)]">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg> Genel Sistem Raporu Al
+            </button>
+        </header>
+
+        <div id="view-dashboard" class="view-section active flex-1 flex flex-col w-full overflow-y-auto p-6 z-10 relative scroll-smooth bg-dark min-h-0">
+            <div class="radar-scan opacity-30"></div>
+            
+            <!-- OPPORTUNITY CARDS -->
+            <div id="opportunity-section" class="mb-8 relative z-10">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                        <svg class="w-5 h-5 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        Sıcak Fırsat Kartları (AI Öncelikli)
+                    </h3>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                    {% for opp in opportunities %}
+                    <div class="bg-gradient-to-br from-[#1E293B] to-[#0F172A] border border-slate-700/50 p-5 rounded-2xl hover:border-warning/50 transition-all group relative overflow-hidden shadow-xl">
+                        <!-- Glass Effect Overlay -->
+                        <div class="absolute inset-0 bg-warning/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        
+                        <!-- Header: Topic & Score -->
+                        <div class="flex justify-between items-start mb-2 relative z-10">
+                            <div>
+                                <span class="text-[10px] font-bold text-warning uppercase tracking-widest mb-1 block">{{ opp.frame }}</span>
+                                <h4 class="text-white font-extrabold text-sm leading-tight group-hover:text-warning transition-colors line-clamp-1">{{ opp.topic }}</h4>
+                            </div>
+                            <div class="flex flex-col items-end">
+                                <div class="text-xl font-black text-white leading-none">{{ opp.score }}</div>
+                            </div>
+                        </div>
+
+                        <!-- AI Insight (Summary) -->
+                        <div class="mb-4 relative z-10">
+                            <p class="text-[10px] text-slate-400 italic line-clamp-2 leading-relaxed">
+                                <span class="text-primary/80 font-bold not-italic">AI Analizi:</span> 
+                                {{ opp.rationale.insight if opp.rationale else 'Stratejik özet hazırlanıyor...' }}
+                            </p>
+                        </div>
+
+                        <!-- Mini Stats / Progress Bar -->
+                        <div class="space-y-3 mb-4 relative z-10">
+                            <div class="w-full bg-dark/50 rounded-full h-1.5 overflow-hidden border border-slate-800">
+                                <div class="bg-gradient-to-r from-warning to-orange-500 h-full rounded-full shadow-[0_0_10px_rgba(245,158,11,0.5)]" style="width: {{ opp.score }}%"></div>
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-2 text-[10px]">
+                                <div class="bg-dark/40 p-2 rounded-lg border border-slate-800/50">
+                                    <span class="text-slate-500 block mb-1">Hız (Velocity)</span>
+                                    <span class="text-slate-200 font-bold">%{{ opp.rationale.breakdown.velocity if opp.rationale else '0' }}</span>
+                                </div>
+                                <div class="bg-dark/40 p-2 rounded-lg border border-slate-800/50">
+                                    <span class="text-slate-500 block mb-1">Erişim (Reach)</span>
+                                    <span class="text-slate-200 font-bold">%{{ opp.rationale.breakdown.reach if opp.rationale else '0' }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Footer: Time & Insight -->
+                        <div class="flex items-center justify-between mt-auto pt-3 border-t border-slate-800/50 relative z-10">
+                            <div class="flex items-center gap-1.5">
+                                <div class="w-2 h-2 bg-warning rounded-full animate-pulse"></div>
+                                <span class="text-[10px] text-slate-400 font-medium">{{ opp.created_at.strftime('%H:%M') if opp.created_at else '' }}</span>
+                            </div>
+                            <span class="text-[9px] bg-warning/10 text-warning px-2 py-0.5 rounded-full font-bold border border-warning/20">CANLI VERİ</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% if not opportunities %}
+                    <div class="col-span-5 py-12 flex flex-col items-center justify-center bg-panel/30 rounded-2xl border border-dashed border-slate-700/50 text-slate-500">
+                        <div class="w-16 h-16 bg-dark/50 rounded-full flex items-center justify-center mb-4 border border-slate-800">
+                            <svg class="w-8 h-8 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        </div>
+                        <p class="text-sm font-medium">Stratejik Fırsat Verisi Bekleniyor</p>
+                        <p class="text-[10px] uppercase tracking-widest mt-1 mb-4 opacity-50">Yapay Zeka Analiz Motoru Beklemede</p>
+                        <button onclick="window.AgendaOps.triggerPipeline()" class="bg-primary/20 hover:bg-primary/40 text-primary text-xs px-4 py-2 rounded-full border border-primary/30 transition-all font-bold">🚀 ANALİZ HATTINI TETİKLE</button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 relative z-10">
+                <div class="lg:col-span-2 bg-panel p-5 rounded-xl border border-slate-800 shadow-lg flex flex-col min-h-[350px]">
+                    <h3 class="text-white font-medium flex items-center gap-2 mb-4">Platform Bazlı Hacim Analizi</h3>
+                    <div class="flex-1 relative w-full h-full min-h-[250px]"><canvas id="volumeChart"></canvas></div>
+                </div>
+        
+                <div class="bg-panel p-5 rounded-xl border border-slate-800 shadow-lg flex flex-col min-h-[350px]">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-white font-medium flex items-center gap-2">
+                            <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            X (Twitter) Stratejik Üçlü Analiz
+                        </h3>
+                        <button id="btnTripleAnalysis" onclick="window.AgendaOps.runTripleAnalysis(this)" class="text-[10px] bg-primary/20 text-primary px-3 py-1.5 rounded uppercase font-bold transition-colors hover:bg-primary/30 border border-primary/30">🧠 Karşılaştır</button>
+                    </div>
+                    
+                    <div id="triple-analysis-loader" class="hidden flex flex-col items-center justify-center py-12 text-primary">
+                        <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-primary mb-4"></div>
+                        <p class="animate-pulse text-xs font-bold uppercase tracking-widest">Kendi vs Rakip vs Gündem Analiz Ediliyor...</p>
+                    </div>
+
+                    <div id="triple-analysis-result" class="flex-1 overflow-y-auto text-xs text-slate-400 leading-relaxed space-y-4 pr-2 custom-scrollbar">
+                        <p class="text-center py-12 opacity-50 italic">Üçlü analiz raporunu başlatmak için "Karşılaştır" butonuna basınız.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OSINT INTELLIGENCE HUB -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6 relative z-10">
+                <div class="bg-panel p-5 rounded-xl border border-slate-800 shadow-lg flex flex-col items-center justify-center text-center group hover:border-primary/50 transition-all">
+                    <p class="text-xs text-slate-500 font-bold uppercase mb-2">Genel Duygu</p>
+                    <div class="relative w-24 h-24 mb-2">
+                        <svg class="w-full h-full" viewBox="0 0 36 36">
+                            <path class="stroke-slate-800" stroke-width="3" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            <path id="osint-sentiment-path" class="stroke-primary" stroke-width="3" stroke-dasharray="0, 100" stroke-linecap="round" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        </svg>
+                        <div class="absolute inset-0 flex items-center justify-center"><span id="osint-sentiment-val" class="text-xl font-bold text-white">0%</span></div>
+                    </div>
+                    <p class="text-[10px] text-slate-400">Toplumsal Pozitiflik Oranı</p>
+                </div>
+                <div class="bg-panel p-5 rounded-xl border border-slate-800 shadow-lg flex flex-col items-center justify-center text-center group hover:border-danger/50 transition-all">
+                    <p class="text-xs text-slate-500 font-bold uppercase mb-2">Manipülasyon Riski</p>
+                    <div class="relative w-24 h-24 mb-2">
+                        <svg class="w-full h-full" viewBox="0 0 36 36">
+                            <path class="stroke-slate-800" stroke-width="3" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            <path id="osint-manipulation-path" class="stroke-danger" stroke-width="3" stroke-dasharray="0, 100" stroke-linecap="round" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        </svg>
+                        <div class="absolute inset-0 flex items-center justify-center"><span id="osint-manipulation-val" class="text-xl font-bold text-white">0%</span></div>
+                    </div>
+                    <p class="text-[10px] text-slate-400">Algı Operasyonu Olasılığı</p>
+                </div>
+                <div class="bg-panel p-5 rounded-xl border border-slate-800 shadow-lg flex flex-col items-center justify-center text-center group hover:border-warning/50 transition-all">
+                    <p class="text-xs text-slate-500 font-bold uppercase mb-2">Bot / Troll Yoğunluğu</p>
+                    <div class="relative w-24 h-24 mb-2">
+                        <svg class="w-full h-full" viewBox="0 0 36 36">
+                            <path class="stroke-slate-800" stroke-width="3" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            <path id="osint-bot-path" class="stroke-warning" stroke-width="3" stroke-dasharray="0, 100" stroke-linecap="round" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        </svg>
+                        <div class="absolute inset-0 flex items-center justify-center"><span id="osint-bot-val" class="text-xl font-bold text-white">0%</span></div>
+                    </div>
+                    <p class="text-[10px] text-slate-400">Koordineli Sahte Aktivite</p>
+                </div>
+                <div class="bg-panel p-5 rounded-xl border border-slate-800 shadow-lg flex flex-col items-center justify-center text-center group hover:border-ai/50 transition-all">
+                    <p class="text-xs text-slate-500 font-bold uppercase mb-2">İroni / Sarkazm</p>
+                    <div class="relative w-24 h-24 mb-2">
+                        <svg class="w-full h-full" viewBox="0 0 36 36">
+                            <path class="stroke-slate-800" stroke-width="3" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            <path id="osint-sarcasm-path" class="stroke-ai" stroke-width="3" stroke-dasharray="0, 100" stroke-linecap="round" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        </svg>
+                        <div class="absolute inset-0 flex items-center justify-center"><span id="osint-sarcasm-val" class="text-xl font-bold text-white">0%</span></div>
+                    </div>
+                    <p class="text-[10px] text-slate-400">Gizli Tepki ve Alay Oranı</p>
+                </div>
+            </div>
+
+            <div class="bg-panel p-6 rounded-xl border border-slate-800 shadow-lg mt-2 relative z-10">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-lg font-bold text-white flex items-center gap-2">Demografik ve İdeolojik Söylem Haritası</h3>
+                    <button id="btnDemoAnalysis" onclick="window.AgendaOps.runDemographicAnalysis(this)" class="bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">🧠 Toplumsal Söylemi Analiz Et</button>
+                </div>
+                <div id="demo-loader" class="hidden flex flex-col items-center justify-center py-10 text-primary"><div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-primary mb-3"></div><p class="animate-pulse text-sm">Veriler analiz ediliyor...</p></div>
+                <div id="demo-results" class="grid grid-cols-1 md:grid-cols-3 gap-6 hidden">
+                    <div class="bg-dark/50 border border-slate-700 p-5 rounded-xl border-t-4 border-t-orange-500"><h4 class="text-orange-500 font-bold mb-2">Seküler / Laik Taban</h4><p class="text-xs text-slate-500 mb-3 uppercase tracking-wider">Baskın Duygu: <span id="demo-sec-emotion" class="text-white font-medium capitalize"></span></p><p id="demo-sec-summary" class="text-sm text-slate-300 leading-relaxed"></p></div>
+                    <div class="bg-dark/50 border border-slate-700 p-5 rounded-xl border-t-4 border-t-emerald-500"><h4 class="text-emerald-500 font-bold mb-2">Muhafazakar Taban</h4><p class="text-xs text-slate-500 mb-3 uppercase tracking-wider">Baskın Duygu: <span id="demo-con-emotion" class="text-white font-medium capitalize"></span></p><p id="demo-con-summary" class="text-sm text-slate-300 leading-relaxed"></p></div>
+                    <div class="bg-dark/50 border border-slate-700 p-5 rounded-xl border-t-4 border-t-purple-500"><h4 class="text-purple-500 font-bold mb-2">Z Kuşağı / Genç Seçmen</h4><p class="text-xs text-slate-500 mb-3 uppercase tracking-wider">Baskın Duygu: <span id="demo-genz-emotion" class="text-white font-medium capitalize"></span></p><p id="demo-genz-summary" class="text-sm text-slate-300 leading-relaxed"></p></div>
+                </div>
+            </div>
+
+            <div class="mt-6 mb-12 relative z-10">
+                <div class="flex justify-between items-end mb-4">
+                    <div class="flex items-center gap-3">
+                        <span class="text-2xl">⚡</span>
+                        <h2 class="text-xl font-bold text-white tracking-widest">SİSTEM GÜNDEM ÖZETİ</h2>
+                        <span id="cache-badge" class="bg-blue-500/20 text-blue-400 text-[10px] px-2 py-1 rounded border border-blue-500/50 font-bold uppercase">SaaS AI Engine</span>
+                    </div>
+                    <button onclick="window.AgendaOps.loadHotTopics(true)" class="bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors">🔄 Yeni Analiz Yap</button>
+                </div>
+                <div id="hot-topics-container" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="col-span-3 py-12 flex flex-col items-center justify-center bg-panel/30 rounded-2xl border border-dashed border-slate-700/50 text-slate-500">
+                        <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary mb-3"></div>
+                        <p class="text-sm font-medium">Stratejik Veri Akışı Bekleniyor...</p>
+                    </div>
+                </div>
+                
+                <div id="hot-topics-schematic" class="hidden mt-6 bg-panel p-6 rounded-2xl border border-slate-700 shadow-xl overflow-hidden relative">
+                    <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-ai to-primary"></div>
+                    <h4 class="text-white font-bold text-sm mb-4 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-ai" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        Gündem Strateji Şeması (AI Üretimi)
+                    </h4>
+                    <div id="mermaid-container" class="flex justify-center bg-dark/30 p-4 rounded-xl min-h-[200px]"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- OTHER MODULAR VIEWS -->
+        {% include 'components/news_radar.html' %}
+        {% include 'components/polls.html' %}
+        {% include 'components/twitter.html' %}
+        {% include 'components/youtube.html' %}
+        {% include 'components/rss.html' %}
+        {% include 'components/complaints.html' %}
+        {% include 'components/deep_research.html' %}
+        {% include 'components/targets.html' %}
+        {% include 'components/system_status.html' %}
+
+        <div id="aiModal" class="fixed inset-0 bg-dark/95 backdrop-blur-md z-[60] hidden flex items-center justify-center p-4 transition-opacity duration-300 opacity-0">
+            <div class="bg-panel border border-slate-700 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col transform transition-transform duration-300 scale-95" id="aiModalContent">
+                <div class="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/50 rounded-t-2xl">
+                    <h3 class="text-lg font-bold text-white">Genel Sistem Raporu</h3>
+                    <div class="flex gap-4 items-center">
+                        <button onclick="window.AgendaOps.downloadPDF('aiModalContent', 'Sistem_Genel_Raporu')" class="bg-ai/20 hover:bg-ai/30 text-ai border border-ai/30 px-3 py-1.5 rounded text-xs font-bold transition-colors">📄 PDF İndir</button>
+                        <button onclick="document.getElementById('aiModal').classList.add('hidden')" class="text-slate-400 hover:text-white p-1">X</button>
+                    </div>
+                </div>
+                <div class="p-8 overflow-y-auto text-slate-300 text-sm leading-relaxed">
+                    <div id="aiLoader" class="flex flex-col items-center justify-center py-20 text-ai"><div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-ai mb-4"></div><p class="animate-pulse">Analiz ediliyor...</p></div>
+                    <div id="aiReportText" class="hidden"></div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        const pollDataFromServer = {{ poll_json | safe }};
+    </script>
+
+    <script>
+        class DashboardController {
+            constructor() {
+                this.chartInstance = null;
+                this.pollChartInstance = null;
+                this.sentimentChartInstance = null;
+                
+                try {
+                    this.initChart();
+                    
+                    const savedTab = localStorage.getItem('activeTab') || 'dashboard';
+                    const savedTitle = localStorage.getItem('activeTabTitle') || 'Genel Durum Özeti';
+                    this.switchTab(savedTab, savedTitle);
+                    
+                    this.loadHotTopics();
+                    this.loadOsintIntelligence();
+                    this.restoreStates();
+                } catch (e) {
+                    console.error("Dashboard constructor error:", e);
+                }
+            }
+
+            async loadOsintIntelligence() {
+                try {
+                    const response = await fetch('/api/osint/intelligence');
+                    const data = await response.json();
+                    if(data.success) {
+                        this.updateGauge('sentiment', data.sentiment);
+                        this.updateGauge('manipulation', data.manipulation);
+                        this.updateGauge('bot', data.bot_likelihood);
+                        this.updateGauge('sarcasm', data.sarcasm_rate);
+                    }
+                } catch(e) { console.error("OSINT load error:", e); }
+            }
+
+            updateGauge(id, val) {
+                const path = document.getElementById(`osint-${id}-path`);
+                const text = document.getElementById(`osint-${id}-val`);
+                if(path && text) {
+                    path.setAttribute('stroke-dasharray', `${val}, 100`);
+                    text.innerText = `${val}%`;
+                }
+            }
+
+            async loadEntityGraph() {
+                const container = document.getElementById('entity-graph-container');
+                container.innerHTML = '<div class="text-slate-500 animate-pulse italic">Varlık ağ haritası yükleniyor...</div>';
+                try {
+                    const response = await fetch('/api/osint/entity-graph');
+                    const data = await response.json();
+                    if(data.success) {
+                        const mId = 'entity-mermaid-' + Math.random().toString(36).substr(2, 9);
+                        container.innerHTML = `<div class="mermaid w-full flex justify-center" id="${mId}">${data.mermaid}</div>`;
+                        setTimeout(() => {
+                            mermaid.init(undefined, document.querySelectorAll(".mermaid"));
+                        }, 100);
+                    }
+                } catch(e) { container.innerHTML = "Graf yüklenemedi."; }
+            }
+
+            async openDigitalFootprintReport() {
+                const modal = document.getElementById('aiModal');
+                const loader = document.getElementById('aiLoader');
+                const reportText = document.getElementById('aiReportText');
+                const title = modal.querySelector('h3');
+                
+                title.innerText = "Dijital Ayak İzi ve Varlık İstihbarat Raporu";
+                modal.classList.remove('hidden');
+                setTimeout(() => {
+                    modal.classList.add('opacity-100');
+                    modal.querySelector('#aiModalContent').classList.add('scale-100');
+                }, 10);
+                
+                loader.classList.remove('hidden');
+                reportText.classList.add('hidden');
+                
+                try {
+                    const [intelRes, graphRes] = await Promise.all([
+                        fetch('/api/osint/intelligence'),
+                        fetch('/api/osint/entity-graph')
+                    ]);
+                    
+                    const intel = await intelRes.json();
+                    const graph = await graphRes.json();
+                    
+                    // Fallback values if API returns null/undefined or failed
+                    const s = (intel && intel.sentiment !== undefined) ? intel.sentiment : 0;
+                    const m = (intel && intel.manipulation !== undefined) ? intel.manipulation : 0;
+                    const b = (intel && intel.bot_likelihood !== undefined) ? intel.bot_likelihood : 0;
+                    const sr = (intel && intel.sarcasm_rate !== undefined) ? intel.sarcasm_rate : 0;
+                    const total = (intel && intel.total_analyzed !== undefined) ? intel.total_analyzed : 0;
+                    const mermaidText = (graph && graph.mermaid) ? this.cleanMermaid(graph.mermaid) : "graph TD\n  A[Veri] --> B[Yok]";
+                    
+                    let html = `
+                        <div class="space-y-6">
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div class="bg-dark/50 p-4 rounded-xl border border-slate-700">
+                                    <p class="text-[10px] text-slate-500 uppercase font-bold mb-1">Duygu Skoru</p>
+                                    <p class="text-xl font-bold text-primary">${s}%</p>
+                                </div>
+                                <div class="bg-dark/50 p-4 rounded-xl border border-slate-700">
+                                    <p class="text-[10px] text-slate-500 uppercase font-bold mb-1">Manipülasyon</p>
+                                    <p class="text-xl font-bold text-danger">${m}%</p>
+                                </div>
+                                <div class="bg-dark/50 p-4 rounded-xl border border-slate-700">
+                                    <p class="text-[10px] text-slate-500 uppercase font-bold mb-1">Bot Oranı</p>
+                                    <p class="text-xl font-bold text-warning">${b}%</p>
+                                </div>
+                                <div class="bg-dark/50 p-4 rounded-xl border border-slate-700">
+                                    <p class="text-[10px] text-slate-500 uppercase font-bold mb-1">İroni/Sarkazm</p>
+                                    <p class="text-xl font-bold text-ai">${sr}%</p>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-dark/50 p-6 rounded-xl border border-slate-700 shadow-inner">
+                                <h4 class="text-white font-bold mb-4 flex items-center gap-2">
+                                    <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                    Varlık Etkileşim ve Etki Ağı (Digital Footprint)
+                                </h4>
+                                <div class="mermaid-report flex justify-center bg-dark/20 p-8 rounded-lg border border-slate-800/50 min-h-[400px] items-center">
+                                    <div class="mermaid" id="report-mermaid-inner">${mermaidText}</div>
+                                </div>
+                                <p class="text-[10px] text-slate-500 mt-4 text-center italic">Yukarıdaki şema, tespit edilen varlıklar (kişiler, kurumlar, olaylar) arasındaki dijital temas noktalarını ve etki gücünü temsil eder.</p>
+                            </div>
+                            
+                            <div class="bg-ai/10 p-6 rounded-xl border border-ai/20 relative overflow-hidden">
+                                <div class="absolute top-0 right-0 p-2"><span class="text-[10px] bg-ai/20 text-ai px-2 py-0.5 rounded font-bold">AI EXECUTIVE SUMMARY</span></div>
+                                <h4 class="text-ai font-bold mb-3">Stratejik İstihbarat Analizi</h4>
+                                <p class="text-sm leading-relaxed text-slate-300">
+                                    Karargah tarafından analiz edilen <strong>${total}</strong> içerik üzerinde yapılan derinlemesine incelemede; 
+                                    ${b > 30 ? '<span class="text-warning">yüksek oranda koordineli bot faaliyeti</span>' : '<span class="text-success">doğal bir kullanıcı etkileşimi</span>'} gözlemlenmiştir. 
+                                    Sistem, ${m > 40 ? '<span class="text-danger font-bold">algı operasyonu riskini KRİTİK</span>' : '<span class="text-slate-400">medya akışını stabil</span>'} olarak etiketlemiştir. 
+                                    Varlıklar arasındaki ilişki yoğunluğu, gündemin tek bir merkezden provoke edilip edilmediğini doğrulamak için sürekli izlenmektedir.
+                                </p>
+                            </div>
+                        </div>
+                    `;
+                    
+                    reportText.innerHTML = html;
+                    loader.classList.add('hidden');
+                    reportText.classList.remove('hidden');
+                    
+                    setTimeout(async () => {
+                        try {
+                            if (window.mermaid) {
+                                const element = document.getElementById('report-mermaid-inner');
+                                if (element) {
+                                    if (typeof mermaid.run === 'function') {
+                                        await mermaid.run({ nodes: [element] });
+                                    } else {
+                                        mermaid.init(undefined, element);
+                                    }
+                                }
+                            }
+                        } catch (e) { console.error("Report mermaid error:", e); }
+                    }, 300);
+                    
+                } catch(e) {
+                    reportText.innerHTML = `<p class="text-danger">Rapor oluşturulurken hata oluştu: ${e.message}</p>`;
+                    loader.classList.add('hidden');
+                    reportText.classList.remove('hidden');
+                }
+            }
+
+            loadState(key) {
+                const saved = localStorage.getItem(`agenda_ops_state_${key}`);
+                return saved ? JSON.parse(saved) : null;
+            }
+
+            restoreStates() {
+                try {
+                    // 1. Derin Araştırma Restorasyonu
+                    const deep = this.loadState('deep_research');
+                    if (deep) {
+                        const keywordEl = document.getElementById('deepKeyword');
+                        if (keywordEl) keywordEl.value = deep.keyword || '';
+                        const msgEl = document.getElementById('deep-msg');
+                        if (msgEl) msgEl.innerText = deep.message || '';
+                        
+                        if (document.getElementById('stat-yt')) document.getElementById('stat-yt').innerText = deep.stats?.youtube || 0;
+                        if (document.getElementById('stat-rss')) document.getElementById('stat-rss').innerText = deep.stats?.rss || 0;
+                        if (document.getElementById('stat-tw')) document.getElementById('stat-tw').innerText = deep.stats?.twitter || 0;
+                        
+                        if (deep.analysis && document.getElementById('deep-analysis')) {
+                            document.getElementById('deep-analysis').innerHTML = deep.analysis
+                                .replace(/\*\*(.*?)\*\*/g, '<div class="report-section-header">$1</div>')
+                                .replace(/\n/g, '<br/>');
+                        }
+                        if (document.getElementById('deep-results')) document.getElementById('deep-results').classList.remove('hidden');
+                    }
+
+                    // 2. Haber Radarı Restorasyonu
+                    const news = this.loadState('news_radar');
+                    if (news && document.getElementById('newsKeyword')) {
+                        document.getElementById('newsKeyword').value = news.keyword || '';
+                        document.getElementById('news-results').innerHTML = news.content || '';
+                        document.getElementById('news-results').classList.remove('hidden');
+                    }
+
+                    // 3. Twitter Analizi Restorasyonu
+                    const tw = this.loadState('twitter_analysis');
+                    if (tw && document.getElementById('tw-vip')) {
+                        document.getElementById('tw-vip').innerText = tw.vip_summary || '';
+                        document.getElementById('tw-comp').innerText = tw.competitor_summary || '';
+                        document.getElementById('tw-trend').innerText = tw.trend_summary || '';
+                        document.getElementById('tw-action').innerText = tw.action_plan || '';
+                        document.getElementById('tw-results').classList.remove('hidden');
+                    }
+
+                    // 4. Toplumsal Söylem Restorasyonu
+                    const demo = this.loadState('demographic_analysis');
+                    if (demo && document.getElementById('demo-sec-emotion')) {
+                        document.getElementById('demo-sec-emotion').innerText = demo.secular?.emotion || '';
+                        document.getElementById('demo-sec-summary').innerText = demo.secular?.summary || '';
+                        document.getElementById('demo-con-emotion').innerText = demo.conservative?.emotion || '';
+                        document.getElementById('demo-con-summary').innerText = demo.conservative?.summary || '';
+                        document.getElementById('demo-genz-emotion').innerText = demo.genz?.emotion || '';
+                        document.getElementById('demo-genz-summary').innerText = demo.genz?.summary || '';
+                        document.getElementById('demo-results').classList.remove('hidden');
+                    }
+
+                    // 5. Platform Analizleri (X, YT, RSS sekmeleri)
+                    const platformMap = {
+                        'twitter': { kw: 'twKeyword', res: 'tw-analyze-result' },
+                        'youtube': { kw: 'ytKeyword', res: 'yt-analyze-result' },
+                        'rss': { kw: 'rssKeyword', res: 'rss-analyze-result' }
+                    };
+
+                    Object.keys(platformMap).forEach(p => {
+                        const ps = this.loadState(`platform_${p}`);
+                        if (ps) {
+                            const map = platformMap[p];
+                            const resDiv = document.getElementById(map.res);
+                            if (resDiv) {
+                                resDiv.innerHTML = ps.content || '';
+                                resDiv.classList.remove('hidden');
+                            }
+                            const inp = document.getElementById(map.kw);
+                            if (inp) inp.value = ps.keyword || '';
+                        }
+                    });
+
+                } catch (e) { console.error("State restore error:", e); }
+            }
+
+            switchTab(tabId, title) {
+                console.log(`Switching to tab: ${tabId}`);
+                document.querySelectorAll('.view-section').forEach(v => {
+                    v.classList.add('hidden');
+                    v.classList.remove('active');
+                });
+                
+                const targetView = document.getElementById(`view-${tabId}`);
+                if (targetView) {
+                    targetView.classList.remove('hidden');
+                    targetView.classList.add('active');
+                    
+                    const headerTitle = document.getElementById('header-title');
+                    if(headerTitle) {
+                        headerTitle.textContent = title;
+                    }
+
+                    document.querySelectorAll('.nav-btn').forEach(btn => {
+                        btn.classList.remove('bg-primary/10', 'text-primary', 'border-primary/20');
+                        btn.classList.add('text-slate-400');
+                    });
+                    const activeBtn = document.getElementById(`nav-${tabId}`);
+                    if (activeBtn) {
+                        activeBtn.classList.remove('text-slate-400');
+                        activeBtn.classList.add('bg-primary/10', 'text-primary', 'border-primary/20');
+                    }
+
+                    localStorage.setItem('activeTab', tabId);
+                    localStorage.setItem('activeTabTitle', title);
+
+                    if(tabId === 'polls') { this.initPollChart(); }
+                    if(tabId === 'systemstatus') { this.loadSystemStats(); }
+                }
+            }
+
+            async loadHotTopics(forceRefresh = false) {
+                const container = document.getElementById('hot-topics-container');
+                container.innerHTML = '<div class="col-span-3 bg-panel p-8 rounded-2xl border border-slate-700 flex flex-col items-center justify-center text-slate-400 shadow-lg"><div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary mb-3"></div><p class="text-sm font-medium">Veri kaynakları analiz ediliyor...</p></div>';
+                try {
+                    const url = forceRefresh ? '/api/dashboard/hot-topics?refresh=true' : '/api/dashboard/hot-topics';
+                    const response = await fetch(url);
+                    const data = await response.json();
+                    container.innerHTML = '';
+                    
+                    // Cache badge güncelle
+                    const badge = document.getElementById('cache-badge');
+                    if (badge) {
+                        if (data.cached) {
+                            badge.textContent = '📦 CACHE';
+                            badge.className = 'bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-1 rounded border border-emerald-500/50 font-bold uppercase';
+                        } else {
+                            badge.textContent = '✨ YENİ ANALİZ';
+                            badge.className = 'bg-blue-500/20 text-blue-400 text-[10px] px-2 py-1 rounded border border-blue-500/50 font-bold uppercase';
+                        }
+                    }
+                    
+                    // Alerts
+                    if(data.alerts && data.alerts.length > 0) {
+                        const toastContainer = document.getElementById('toast-container');
+                        data.alerts.forEach(alertText => {
+                            const toast = document.createElement('div');
+                            toast.className = 'toast-enter bg-slate-800 border-l-4 border-l-warning p-4 rounded shadow-lg text-sm text-slate-200 flex items-start gap-3 max-w-sm pointer-events-auto relative group';
+                            toast.innerHTML = `<span class="text-warning text-lg">⚠️</span><div class="pr-6"><p class="font-medium">${alertText}</p></div><button onclick="this.parentElement.remove()" class="absolute top-2 right-2 text-slate-500 hover:text-white opacity-0 group-hover:opacity-100 transition-all">✕</button>`;
+                            toastContainer.appendChild(toast);
+                            setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 8000);
+                        });
+                    }
+
+                    // Topic Cards
+                    if(data.topics && data.topics.length > 0) {
+                        data.topics.forEach(topic => {
+                            const card = document.createElement('div');
+                            let domainIcon = '🌐', domainColor = 'text-slate-400', domainBg = 'bg-slate-500/10';
+                            if (topic.domain === 'politics') { domainIcon = '🏛️'; domainColor = 'text-primary'; domainBg = 'bg-primary/10'; }
+                            else if (topic.domain === 'sports') { domainIcon = '⚽'; domainColor = 'text-emerald-400'; domainBg = 'bg-emerald-500/10'; }
+                            else if (topic.domain === 'economy') { domainIcon = '💰'; domainColor = 'text-amber-400'; domainBg = 'bg-amber-500/10'; }
+
+                            card.className = 'group relative bg-panel/40 backdrop-blur-sm p-6 rounded-2xl border border-slate-800 shadow-xl flex flex-col gap-5 hover:border-ai/50 transition-all duration-300 hover:translate-y-[-4px] overflow-hidden';
+                            card.innerHTML = `
+                                <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                    <span class="text-6xl">${domainIcon}</span>
+                                </div>
+                                <div class="relative z-10">
+                                    <div class="flex items-center gap-2 mb-3">
+                                        <span class="${domainBg} ${domainColor} text-[10px] px-2 py-1 rounded-md font-bold uppercase tracking-wider">${topic.domain || 'genel'}</span>
+                                        <span class="w-1 h-1 rounded-full bg-slate-700"></span>
+                                        <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider">AI ANALİZİ</span>
+                                    </div>
+                                    <h4 class="text-white font-bold text-lg mb-2 group-hover:text-ai transition-colors">${topic.title}</h4>
+                                    <p class="text-xs text-slate-400 leading-relaxed line-clamp-3 group-hover:line-clamp-none transition-all">${topic.summary}</p>
+                                </div>
+                                <div class="flex flex-col gap-4 mt-auto pt-5 border-t border-slate-800/50 relative z-10">
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1.5"><span>Fırsat</span><span class="text-success">%${topic.opportunity_score}</span></div>
+                                            <div class="w-full bg-slate-900 rounded-full h-1.5 shadow-inner"><div class="bg-gradient-to-r from-success/50 to-success h-1.5 rounded-full transition-all duration-1000" style="width: ${topic.opportunity_score}%"></div></div>
+                                        </div>
+                                        <div>
+                                            <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1.5"><span>Kriz</span><span class="text-danger">%${topic.crisis_score}</span></div>
+                                            <div class="w-full bg-slate-900 rounded-full h-1.5 shadow-inner"><div class="bg-gradient-to-r from-danger/50 to-danger h-1.5 rounded-full transition-all duration-1000" style="width: ${topic.crisis_score}%"></div></div>
+                                        </div>
+                                    </div>
+                                    <div class="bg-dark/40 p-3.5 rounded-xl border border-slate-800/50 group-hover:bg-ai/5 group-hover:border-ai/20 transition-all">
+                                        <div class="flex items-start gap-2.5">
+                                            <span class="text-ai text-sm mt-0.5">⚡</span>
+                                            <div>
+                                                <p class="text-[11px] text-slate-300 font-medium">${topic.action_advice}</p>
+                                                <p class="text-[9px] text-slate-500 mt-1 uppercase tracking-tighter">Hedef: ${topic.target_audience}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>`;
+                            container.appendChild(card);
+                        });
+                    }
+                    
+                    // Mermaid Render
+                    if(data.mermaid_chart) {
+                        const schematic = document.getElementById('hot-topics-schematic');
+                        const mermaidDiv = document.getElementById('mermaid-container');
+                        schematic.classList.remove('hidden');
+                        
+                        const mId = 'mermaid-' + Math.random().toString(36).substr(2, 9);
+                        mermaidDiv.innerHTML = `<div class="mermaid" id="${mId}">${data.mermaid_chart}</div>`;
+                        
+                        setTimeout(async () => {
+                            try {
+                                if (window.mermaid) {
+                                    const element = document.getElementById(mId);
+                                    if (element) {
+                                        // v10+ uses run()
+                                        if (typeof mermaid.run === 'function') {
+                                            await mermaid.run({ nodes: [element] });
+                                        } else {
+                                            mermaid.init(undefined, element);
+                                        }
+                                    }
+                                }
+                            } catch (e) {
+                                console.error("Mermaid init error:", e);
+                                mermaidDiv.innerHTML = `<div class="p-4 text-[10px] text-danger/70 italic">Şema görselleştirilemedi (Syntax Error).</div>`;
+                            }
+                        }, 300);
+                    } else {
+                        document.getElementById('hot-topics-schematic').classList.add('hidden');
+                    }
+                    
+                } catch(e) {
+                    container.innerHTML = `<p class="col-span-3 text-danger text-sm p-4">Sistem Bağlantı Hatası: ${e.message}</p>`;
+                }
+            }
+
+            // OTONOM ANKET VERİSİ ÇIKARICI
+            async extractPolls() {
+                if(!confirm("Yapay Zeka son 14 günün haberlerini tarayarak anket tahmini veya verisi çıkaracak. Devam edilsin mi?")) return;
+                
+                const btn = document.getElementById('btnExtractPoll');
+                const orig = btn.innerHTML; btn.innerHTML = '🤖 Taranıyor...'; btn.disabled = true;
+
+                try {
+                    const res = await fetch('/api/extract-polls', { method: 'POST' });
+                    const data = await res.json();
+                    if(data.success) {
+                        alert("Yapay Zeka haberlerden anket sentezi çıkardı!");
+                        window.location.reload();
+                    } else {
+                        alert("Hata: " + (data.error || "Anket verisi bulunamadı."));
+                    }
+                } catch(e) {
+                    alert("Bağlantı koptu.");
+                } finally { btn.innerHTML = orig; btn.disabled = false; }
+            }
+
+            async addPoll() {
+                const req = {
+                    firm: document.getElementById('pollFirm').value,
+                    sample: parseInt(document.getElementById('pollSample').value) || 0,
+                    chp: parseFloat(document.getElementById('pollCHP').value) || 0,
+                    akp: parseFloat(document.getElementById('pollAKP').value) || 0,
+                    mhp: parseFloat(document.getElementById('pollMHP').value) || 0,
+                    dem: parseFloat(document.getElementById('pollDEM').value) || 0,
+                    iyi: parseFloat(document.getElementById('pollIYI').value) || 0,
+                    yrp: parseFloat(document.getElementById('pollYRP').value) || 0,
+                };
+                if(!req.firm) return alert("Firma adı zorunludur.");
+                try {
+                    const res = await fetch('/api/polls', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req) });
+                    const data = await res.json();
+                    if(data.success) { window.location.reload(); } else { alert("Hata."); }
+                } catch(e) {}
+            }
+
+            async runNewsScan() {
+                const keyword = document.getElementById('newsKeyword').value;
+                if(!keyword) return alert("Lütfen bir parti girin!");
+                const btn = document.getElementById('btnNewsScan');
+                btn.disabled = true; btn.innerHTML = "Taranıyor...";
+                document.getElementById('news-results').classList.add('hidden');
+                document.getElementById('news-loader').classList.remove('hidden');
+
+                try {
+                    const response = await fetch('/api/news-scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword: keyword }) });
+                    const data = await response.json();
+                    document.getElementById('news-loader').classList.add('hidden');
+                    document.getElementById('news-results').classList.remove('hidden');
+                    if(data.success) { 
+                        const contentHtml = data.content.replace(/\*\*(.*?)\*\*/g, '<div class="report-section-header">$1</div>').replace(/\n/g, '<br/>');
+                        document.getElementById('news-results').innerHTML = contentHtml;
+                        this.saveState('news_radar', { keyword: keyword, content: contentHtml });
+                    }
+                } catch(e) {} finally { btn.disabled = false; btn.innerHTML = "Taramayı Başlat"; }
+            }
+
+            async openGeneralAiReport() {
+                document.getElementById('aiModal').classList.remove('hidden');
+                setTimeout(() => { document.getElementById('aiModal').classList.remove('opacity-0'); document.getElementById('aiModalContent').classList.remove('scale-95'); }, 10);
+                document.getElementById('aiLoader').classList.remove('hidden');
+                document.getElementById('aiReportText').classList.add('hidden');
+
+                try {
+                    const response = await fetch('/api/bulk-analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ window: 24 }) });
+                    const data = await response.json();
+                    document.getElementById('aiLoader').classList.add('hidden');
+                    document.getElementById('aiReportText').classList.remove('hidden');
+                    if (data.success) { 
+                        let contentHtml = data.content;
+                        
+                        // Mermaid extraction from bulk report
+                        let mermaidMatch = contentHtml.match(/\[MERMAID_START\]([\s\S]*?)\[MERMAID_END\]/);
+                        if(mermaidMatch) {
+                            const mCode = mermaidMatch[1].trim();
+                            contentHtml = contentHtml.replace(/\[MERMAID_START\][\s\S]*?\[MERMAID_END\]/, `<div class="mermaid-block bg-dark/50 p-4 rounded-xl border border-ai/30 my-4 flex justify-center"><div class="mermaid">${mCode}</div></div>`);
+                        }
+
+                        contentHtml = contentHtml.replace(/\*\*(.*?)\*\*/g, '<div class="report-section-header">$1</div>').replace(/\n/g, '<br/>');
+                        document.getElementById('aiReportText').innerHTML = contentHtml;
+                        
+                        if(mermaidMatch) {
+                            setTimeout(() => {
+                                mermaid.init(undefined, document.querySelectorAll(".mermaid"));
+                            }, 200);
+                        }
+                    }
+                } catch (error) {}
+            }
+
+            async runDemographicAnalysis(btn) {
+                btn.innerHTML = '⏱️ Analiz Ediliyor...'; btn.disabled = true;
+                document.getElementById('demo-results').classList.add('hidden');
+                document.getElementById('demo-loader').classList.remove('hidden');
+
+                try {
+                    const response = await fetch('/api/discourse-analyze', { method: 'POST' });
+                    const data = await response.json();
+                    if (data.success && data.analysis) {
+                        const res = data.analysis;
+                        document.getElementById('demo-sec-emotion').innerText = res.secular.emotion;
+                        document.getElementById('demo-sec-summary').innerText = res.secular.summary;
+                        document.getElementById('demo-con-emotion').innerText = res.conservative.emotion;
+                        document.getElementById('demo-con-summary').innerText = res.conservative.summary;
+                        document.getElementById('demo-genz-emotion').innerText = res.genz.emotion;
+                        document.getElementById('demo-genz-summary').innerText = res.genz.summary;
+                        document.getElementById('demo-loader').classList.add('hidden');
+                        document.getElementById('demo-results').classList.remove('hidden');
+                        this.saveState('demographic_analysis', res);
+                    }
+                } catch (e) {} finally { btn.innerHTML = '🧠 Toplumsal Söylemi Analiz Et'; btn.disabled = false; }
+            }
+
+            async runTwitterAnalysis(btn) {
+                btn.innerHTML = '⏱️ Çözümleniyor...'; btn.disabled = true;
+                document.getElementById('tw-results').classList.add('hidden');
+                document.getElementById('tw-loader').classList.remove('hidden');
+
+                try {
+                    const response = await fetch('/api/twitter-bulk-analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ window: 24 }) });
+                    const data = await response.json();
+                    if (data.success && data.analysis) {
+                        const res = data.analysis;
+                        document.getElementById('tw-vip').innerText = res.vip_summary;
+                        document.getElementById('tw-comp').innerText = res.competitor_summary;
+                        document.getElementById('tw-trend').innerText = res.trend_summary;
+                        document.getElementById('tw-action').innerText = res.action_plan;
+                        document.getElementById('tw-loader').classList.add('hidden');
+                        document.getElementById('tw-results').classList.remove('hidden');
+                        this.saveState('twitter_analysis', res);
+                    }
+                } catch (e) {} finally { btn.innerHTML = '🧠 4\'lü Rapor Çıkar'; btn.disabled = false; }
+            }
+
+            async runWorkerAction(workerName, btn) {
+                const orig = btn.innerHTML; btn.innerHTML = '⏳ Çekiliyor...'; btn.disabled = true;
+                try {
+                    const res = await fetch(`/api/run-worker/${workerName}`, { method: 'POST' });
+                    const data = await res.json();
+                    if (data.success) {
+                        alert(data.message || 'Tamamlandı.');
+                        if (data.added && data.added > 0) { window.location.reload(); }
+                    } else {
+                        alert('⚠️ Hata: ' + (data.error || 'Veri çekilemedi.'));
+                    }
+                } catch(e) { alert('Bağlantı hatası: ' + e.message); }
+                finally { btn.innerHTML = orig; btn.disabled = false; }
+            }
+
+            async runPlatformAnalyze(platform, inputId, resultId, btn) {
+                const keyword = document.getElementById(inputId).value;
+                if(!keyword) return alert("Lütfen bir konu veya kelime girin.");
+                const orig = btn.innerHTML; btn.innerHTML = '⏱️ Analiz Ediliyor...'; btn.disabled = true;
+                const resultDiv = document.getElementById(resultId);
+                resultDiv.classList.add('hidden');
+                try {
+                    const res = await fetch('/api/platform-analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform_name: platform, keyword: keyword }) });
+                    const data = await res.json();
+                    resultDiv.classList.remove('hidden');
+                    if(data.success) { 
+                        const contentHtml = data.content.replace(/\*\*(.*?)\*\*/g, '<div class="report-section-header">$1</div>').replace(/\n/g, '<br/>');
+                        resultDiv.innerHTML = contentHtml;
+                        this.saveState(`platform_${platform}`, { keyword: keyword, content: contentHtml });
+                    }
+                    else { resultDiv.innerHTML = `<p class="text-danger">${data.error}</p>`; }
+                } catch(e) { resultDiv.classList.remove('hidden'); resultDiv.innerHTML = '<p class="text-danger">Bağlantı hatası.</p>'; }
+                finally { btn.innerHTML = orig; btn.disabled = false; }
+            }
+
+            async runLeaderComparison(btn) {
+                const orig = btn.innerHTML; btn.innerHTML = '⏱️...'; btn.disabled = true;
+                document.getElementById('sentiment-loader').classList.remove('hidden');
+                try {
+                    const res = await fetch('/api/leader-comparison', { method: 'POST' });
+                    const data = await res.json();
+                    document.getElementById('sentiment-loader').classList.add('hidden');
+                    if(data.success && data.sentiment) {
+                        const ctx = document.getElementById('sentimentChart').getContext('2d');
+                        if (this.sentimentChartInstance) this.sentimentChartInstance.destroy();
+                        this.sentimentChartInstance = new Chart(ctx, {
+                            type: 'bar',
+                            data: {
+                                labels: ['İktidar / Lider', 'Muhalefet / Rakip'],
+                                datasets: [
+                                    { label: 'Pozitif Algı', data: [data.sentiment.leader.positive, data.sentiment.competitor.positive], backgroundColor: '#10B981', borderRadius: 4 },
+                                    { label: 'Negatif Algı', data: [data.sentiment.leader.negative, data.sentiment.competitor.negative], backgroundColor: '#EF4444', borderRadius: 4 }
+                                ]
+                            },
+                            options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false } }, y: { grid: { color: '#1E293B' }, max: 100 } } }
+                        });
+                    } else { alert(data.error || "Analiz başarısız."); }
+                } catch(e) { document.getElementById('sentiment-loader').classList.add('hidden'); alert("Bağlantı hatası."); }
+                finally { btn.innerHTML = orig; btn.disabled = false; }
+            }
+            async runComplaintsRadar(btn) {
+                const city = document.getElementById('complaintCity').value;
+                const orig = btn.innerHTML; btn.innerHTML = '⏱️ NLP Taranıyor...'; btn.disabled = true;
+                document.getElementById('complaints-results').classList.add('hidden');
+                document.getElementById('complaints-empty').classList.add('hidden');
+                document.getElementById('complaints-loader').classList.remove('hidden');
+                try {
+                    const res = await fetch('/api/complaints-radar', { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ city: city })
+                    });
+                    const data = await res.json();
+                    document.getElementById('complaints-loader').classList.add('hidden');
+                    if (data.success && data.complaints && data.complaints.length > 0) {
+                        const container = document.getElementById('complaints-results');
+                        container.innerHTML = '';
+                        data.complaints.forEach(c => {
+                            const sev = c.severity || 0;
+                            let borderColor = 'border-t-emerald-500', bgBadge = 'bg-emerald-500/20 text-emerald-400', sevLabel = 'DÜŞÜK';
+                            if (sev >= 70) { borderColor = 'border-t-red-500'; bgBadge = 'bg-red-500/20 text-red-400'; sevLabel = 'KRİTİK'; }
+                            else if (sev >= 40) { borderColor = 'border-t-amber-500'; bgBadge = 'bg-amber-500/20 text-amber-400'; sevLabel = 'ORTA'; }
+                            const card = document.createElement('div');
+                            card.className = `bg-dark/50 border border-slate-700 p-5 rounded-xl border-t-4 ${borderColor} hover:border-slate-500 transition-colors`;
+                            card.innerHTML = `
+                                <div class="flex justify-between items-start mb-3">
+                                    <span class="text-xs font-bold uppercase tracking-wider text-slate-500">${c.category || 'Genel'}</span>
+                                    <span class="${bgBadge} text-[10px] px-2 py-0.5 rounded font-bold">${sevLabel} — %${sev}</span>
+                                </div>
+                                <h4 class="text-white font-bold text-sm mb-2">📍 ${c.location || 'Bilinmiyor'}</h4>
+                                <p class="text-slate-300 text-xs leading-relaxed mb-3">${c.summary}</p>
+                                <div class="w-full bg-slate-900 rounded-full h-1.5 mb-3"><div class="h-1.5 rounded-full transition-all duration-500" style="width:${sev}%; background: ${sev >= 70 ? '#EF4444' : sev >= 40 ? '#F59E0B' : '#10B981'}"></div></div>
+                                <div class="bg-slate-900/50 p-3 rounded border border-slate-700/50">
+                                    <p class="text-[11px] text-primary"><strong>⚡ Strateji:</strong> ${c.strategic_advice}</p>
+                                </div>`;
+                            container.appendChild(card);
+                        });
+                        container.classList.remove('hidden');
+                        this.saveState('complaints_radar', { city: city, html: container.innerHTML });
+                    } else {
+                        document.getElementById('complaints-empty').classList.remove('hidden');
+                        if (data.error) alert(data.error);
+                    }
+                } catch(e) { document.getElementById('complaints-loader').classList.add('hidden'); alert('Bağlantı hatası.'); }
+                finally { btn.innerHTML = orig; btn.disabled = false; }
+            }
+
+            downloadPDF(elementId, filename) {
+                const element = document.getElementById(elementId);
+                const originalMaxHeight = element.style.maxHeight;
+                const originalOverflow = element.style.overflow;
+                
+                element.style.maxHeight = 'none';
+                element.style.overflow = 'visible';
+                
+                const opt = {
+                    margin:       0.5,
+                    filename:     `${filename}.pdf`,
+                    image:        { type: 'jpeg', quality: 0.98 },
+                    html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#0B1120', windowHeight: element.scrollHeight + 100 },
+                    jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+                };
+                
+                html2pdf().set(opt).from(element).save().then(() => {
+                    element.style.maxHeight = originalMaxHeight;
+                    element.style.overflow = originalOverflow;
+                });
+            }
+
+            async runDeepResearch() {
+                const keyword = document.getElementById('deepKeyword').value;
+                if(!keyword) return alert("Lütfen araştırılacak bir konu girin.");
+                
+                const btn = document.getElementById('btnDeepResearch');
+                btn.disabled = true; btn.innerHTML = "Harekât Başladı...";
+                
+                const resultsDiv = document.getElementById('deep-results');
+                const loaderDiv = document.getElementById('deep-loader');
+                resultsDiv.classList.add('hidden');
+                loaderDiv.classList.remove('hidden');
+                
+                // Progress Tracker
+                const progressText = loaderDiv.querySelector('p');
+                let pollInterval = setInterval(async () => {
+                    try {
+                        const sRes = await fetch(`/api/deep-research/status/${encodeURIComponent(keyword)}`);
+                        const sData = await sRes.json();
+                        if(sData && sData.status) {
+                            progressText.innerHTML = `<strong>${sData.status}</strong><br/><span class="text-[10px] text-primary">İlerleme: %${sData.percent}</span>`;
+                        }
+                    } catch(e) {}
+                }, 1500);
+
+                try {
+                    const res = await fetch('/api/deep-research', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ keyword: keyword })
+                    });
+                    const data = await res.json();
+                    
+                    clearInterval(pollInterval);
+                    loaderDiv.classList.add('hidden');
+                    resultsDiv.classList.remove('hidden');
+                    
+                    if(data.success) {
+                        document.getElementById('deep-msg').innerText = data.message;
+                        document.getElementById('stat-yt').innerText = data.stats.youtube;
+                        document.getElementById('stat-rss').innerText = data.stats.rss;
+                        document.getElementById('stat-tw').innerText = data.stats.twitter;
+                        
+                        const analysisDiv = document.getElementById('deep-analysis');
+                        if (data.analysis) {
+                            analysisDiv.innerHTML = data.analysis
+                                .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white block mt-3 mb-1">$1</strong>')
+                                .replace(/\n/g, '<br/>');
+                        } else {
+                            analysisDiv.innerHTML = '<p class="text-slate-500 italic">Analiz verisi oluşturulamadı.</p>';
+                        }
+                        this.saveState('deep_research', {
+                            keyword: keyword,
+                            message: data.message,
+                            stats: data.stats,
+                            analysis: data.analysis
+                        });
+                    } else {
+                        alert("Hata: " + data.error);
+                    }
+                } catch(e) {
+                    clearInterval(pollInterval);
+                    loaderDiv.classList.add('hidden');
+                    alert("Bağlantı hatası: " + e.message);
+                } finally {
+                    btn.disabled = false; btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Harekâtı Başlat';
+                }
+            }
+
+            async addSource() {
+                const type = document.getElementById('sourceType').value;
+                const name = document.getElementById('sourceName').value;
+                const url = document.getElementById('sourceUrl').value;
+                const domain = document.getElementById('sourceDomain').value;
+                if(!name || !url) return alert('Ad ve URL zorunludur.');
+                try {
+                    const res = await fetch('/api/sources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, url: url, type: type, domain: domain }) });
+                    const data = await res.json();
+                    if(data.success) { alert(data.message || 'Kaynak eklendi!'); window.location.reload(); }
+                    else { alert('Hata: ' + (data.error || 'Kaynak eklenemedi.')); }
+                } catch(e) { alert('Bağlantı hatası: ' + e.message); }
+            }
+
+            updateSourceFields(type) {
+                const labelUrl = document.getElementById('labelSourceUrl');
+                const inputUrl = document.getElementById('sourceUrl');
+                const labelName = document.getElementById('labelSourceName');
+                const inputName = document.getElementById('sourceName');
+
+                if (type.startsWith('twitter')) {
+                    labelName.innerText = "Hesap/Kelime Başlığı";
+                    inputName.placeholder = type === 'twitter_trend' ? "Örn: Fenerbahçe Gündemi" : "Örn: Cumhurbaşkanı Mentions";
+                    labelUrl.innerText = type === 'twitter_trend' ? "Aranacak Kelime" : "X Kullanıcı Adı (@yok)";
+                    inputUrl.placeholder = type === 'twitter_trend' ? "Örn: fenerbahçe" : "Örn: RTErdogan";
+                } else if (type === 'youtube') {
+                    labelName.innerText = "Kanal/Konu Başlığı";
+                    labelUrl.innerText = "YouTube Kanal ID veya Kelime";
+                    inputUrl.placeholder = "Örn: UCkwvO..., veya 'ekonomi'";
+                } else {
+                    labelName.innerText = "Haber Kaynağı Adı";
+                    labelUrl.innerText = "RSS Besleme URL'si";
+                    inputUrl.placeholder = "https://example.com/rss";
+                }
+            }
+
+            async deleteSource(sourceId) {
+                if(!confirm("Emin misiniz?")) return;
+                try {
+                    const res = await fetch(`/api/sources/${sourceId}`, { method: 'DELETE' });
+                    const data = await res.json();
+                    if(data.success) { window.location.reload(); }
+                } catch(e) {}
+            }
+
+            async initChart() {
+                if (!document.getElementById('volumeChart')) return;
+                const ctx = document.getElementById('volumeChart').getContext('2d');
+                try {
+                    const res = await fetch('/api/volume-stats');
+                    const vol = await res.json();
+                    if (vol.success) {
+                        this.chartInstance = new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: vol.labels,
+                                datasets: [
+                                    { label: 'X (Twitter)', data: vol.series.twitter, borderColor: '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.1)', tension: 0.4, fill: true },
+                                    { label: 'YouTube', data: vol.series.youtube, borderColor: '#EF4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', tension: 0.4, fill: true },
+                                    { label: 'RSS', data: vol.series.rss, borderColor: '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.1)', tension: 0.4, fill: true }
+                                ]
+                            },
+                            options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid: { color: '#1E293B' } }, y: { grid: { color: '#1E293B' }, beginAtZero: true } } }
+                        });
+                    }
+                } catch(e) { console.error('Volume chart error:', e); }
+            }
+
+            initPollChart() {
+                if (!document.getElementById('pollChart')) return;
+                const ctx = document.getElementById('pollChart').getContext('2d');
+                if (this.pollChartInstance) { this.pollChartInstance.destroy(); }
+
+                let pData = pollDataFromServer || { firm: "Veri Bekleniyor", date: "-", sample: 0, data: [0,0,0,0,0,0] };
+
+                this.pollChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['CHP', 'AKP', 'MHP', 'DEM', 'İYİ', 'YRP'],
+                        datasets: [{
+                            label: 'Oy Oranı',
+                            data: pData.data,
+                            backgroundColor: ['#EF4444', '#F59E0B', '#8B5CF6', '#10B981', '#3B82F6', '#14B8A6'],
+                            borderWidth: 0,
+                            borderRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { 
+                            legend: { display: false },
+                            tooltip: {
+                                padding: 12, titleFont: { size: 14 }, bodyFont: { size: 13 },
+                                callbacks: {
+                                    label: function(context) { return ' Oy Oranı: %' + context.parsed.y; },
+                                    afterLabel: function(context) {
+                                        return [ '', '📊 Analiz/Firma: ' + pData.firm, '🌍 Örneklem: ' + pData.sample, '📅 Tarih: ' + pData.date ];
+                                    }
+                                }
+                            }
+                        },
+                        scales: { 
+                            y: { beginAtZero: true, grid: { color: '#1E293B' }, ticks: { color: '#94a3b8', callback: function(value) { return value + '%' } } },
+                            x: { grid: { display: false }, ticks: { color: '#cbd5e1', font: { weight: 'bold', size: 13 } } }
+                        }
+                    }
+                });
+            }
+            async loadSystemStats() {
+                try {
+                    const res = await fetch('/api/system/stats');
+                    const data = await res.json();
+                    if (data.success) {
+                        document.getElementById('stat-total-content').innerText = data.total_content;
+                        document.getElementById('stat-daily-content').innerText = data.daily_content;
+                        document.getElementById('stat-active-sources').innerText = data.active_sources;
+                        
+                        const total = data.total_content || 1;
+                        const x_pct = Math.round((data.platforms.twitter || 0) / total * 100);
+                        const yt_pct = Math.round(((data.platforms.youtube || 0) + (data.platforms.youtube_comment || 0)) / total * 100);
+                        const rss_pct = Math.round((data.platforms.rss || 0) / total * 100);
+                        
+                        document.getElementById('pct-x').innerText = x_pct + '%';
+                        document.getElementById('bar-x').style.width = x_pct + '%';
+                        document.getElementById('pct-yt').innerText = yt_pct + '%';
+                        document.getElementById('bar-yt').style.width = yt_pct + '%';
+                        document.getElementById('pct-rss').innerText = rss_pct + '%';
+                        document.getElementById('bar-rss').style.width = rss_pct + '%';
+                        
+                        const logContainer = document.getElementById('system-log-container');
+                        logContainer.innerHTML = '';
+                        data.recent_logs.forEach(log => {
+                            const item = document.createElement('div');
+                            item.className = 'p-3 bg-dark/40 rounded-lg border border-slate-700/50 flex justify-between items-center text-xs';
+                            item.innerHTML = `
+                                <div class="flex items-center gap-3">
+                                    <span class="text-primary font-bold">[${log.time}]</span>
+                                    <span class="text-slate-400 font-medium uppercase">${log.platform}</span>
+                                    <span class="text-white">${log.author}:</span>
+                                    <span class="text-slate-500 italic">${log.text}</span>
+                                </div>
+                                <span class="text-success font-bold">BAŞARILI</span>
+                            `;
+                            logContainer.appendChild(item);
+                        });
+                    }
+                } catch (e) {}
+            }
+
+            cleanMermaid(text) {
+                if(!text) return "";
+                // Remove problematic characters that break Mermaid
+                return text.replace(/[(){}"']/g, '').replace(/[\n\r]+/g, '\n');
+            }
+
+            async runTripleAnalysis(btn) {
+                const loader = document.getElementById('triple-analysis-loader');
+                const resultDiv = document.getElementById('triple-analysis-result');
+                
+                btn.disabled = true;
+                btn.classList.add('opacity-50');
+                loader.classList.remove('hidden');
+                resultDiv.classList.add('hidden');
+
+                try {
+                    const res = await fetch('/api/analysis/triple-compare');
+                    const data = await res.json();
+                    
+                    loader.classList.add('hidden');
+                    resultDiv.classList.remove('hidden');
+                    
+                    if (data.success) {
+                        // Format the analysis text for better UI
+                        resultDiv.innerHTML = `<div class="prose prose-invert max-w-none">${data.analysis}</div>`;
+                    } else {
+                        resultDiv.innerHTML = `<p class="text-red-400 p-4 bg-red-400/10 rounded-xl border border-red-400/20">${data.error}</p>`;
+                    }
+                } catch (e) {
+                    resultDiv.innerHTML = `<p class="text-red-400">Bağlantı hatası oluştu.</p>`;
+                } finally {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50');
+                }
+            }
+
+            async runComplaintsRadar(btn) {
+                const city = document.getElementById('complaintCity').value;
+                const loader = document.getElementById('complaints-loader');
+                const results = document.getElementById('complaints-results');
+                const empty = document.getElementById('complaints-empty');
+
+                btn.disabled = true;
+                loader.classList.remove('hidden');
+                results.classList.add('hidden');
+                empty.classList.add('hidden');
+
+                try {
+                    const res = await fetch('/api/complaints-radar', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ city: city })
+                    });
+                    const data = await res.json();
+                    
+                    loader.classList.add('hidden');
+                    if (data.success) {
+                        results.classList.remove('hidden');
+                        results.innerHTML = `
+                            <div class="col-span-full p-6 bg-danger/10 border border-danger/20 rounded-2xl text-slate-300 text-sm leading-relaxed prose prose-invert max-w-none">
+                                <h4 class="text-danger font-bold text-lg mb-4 flex items-center gap-2">
+                                    <span>🛡️</span> ${city || 'Türkiye Geneli'} Zafiyet Analiz Raporu
+                                </h4>
+                                ${data.analysis.replace(/\n/g, '<br>')}
+                            </div>
+                        `;
+                    } else {
+                        empty.classList.remove('hidden');
+                        empty.innerHTML = `<p class="text-red-400">${data.error}</p>`;
+                    }
+                } catch (e) {
+                    empty.classList.remove('hidden');
+                    empty.innerHTML = `<p class="text-red-400">Bağlantı hatası.</p>`;
+                } finally {
+                    btn.disabled = false;
+                }
+            }
+
+            async triggerPipeline() {
+                if(!confirm("Yapay Zeka etiketleme ve skorlama hattını tetiklemek üzeresiniz. Bu işlem Gemini API limitlerini kullanır. Onaylıyor musunuz?")) return;
+                try {
+                    const res = await fetch('/api/system/trigger-pipeline', { method: 'POST' });
+                    const data = await res.json();
+                    if(data.success) {
+                        alert("Analiz hattı başarıyla tetiklendi. Birkaç dakika içinde fırsat kartları güncellenecektir.");
+                        setTimeout(() => window.location.reload(), 2000);
+                    } else alert("Hata: " + data.error);
+                } catch(e) { alert("Bağlantı koptu."); }
+            }
+        }
+        document.addEventListener('DOMContentLoaded', () => { window.AgendaOps = new DashboardController(); });
+    </script>
+</body>
+</html>

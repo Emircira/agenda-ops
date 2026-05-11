@@ -1,0 +1,72 @@
+[
+  {"province": "İSTANBUL", "district": "ESENYURT", "year": 2024, "total_population": 977489, "growth_rate": 8.5, "university_grad_pct": 11.2, "unemployment_rate": 14.5, "foreign_pop_pct": 18.4},
+  {"province": "İSTANBUL", "district": "KADIKÖY", "year": 2024, "total_population": 483064, "growth_rate": -2.1, "university_grad_pct": 52.8, "unemployment_rate": 6.2, "foreign_pop_pct": 2.1},
+  {"province": "İSTANBUL", "district": "FATİH", "year": 2024, "total_population": 368227, "growth_rate": -4.5, "university_grad_pct": 14.1, "unemployment_rate": 11.8, "foreign_pop_pct": 22.5},
+  {"province": "İSTANBUL", "district": "SULTANBEYLİ", "year": 2024, "total_population": 358201, "growth_rate": 5.2, "university_grad_pct": 9.5, "unemployment_rate": 12.1, "foreign_pop_pct": 4.8},
+  {"province": "İSTANBUL", "district": "BEŞİKTAŞ", "year": 2024, "total_population": 169502, "growth_rate": -1.5, "university_grad_pct": 61.2, "unemployment_rate": 5.1, "foreign_pop_pct": 3.5},
+  {"province": "İSTANBUL", "district": "BAĞCILAR", "year": 2024, "total_population": 737206, "growth_rate": 1.2, "university_grad_pct": 10.4, "unemployment_rate": 13.8, "foreign_pop_pct": 12.1},
+  {"province": "İSTANBUL", "district": "ŞİŞLİ", "year": 2024, "total_population": 266793, "growth_rate": -0.8, "university_grad_pct": 42.5, "unemployment_rate": 7.4, "foreign_pop_pct": 8.9},
+  {"province": "İSTANBUL", "district": "PENDİK", "year": 2024, "total_population": 741895, "growth_rate": 3.8, "university_grad_pct": 18.2, "unemployment_rate": 9.5, "foreign_pop_pct": 2.5},
+  
+  {"province": "ANKARA", "district": "ÇANKAYA", "year": 2024, "total_population": 942553, "growth_rate": 0.5, "university_grad_pct": 58.4, "unemployment_rate": 5.8, "foreign_pop_pct": 2.2},
+  {"province": "ANKARA", "district": "KEÇİÖREN", "year": 2024, "total_population": 939279, "growth_rate": -1.2, "university_grad_pct": 21.5, "unemployment_rate": 10.1, "foreign_pop_pct": 3.1},
+  {"province": "ANKARA", "district": "YENİMAHALLE", "year": 2024, "total_population": 704652, "growth_rate": 2.1, "university_grad_pct": 32.8, "unemployment_rate": 8.2, "foreign_pop_pct": 1.8},
+  {"province": "ANKARA", "district": "MAMAK", "year": 2024, "total_population": 687535, "growth_rate": 1.5, "university_grad_pct": 15.4, "unemployment_rate": 11.5, "foreign_pop_pct": 2.9},
+  {"province": "ANKARA", "district": "SİNCAN", "year": 2024, "total_population": 571889, "growth_rate": 4.5, "university_grad_pct": 14.2, "unemployment_rate": 10.8, "foreign_pop_pct": 1.5},
+
+  {"province": "İZMİR", "district": "BUCA", "year": 2024, "total_population": 522404, "growth_rate": 1.8, "university_grad_pct": 22.1, "unemployment_rate": 11.2, "foreign_pop_pct": 2.8},
+  {"province": "İZMİR", "district": "KARŞIYAKA", "year": 2024, "total_population": 347023, "growth_rate": -0.5, "university_grad_pct": 45.8, "unemployment_rate": 6.8, "foreign_pop_pct": 1.2},
+  {"province": "İZMİR", "district": "KONAK", "year": 2024, "total_population": 332279, "growth_rate": -3.2, "university_grad_pct": 28.5, "unemployment_rate": 10.5, "foreign_pop_pct": 6.5},
+
+  {"province": "BURSA", "district": "OSMANGAZİ", "year": 2024, "total_population": 884451, "growth_rate": 1.2, "university_grad_pct": 16.8, "unemployment_rate": 9.5, "foreign_pop_pct": 4.5},
+  {"province": "BURSA", "district": "NİLÜFER", "year": 2024, "total_population": 536365, "growth_rate": 6.5, "university_grad_pct": 41.2, "unemployment_rate": 6.1, "foreign_pop_pct": 1.8},
+  {"province": "BURSA", "district": "YILDIRIM", "year": 2024, "total_population": 653004, "growth_rate": 0.8, "university_grad_pct": 12.5, "unemployment_rate": 11.2, "foreign_pop_pct": 6.2},
+
+  {"province": "ANTALYA", "district": "KEPEZ", "year": 2024, "total_population": 608675, "growth_rate": 5.5, "university_grad_pct": 14.8, "unemployment_rate": 10.5, "foreign_pop_pct": 4.1},
+  {"province": "ANTALYA", "district": "MURATPAŞA", "year": 2024, "total_population": 526293, "growth_rate": -1.2, "university_grad_pct": 32.5, "unemployment_rate": 8.1, "foreign_pop_pct": 8.5},
+  {"province": "ANTALYA", "district": "KONYAALTI", "year": 2024, "total_population": 204795, "growth_rate": 8.4, "university_grad_pct": 48.2, "unemployment_rate": 6.5, "foreign_pop_pct": 18.2},
+  {"province": "ANTALYA", "district": "ALANYA", "year": 2024, "total_population": 364180, "growth_rate": 6.1, "university_grad_pct": 19.5, "unemployment_rate": 7.8, "foreign_pop_pct": 15.5},
+
+  {"province": "ADANA", "district": "SEYHAN", "year": 2024, "total_population": 792536, "growth_rate": -0.8, "university_grad_pct": 16.2, "unemployment_rate": 12.5, "foreign_pop_pct": 4.8},
+  {"province": "ADANA", "district": "ÇUKUROVA", "year": 2024, "total_population": 389175, "growth_rate": 1.5, "university_grad_pct": 38.5, "unemployment_rate": 7.2, "foreign_pop_pct": 1.2},
+  {"province": "ADANA", "district": "YÜREĞİR", "year": 2024, "total_population": 404726, "growth_rate": -2.1, "university_grad_pct": 9.8, "unemployment_rate": 14.8, "foreign_pop_pct": 7.5},
+
+  {"province": "GAZİANTEP", "district": "ŞAHİNBEY", "year": 2024, "total_population": 936351, "growth_rate": 3.2, "university_grad_pct": 13.5, "unemployment_rate": 11.2, "foreign_pop_pct": 12.8},
+  {"province": "GAZİANTEP", "district": "ŞEHİTKAMİL", "year": 2024, "total_population": 839553, "growth_rate": 2.8, "university_grad_pct": 14.2, "unemployment_rate": 10.8, "foreign_pop_pct": 9.5},
+
+  {"province": "DİYARBAKIR", "district": "KAYAPINAR", "year": 2024, "total_population": 419513, "growth_rate": 6.2, "university_grad_pct": 24.5, "unemployment_rate": 11.4, "foreign_pop_pct": 0.8},
+  {"province": "DİYARBAKIR", "district": "BAĞLAR", "year": 2024, "total_population": 406471, "growth_rate": -1.8, "university_grad_pct": 8.5, "unemployment_rate": 18.5, "foreign_pop_pct": 1.5},
+  {"province": "DİYARBAKIR", "district": "YENİŞEHİR", "year": 2024, "total_population": 219759, "growth_rate": 1.1, "university_grad_pct": 19.2, "unemployment_rate": 13.2, "foreign_pop_pct": 0.5},
+
+  {"province": "MERSİN", "district": "YENİŞEHİR", "year": 2024, "total_population": 274992, "growth_rate": 2.5, "university_grad_pct": 36.8, "unemployment_rate": 8.1, "foreign_pop_pct": 2.4},
+  {"province": "MERSİN", "district": "AKDENİZ", "year": 2024, "total_population": 255682, "growth_rate": -2.4, "university_grad_pct": 11.2, "unemployment_rate": 16.5, "foreign_pop_pct": 12.5},
+  {"province": "MERSİN", "district": "TARSUS", "year": 2024, "total_population": 350732, "growth_rate": 0.8, "university_grad_pct": 14.5, "unemployment_rate": 12.2, "foreign_pop_pct": 4.1},
+
+  {"province": "MUĞLA", "district": "BODRUM", "year": 2024, "total_population": 192964, "growth_rate": 4.5, "university_grad_pct": 28.5, "unemployment_rate": 6.8, "foreign_pop_pct": 8.5},
+  {"province": "MUĞLA", "district": "FETHİYE", "year": 2024, "total_population": 173000, "growth_rate": 3.2, "university_grad_pct": 22.1, "unemployment_rate": 7.5, "foreign_pop_pct": 6.2},
+  {"province": "MUĞLA", "district": "MENTEŞE", "year": 2024, "total_population": 120508, "growth_rate": 1.2, "university_grad_pct": 31.4, "unemployment_rate": 8.1, "foreign_pop_pct": 1.1},
+
+  {"province": "KONYA", "district": "SELÇUKLU", "year": 2024, "total_population": 690667, "growth_rate": 3.5, "university_grad_pct": 24.5, "unemployment_rate": 8.8, "foreign_pop_pct": 2.8},
+  {"province": "KONYA", "district": "MERAM", "year": 2024, "total_population": 348325, "growth_rate": 1.2, "university_grad_pct": 18.2, "unemployment_rate": 9.1, "foreign_pop_pct": 1.5},
+  {"province": "KONYA", "district": "KARATAY", "year": 2024, "total_population": 370927, "growth_rate": 4.1, "university_grad_pct": 12.5, "unemployment_rate": 9.5, "foreign_pop_pct": 5.2},
+
+  {"province": "KAYSERİ", "district": "MELİKGAZİ", "year": 2024, "total_population": 594344, "growth_rate": 2.8, "university_grad_pct": 19.4, "unemployment_rate": 9.2, "foreign_pop_pct": 3.1},
+  {"province": "KAYSERİ", "district": "KOCASİNAN", "year": 2024, "total_population": 405799, "growth_rate": 1.5, "university_grad_pct": 16.8, "unemployment_rate": 9.8, "foreign_pop_pct": 2.4},
+
+  {"province": "ŞANLIURFA", "district": "HALİLİYE", "year": 2024, "total_population": 396656, "growth_rate": 8.5, "university_grad_pct": 12.1, "unemployment_rate": 14.5, "foreign_pop_pct": 10.5},
+  {"province": "ŞANLIURFA", "district": "EYYÜBİYE", "year": 2024, "total_population": 389868, "growth_rate": 11.2, "university_grad_pct": 6.8, "unemployment_rate": 18.2, "foreign_pop_pct": 15.2},
+
+  {"province": "ESKİŞEHİR", "district": "ODUNPAZARI", "year": 2024, "total_population": 422423, "growth_rate": 1.5, "university_grad_pct": 24.5, "unemployment_rate": 8.1, "foreign_pop_pct": 2.1},
+  {"province": "ESKİŞEHİR", "district": "TEPEBAŞI", "year": 2024, "total_population": 385552, "growth_rate": 2.2, "university_grad_pct": 30.2, "unemployment_rate": 7.5, "foreign_pop_pct": 2.8},
+
+  {"province": "KOCAELİ", "district": "GEBZE", "year": 2024, "total_population": 407019, "growth_rate": 4.5, "university_grad_pct": 14.5, "unemployment_rate": 9.5, "foreign_pop_pct": 4.2},
+  {"province": "KOCAELİ", "district": "İZMİT", "year": 2024, "total_population": 376056, "growth_rate": 1.8, "university_grad_pct": 22.8, "unemployment_rate": 8.2, "foreign_pop_pct": 1.5},
+
+  {"province": "SAMSUN", "district": "İLKADIM", "year": 2024, "total_population": 333518, "growth_rate": -1.2, "university_grad_pct": 18.5, "unemployment_rate": 10.5, "foreign_pop_pct": 2.1},
+  {"province": "SAMSUN", "district": "ATAKUM", "year": 2024, "total_population": 242171, "growth_rate": 8.5, "university_grad_pct": 35.2, "unemployment_rate": 7.8, "foreign_pop_pct": 1.8},
+
+  {"province": "TRABZON", "district": "ORTAHİSAR", "year": 2024, "total_population": 335628, "growth_rate": 1.1, "university_grad_pct": 24.1, "unemployment_rate": 9.2, "foreign_pop_pct": 1.2},
+  
+  {"province": "HATAY", "district": "ANTAKYA", "year": 2024, "total_population": 298533, "growth_rate": -25.4, "university_grad_pct": 16.5, "unemployment_rate": 15.5, "foreign_pop_pct": 12.1},
+  {"province": "HATAY", "district": "İSKENDERUN", "year": 2024, "total_population": 235611, "growth_rate": -15.2, "university_grad_pct": 18.2, "unemployment_rate": 14.1, "foreign_pop_pct": 8.5}
+]

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgendaOps | Sistem Hatası</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#0B1120] text-slate-300 h-screen flex items-center justify-center font-sans">
+    <div class="max-w-md w-full p-8 bg-[#1E293B] rounded-2xl border border-slate-800 shadow-2xl text-center">
+        <div class="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-red-500/20">
+            <span class="text-4xl">⚠️</span>
+        </div>
+        <h1 class="text-2xl font-bold text-white mb-4">Sistem Hatası</h1>
+        <p class="text-slate-400 mb-8 leading-relaxed">{{ message }}</p>
+        
+        {% if action_url %}
+        <a href="{{ action_url }}" class="inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl transition-all shadow-lg shadow-blue-900/20">
+            {{ action_text }}
+        </a>
+        {% else %}
+        <button onclick="window.location.reload()" class="inline-block bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-8 rounded-xl transition-all">
+            Sayfayı Yenile
+        </button>
+        {% endif %}
+        
+        <p class="mt-8 text-[10px] text-slate-500 uppercase tracking-widest font-bold italic">Karargah Sistem İzleme Birimi</p>
+    </div>
+</body>
+</html>
