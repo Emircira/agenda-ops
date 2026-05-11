@@ -13,7 +13,7 @@ from app.db.session import AsyncSessionLocal
 from app.models.core import Source, Content, SourceType
 from app.providers.rss_provider import RSSProvider
 from app.providers.youtube_provider import YouTubeProvider
-from app.providers.x_provider import RapidXProvider, MockXProvider
+from app.providers.x_provider import RapidXProvider
 from app.core.utils import (
     pre_filter_content,
     extract_youtube_comments_as_articles,
@@ -33,8 +33,10 @@ def run_async(coro):
 
 
 def get_x_provider():
-    """RapidAPI key yoksa Mock döner."""
-    return RapidXProvider() if os.getenv("RAPIDAPI_KEY") else MockXProvider()
+    """X/Twitter provider'ı yalnızca gerçek RapidAPI kimliğiyle başlatır."""
+    if not (os.getenv("RAPIDAPI_KEY") or os.getenv("RAPID_API_KEY")):
+        raise RuntimeError("RAPIDAPI_KEY/RAPID_API_KEY zorunludur; X için mock veri üretilmez.")
+    return RapidXProvider()
 
 
 def _safe_parse_date(raw_date_str: str) -> datetime:
