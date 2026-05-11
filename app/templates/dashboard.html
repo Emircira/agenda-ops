@@ -107,54 +107,80 @@
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                     {% for opp in opportunities %}
-                    <div class="bg-gradient-to-br from-[#1E293B] to-[#0F172A] border border-slate-700/50 p-5 rounded-2xl hover:border-warning/50 transition-all group relative overflow-hidden shadow-xl">
-                        <!-- Glass Effect Overlay -->
-                        <div class="absolute inset-0 bg-warning/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                        
-                        <!-- Header: Topic & Score -->
-                        <div class="flex justify-between items-start mb-2 relative z-10">
-                            <div>
-                                <span class="text-[10px] font-bold text-warning uppercase tracking-widest mb-1 block">{{ opp.frame }}</span>
-                                <h4 class="text-white font-extrabold text-sm leading-tight group-hover:text-warning transition-colors line-clamp-1">{{ opp.topic }}</h4>
+                    {% set score = opp.score|float %}
+                    {% if score >= 75 %}
+                        {% set accent = 'rose' %}
+                        {% set importance = 'KRİTİK' %}
+                        {% set reaction = 'Yüksek Tepki' %}
+                    {% elif score >= 50 %}
+                        {% set accent = 'indigo' %}
+                        {% set importance = 'YÜKSEK' %}
+                        {% set reaction = 'Yükselen İlgi' %}
+                    {% else %}
+                        {% set accent = 'emerald' %}
+                        {% set importance = 'İZLEMEDE' %}
+                        {% set reaction = 'Fırsat Sinyali' %}
+                    {% endif %}
+                    <div class="bg-gradient-to-br from-slate-900 via-[#121A2B] to-slate-950 border border-{{ accent }}-500/30 p-5 rounded-2xl hover:border-{{ accent }}-400/70 transition-all group relative overflow-hidden shadow-[0_20px_60px_rgba(2,6,23,0.35)]">
+                        <div class="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-{{ accent }}-400 via-primary to-ai opacity-80"></div>
+                        <div class="absolute -right-12 -top-12 w-32 h-32 bg-{{ accent }}-500/10 rounded-full blur-3xl group-hover:bg-{{ accent }}-500/20 transition-all"></div>
+                        <div class="absolute inset-0 bg-white/[0.02] opacity-0 group-hover:opacity-100 transition-opacity"></div>
+
+                        <div class="relative z-10 flex items-center justify-between mb-4">
+                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-[0.25em]">SaaS Intelligence</span>
+                            <span class="text-[9px] bg-{{ accent }}-500/10 text-{{ accent }}-300 border border-{{ accent }}-500/30 px-2 py-1 rounded-full font-bold">CANLI SKOR</span>
+                        </div>
+
+                        <div class="flex justify-between items-start mb-3 relative z-10">
+                            <div class="min-w-0 pr-3">
+                                <span class="text-[10px] font-bold text-{{ accent }}-300 uppercase tracking-widest mb-1 block">{{ opp.frame }}</span>
+                                <h4 class="text-white font-extrabold text-sm leading-tight group-hover:text-{{ accent }}-200 transition-colors line-clamp-2">{{ opp.topic }}</h4>
                             </div>
-                            <div class="flex flex-col items-end">
-                                <div class="text-xl font-black text-white leading-none">{{ opp.score }}</div>
+                            <div class="flex flex-col items-end shrink-0">
+                                <div class="relative w-14 h-14 rounded-2xl bg-dark/70 border border-{{ accent }}-500/30 flex items-center justify-center shadow-inner">
+                                    <div class="absolute inset-1 rounded-xl bg-{{ accent }}-500/10"></div>
+                                    <span class="relative text-xl font-black text-white leading-none">{{ opp.score|round|int }}</span>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- AI Insight (Summary) -->
                         <div class="mb-4 relative z-10">
-                            <p class="text-[10px] text-slate-400 italic line-clamp-2 leading-relaxed">
-                                <span class="text-primary/80 font-bold not-italic">AI Analizi:</span> 
+                            <p class="text-[11px] text-slate-400 line-clamp-3 leading-relaxed">
+                                <span class="text-{{ accent }}-300 font-bold">AI Analizi:</span>
                                 {{ opp.rationale.insight if opp.rationale else 'Stratejik özet hazırlanıyor...' }}
                             </p>
                         </div>
 
-                        <!-- Mini Stats / Progress Bar -->
-                        <div class="space-y-3 mb-4 relative z-10">
-                            <div class="w-full bg-dark/50 rounded-full h-1.5 overflow-hidden border border-slate-800">
-                                <div class="bg-gradient-to-r from-warning to-orange-500 h-full rounded-full shadow-[0_0_10px_rgba(245,158,11,0.5)]" style="width: {{ opp.score }}%"></div>
+                        <div class="grid grid-cols-1 gap-2 mb-4 relative z-10">
+                            <div class="flex items-center justify-between bg-dark/50 border border-slate-800/80 rounded-xl px-3 py-2">
+                                <span class="text-[10px] text-slate-500 uppercase font-bold">Stratejik Önem</span>
+                                <span class="text-[10px] text-{{ accent }}-300 font-black tracking-wider">{{ importance }}</span>
                             </div>
-                            
-                            <div class="grid grid-cols-2 gap-2 text-[10px]">
-                                <div class="bg-dark/40 p-2 rounded-lg border border-slate-800/50">
-                                    <span class="text-slate-500 block mb-1">Hız (Velocity)</span>
-                                    <span class="text-slate-200 font-bold">%{{ opp.rationale.breakdown.velocity if opp.rationale else '0' }}</span>
+                            <div class="flex items-center justify-between bg-dark/50 border border-slate-800/80 rounded-xl px-3 py-2">
+                                <span class="text-[10px] text-slate-500 uppercase font-bold">Halkın Tepki Potansiyeli</span>
+                                <span class="text-[10px] text-white font-bold">{{ reaction }}</span>
+                            </div>
+                            <div class="w-full bg-dark/50 rounded-full h-1.5 overflow-hidden border border-slate-800">
+                                <div class="bg-gradient-to-r from-{{ accent }}-400 to-ai h-full rounded-full shadow-[0_0_14px_rgba(99,102,241,0.35)]" style="width: {{ opp.score }}%"></div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="bg-dark/40 p-3 rounded-xl border border-slate-800/60">
+                                    <span class="text-[9px] text-slate-500 block mb-1 uppercase font-bold">Velocity</span>
+                                    <span class="text-slate-100 text-sm font-black">%{{ opp.rationale.breakdown.velocity if opp.rationale else '0' }}</span>
                                 </div>
-                                <div class="bg-dark/40 p-2 rounded-lg border border-slate-800/50">
-                                    <span class="text-slate-500 block mb-1">Erişim (Reach)</span>
-                                    <span class="text-slate-200 font-bold">%{{ opp.rationale.breakdown.reach if opp.rationale else '0' }}</span>
+                                <div class="bg-dark/40 p-3 rounded-xl border border-slate-800/60">
+                                    <span class="text-[9px] text-slate-500 block mb-1 uppercase font-bold">Reach</span>
+                                    <span class="text-slate-100 text-sm font-black">%{{ opp.rationale.breakdown.reach if opp.rationale else '0' }}</span>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Footer: Time & Insight -->
                         <div class="flex items-center justify-between mt-auto pt-3 border-t border-slate-800/50 relative z-10">
                             <div class="flex items-center gap-1.5">
-                                <div class="w-2 h-2 bg-warning rounded-full animate-pulse"></div>
+                                <div class="w-2 h-2 bg-{{ accent }}-400 rounded-full animate-pulse"></div>
                                 <span class="text-[10px] text-slate-400 font-medium">{{ opp.created_at.strftime('%H:%M') if opp.created_at else '' }}</span>
                             </div>
-                            <span class="text-[9px] bg-warning/10 text-warning px-2 py-0.5 rounded-full font-bold border border-warning/20">CANLI VERİ</span>
+                            <span class="text-[9px] bg-white/5 text-slate-300 px-2 py-0.5 rounded-full font-bold border border-white/10">AI PRIORITY</span>
                         </div>
                     </div>
                     {% endfor %}
@@ -357,8 +383,9 @@
                 const path = document.getElementById(`osint-${id}-path`);
                 const text = document.getElementById(`osint-${id}-val`);
                 if(path && text) {
-                    path.setAttribute('stroke-dasharray', `${val}, 100`);
-                    text.innerText = `${val}%`;
+                    const normalized = Math.max(0, Math.min(100, Number(val) || 0));
+                    path.setAttribute('stroke-dasharray', `${normalized}, 100`);
+                    text.innerText = `${normalized}%`;
                 }
             }
 
@@ -409,6 +436,11 @@
                     const b = (intel && intel.bot_likelihood !== undefined) ? intel.bot_likelihood : 0;
                     const sr = (intel && intel.sarcasm_rate !== undefined) ? intel.sarcasm_rate : 0;
                     const total = (intel && intel.total_analyzed !== undefined) ? intel.total_analyzed : 0;
+                    const metaBot = (intel && intel.bot_likelihood_metadata !== undefined) ? intel.bot_likelihood_metadata : 0;
+                    const aiBot = (intel && intel.bot_likelihood_ai !== undefined) ? intel.bot_likelihood_ai : 0;
+                    const sampledAccounts = (intel && intel.bot_accounts_sampled !== undefined) ? intel.bot_accounts_sampled : 0;
+                    const followRatio = (intel && intel.bot_follow_ratio_avg !== undefined) ? intel.bot_follow_ratio_avg : 0;
+                    const tweetVelocity = (intel && intel.bot_tweets_per_day_avg !== undefined) ? intel.bot_tweets_per_day_avg : 0;
                     const mermaidText = (graph && graph.mermaid) ? this.cleanMermaid(graph.mermaid) : "graph TD\n  A[Veri] --> B[Yok]";
                     
                     let html = `
@@ -432,6 +464,24 @@
                                 </div>
                             </div>
                             
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div class="bg-rose-500/10 p-4 rounded-xl border border-rose-500/20">
+                                    <p class="text-[10px] text-rose-300 uppercase font-bold mb-1">Metadata Bot Skoru</p>
+                                    <p class="text-xl font-bold text-white">${metaBot}%</p>
+                                    <p class="text-[10px] text-slate-500 mt-1">${sampledAccounts} Twitter hesabı örneklendi</p>
+                                </div>
+                                <div class="bg-indigo-500/10 p-4 rounded-xl border border-indigo-500/20">
+                                    <p class="text-[10px] text-indigo-300 uppercase font-bold mb-1">Takip Oranı</p>
+                                    <p class="text-xl font-bold text-white">${followRatio}x</p>
+                                    <p class="text-[10px] text-slate-500 mt-1">Takip edilen / takipçi ortalaması</p>
+                                </div>
+                                <div class="bg-emerald-500/10 p-4 rounded-xl border border-emerald-500/20">
+                                    <p class="text-[10px] text-emerald-300 uppercase font-bold mb-1">Tweet Sıklığı</p>
+                                    <p class="text-xl font-bold text-white">${tweetVelocity}/gün</p>
+                                    <p class="text-[10px] text-slate-500 mt-1">Hesap yaşı bazlı ortalama</p>
+                                </div>
+                            </div>
+                            
                             <div class="bg-dark/50 p-6 rounded-xl border border-slate-700 shadow-inner">
                                 <h4 class="text-white font-bold mb-4 flex items-center gap-2">
                                     <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
@@ -449,6 +499,7 @@
                                 <p class="text-sm leading-relaxed text-slate-300">
                                     Karargah tarafından analiz edilen <strong>${total}</strong> içerik üzerinde yapılan derinlemesine incelemede; 
                                     ${b > 30 ? '<span class="text-warning">yüksek oranda koordineli bot faaliyeti</span>' : '<span class="text-success">doğal bir kullanıcı etkileşimi</span>'} gözlemlenmiştir. 
+                                    Bot dedektörü AI skorunu (${aiBot}%) Twitter hesap metadata skoru (${metaBot}%) ile birlikte değerlendirir.
                                     Sistem, ${m > 40 ? '<span class="text-danger font-bold">algı operasyonu riskini KRİTİK</span>' : '<span class="text-slate-400">medya akışını stabil</span>'} olarak etiketlemiştir. 
                                     Varlıklar arasındaki ilişki yoğunluğu, gündemin tek bir merkezden provoke edilip edilmediğini doğrulamak için sürekli izlenmektedir.
                                 </p>

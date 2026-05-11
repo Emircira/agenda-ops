@@ -14,7 +14,12 @@ from app.models.core import Source, Content, SourceType
 from app.providers.rss_provider import RSSProvider
 from app.providers.youtube_provider import YouTubeProvider
 from app.providers.x_provider import RapidXProvider, MockXProvider
-from app.core.utils import pre_filter_content, extract_youtube_comments_as_articles
+from app.core.utils import (
+    pre_filter_content,
+    extract_youtube_comments_as_articles,
+    calculate_twitter_bot_likelihood,
+    twitter_bot_signal_summary,
+)
 
 
 def run_async(coro):
@@ -63,7 +68,15 @@ def _post_to_article(post: dict, source_id=None, domain="general") -> dict:
         "author": author,
         "target_type": post.get("target_type"),
         "target_name": post.get("target_name"),
+        "metrics": {
+            "likes": post.get("_likes", 0),
+            "retweets": post.get("_retweets", 0),
+            "replies": post.get("_replies", 0),
+        },
+        "account_metrics": post.get("_account_metrics") or {},
     }
+    safe_json["bot_likelihood"] = calculate_twitter_bot_likelihood(safe_json)
+    safe_json["bot_signals"] = twitter_bot_signal_summary(safe_json)
 
     return {
         "source_id": source_id,

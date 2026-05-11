@@ -99,6 +99,53 @@ class RapidXProvider(XProvider):
 
         return "Unknown"
 
+    @staticmethod
+    def _safe_int(value) -> int:
+        try:
+            return int(str(value).replace(",", "").strip())
+        except (TypeError, ValueError):
+            return 0
+
+    @classmethod
+    def _extract_account_metrics(cls, tweet_data: dict) -> Dict[str, Any]:
+        """Tweet payload'ındaki olası kullanıcı metriklerini normalize eder."""
+        candidates = [
+            tweet_data.get("author"),
+            tweet_data.get("user_info"),
+            tweet_data.get("user"),
+            tweet_data.get("core", {}).get("user_results", {}).get("result", {}),
+        ]
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            legacy = candidate.get("legacy") if isinstance(candidate.get("legacy"), dict) else {}
+            data = {**candidate, **legacy}
+            followers = cls._safe_int(
+                data.get("followers_count") or data.get("follower_count") or data.get("followers")
+            )
+            following = cls._safe_int(
+                data.get("friends_count") or data.get("following_count") or data.get("following")
+            )
+            tweet_count = cls._safe_int(
+                data.get("statuses_count") or data.get("tweet_count") or data.get("tweets_count")
+            )
+            created_at = (
+                data.get("created_at") or
+                data.get("createdAt") or
+                data.get("account_created_at")
+            )
+            if any([followers, following, tweet_count, created_at]):
+                return {
+                    "user_id": data.get("id_str") or data.get("id"),
+                    "screen_name": data.get("screen_name") or data.get("username"),
+                    "account_created_at": created_at,
+                    "followers_count": followers,
+                    "following_count": following,
+                    "tweet_count": tweet_count,
+                }
+
+        return {}
+
     # ------------------------------------------------------------------ #
     #  TEK TWEET PARSE
     # ------------------------------------------------------------------ #
@@ -134,10 +181,11 @@ class RapidXProvider(XProvider):
             tweet_data.get("created_at") or tweet_data.get("createdAt")
         )
 
-        # Etkileşim metrikleri (sıralama için kullanılacak, DB'ye gönderilmeyecek)
+        # Etkileşim ve hesap metrikleri: sıralama, reply taraması ve bot skoru için kullanılır.
         likes = tweet_data.get("favorite_count") or tweet_data.get("likes") or 0
         retweets = tweet_data.get("retweet_count") or tweet_data.get("retweets") or 0
         replies_count = tweet_data.get("reply_count") or tweet_data.get("replies") or 0
+        account_metrics = self._extract_account_metrics(tweet_data)
         if isinstance(likes, str):
             try: likes = int(likes)
             except: likes = 0
@@ -155,6 +203,7 @@ class RapidXProvider(XProvider):
             "_likes": int(likes) if likes else 0,
             "_retweets": int(retweets) if retweets else 0,
             "_replies": int(replies_count) if replies_count else 0,
+            "_account_metrics": account_metrics,
         }
 
     # ------------------------------------------------------------------ #
@@ -320,7 +369,7 @@ class RapidXProvider(XProvider):
             # Hit sıralaması: Beğeni + Retweet'e göre
             replies.sort(key=lambda x: x.get("_likes", 0) + x.get("_retweets", 0), reverse=True)
 
-            return replies[:20]  # En etkili 20 yorum
+            return replies[:100]  # Derin araştırma için en etkili 100 yorum
         except Exception as e:
             logger.error(f"RapidX fetch_tweet_replies hatası (tweet {tweet_id}): {e}")
             return []
@@ -364,7 +413,7 @@ class RapidXProvider(XProvider):
             tweets_with_replies = 0
             reply_requests_sent = 0
 
-            for tweet in raw_tweets[:30]:  # Son 30 tweet
+            for tweet in raw_tweets[:150]:  # Derin tarama: son 150 tweet
                 parsed = self._parse_tweet(tweet, keyword=screen_name, target_type="twitter_self")
                 if not parsed:
                     continue

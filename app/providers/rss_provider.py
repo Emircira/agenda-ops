@@ -8,7 +8,7 @@ from loguru import logger
 class RSSProvider:
     """
     RSS veri sağlayıcısı — limit kaldırıldı, tüm feed'i çeker.
-    Google News genelde 60-100+ haber döndürür.
+    Google News genelde 60-100+ haber döndürür; Derin Araştırma 5x tarama için 1000'e kadar entry okur.
     """
 
     def _clean_html(self, raw_html: str) -> str:
@@ -18,10 +18,10 @@ class RSSProvider:
         soup = BeautifulSoup(raw_html, "html.parser")
         return soup.get_text(separator=" ", strip=True)
 
-    async def fetch_feed(self, source_url: str, source_name: str, max_items: int = 200) -> list[dict]:
+    async def fetch_feed(self, source_url: str, source_name: str, max_items: int = 1000) -> list[dict]:
         """
         RSS linkinden güncel haberleri standart Karargah formatında çeker.
-        max_items: En fazla kaç haber döndürülsün (default 200 = pratikte tamamı).
+        max_items: En fazla kaç haber döndürülsün (default 1000 = 5x derin tarama).
         """
         logger.info(f"📡 RSS Avcısı: {source_name} taranıyor...")
         parsed_data = []
@@ -32,7 +32,7 @@ class RSSProvider:
                 logger.warning(f"⚠️ RSS [{source_name}]: Hiç entry bulunamadı. URL kontrol edin: {source_url}")
                 return []
 
-            for entry in feed.entries[:max_items]:  # Limit artırıldı: 25 → 200
+            for entry in feed.entries[:max_items]:  # Derin Araştırma: 200 → 1000
                 pub_parsed = entry.get("published_parsed")
                 pub_date = datetime.fromtimestamp(time.mktime(pub_parsed)) if pub_parsed else datetime.utcnow()
 
