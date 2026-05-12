@@ -1,5 +1,6 @@
 import os
 import asyncio
+import random
 import httpx
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
@@ -17,7 +18,14 @@ class XProvider(ABC):
         pass
 
     @abstractmethod
-    async def fetch_keyword_posts(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
+    async def fetch_keyword_posts(self, keyword: str, limit: int = 70) -> List[Dict[str, Any]]:
+        pass
+
+    @abstractmethod
+    async def fetch_top_tweets_shallow(
+        self, keyword: str, limit: int = 6, search_type: str = "Top"
+    ) -> List[Dict[str, Any]]:
+        """Tek sayfa arama — trend/gündem maliyet kalkanı (derin sayfalama yok)."""
         pass
 
     @abstractmethod
@@ -42,8 +50,8 @@ class RapidXProvider(XProvider):
     RATE_LIMIT_DELAY = 15.0
     # API istek timeout (saniye)
     REQUEST_TIMEOUT = 45.0
-    # Maksimum deneme sayısı
-    MAX_RETRIES = 3
+    # Maksimum deneme (5xx geçici RapidAPI/upstream kesintileri için birkaç tur)
+    MAX_RETRIES = 5
 
     def __init__(self):
         self.api_key = os.getenv("RAPIDAPI_KEY") or os.getenv("RAPID_API_KEY")
@@ -235,9 +243,31 @@ class RapidXProvider(XProvider):
                         continue
 
                     if response.status_code >= 500:
-                        # Sunucu hatası — yeniden dene
-                        wait = 5 * (attempt + 1)
-                        logger.warning(f"RapidX: Sunucu hatası {response.status_code}, {wait}sn sonra tekrar deneniyor...")
+                        # 502 Bad Gateway / 503: RapidAPI veya twitter-api45 tarafında geçici yük,
+                        # proxy timeout veya bakım. Uygulama hatası değildir.
+                        ra_hdr = response.headers.get("Retry-After")
+                        if ra_hdr:
+                            try:
+                                wait = float(ra_hdr.strip())
+                            except ValueError:
+                                wait = min(
+                                    120.0,
+                                    8 * (2**attempt) + random.uniform(0, 2.5),
+                                )
+                        else:
+                            wait = min(
+                                120.0,
+                                8 * (2**attempt) + random.uniform(0, 2.5),
+                            )
+                        wait = max(3.0, min(120.0, wait))
+                        body_hint = (response.text or "")[:180].replace("\n", " ").strip()
+                        logger.warning(
+                            f"RapidX: Upstream HTTP {response.status_code} [{endpoint}] — "
+                            f"geçici sunucu veya geçit hatası. {wait:.1f}s sonra tekrar "
+                            f"(deneme {attempt + 1}/{self.MAX_RETRIES})."
+                        )
+                        if body_hint:
+                            logger.debug(f"RapidX yanıt özeti: {body_hint}")
                         await asyncio.sleep(wait)
                         continue
 
@@ -327,7 +357,7 @@ class RapidXProvider(XProvider):
             data = await self._api_request("trends.php", {"country": "turkey"})
             trends = data if isinstance(data, list) else data.get("trends", [])
             results = []
-            for i, trend in enumerate(trends[:50]):
+            for i, trend in enumerate(trends[:35]):
                 name = trend.get("name") or trend.get("trend") or f"Trend_{i}"
                 results.append({
                     "external_id": f"trend_{name}_{datetime.utcnow().strftime('%Y%m%d')}",
@@ -340,6 +370,55 @@ class RapidXProvider(XProvider):
             return results
         except Exception as e:
             logger.error(f"RapidX fetch_trends hatası: {e}")
+            raise
+
+    async def fetch_top_tweets_shallow(
+        self, keyword: str, limit: int = 6, search_type: str = "Top"
+    ) -> List[Dict[str, Any]]:
+        """
+        Gündem/trend örnekleme: yalnızca TEK search.php sayfası, çoklu cursor turu yok.
+        Reply / conversation API çağrısı yapmaz (API maliyet kalkanı).
+        """
+        # Üst sınır ~%30 kısılmış (önceki 15 → 10); API maliyeti ve hacim düşer
+        cap = max(1, min(int(limit), 10))
+        if not (keyword or "").strip():
+            return []
+        kw = keyword.strip()
+        logger.info(
+            f"🔎 RapidX: '{kw}' yüzeysel arama (max {cap} tweet, tek sayfa, {search_type})..."
+        )
+        try:
+            out: List[Dict[str, Any]] = []
+            seen: set = set()
+            attempt_types: List[str] = [search_type]
+            if search_type == "Top":
+                attempt_types.append("Latest")
+
+            for i, attempt_type in enumerate(attempt_types):
+                if i > 0:
+                    logger.warning(f"RapidX: önceki arama boş, '{kw}' için {attempt_type} deneniyor.")
+                    await asyncio.sleep(self.API_DELAY)
+                params = {"query": kw, "search_type": attempt_type}
+                data = await self._api_request("search.php", params)
+                raw_tweets, _ = self._extract_tweets_from_response(data)
+                for tweet in raw_tweets:
+                    parsed = self._parse_tweet(tweet, keyword=kw, target_type="twitter_trend")
+                    if not parsed:
+                        continue
+                    eid = parsed.get("external_id")
+                    if not eid or eid in seen:
+                        continue
+                    seen.add(eid)
+                    out.append(parsed)
+                    if len(out) >= cap:
+                        break
+                if out:
+                    break
+
+            logger.info(f"✅ RapidX '{kw}' yüzeysel: {len(out)} tweet")
+            return out
+        except Exception as e:
+            logger.error(f"RapidX fetch_top_tweets_shallow hatası ({kw}): {e}")
             raise
 
     # ------------------------------------------------------------------ #
@@ -367,7 +446,7 @@ class RapidXProvider(XProvider):
             # Hit sıralaması: Beğeni + Retweet'e göre
             replies.sort(key=lambda x: x.get("_likes", 0) + x.get("_retweets", 0), reverse=True)
 
-            return replies[:100]  # Derin araştırma için en etkili 100 yorum
+            return replies[:70]  # Derin araştırma / reply — hacim ~%30 düşük
         except Exception as e:
             logger.error(f"RapidX fetch_tweet_replies hatası (tweet {tweet_id}): {e}")
             raise
@@ -408,7 +487,7 @@ class RapidXProvider(XProvider):
             tweets_with_replies = 0
             reply_requests_sent = 0
 
-            for tweet in raw_tweets[:150]:  # Derin tarama: son 150 tweet
+            for tweet in raw_tweets[:105]:  # Hesap timeline — ~%30 daha az tweet
                 parsed = self._parse_tweet(tweet, keyword=screen_name, target_type="twitter_self")
                 if not parsed:
                     continue
@@ -465,7 +544,7 @@ class RapidXProvider(XProvider):
     # ------------------------------------------------------------------ #
     #  ANAHTAR KELİME ARAMASI (GÜÇLENDİRİLMİŞ DEEPScan Pagination)
     # ------------------------------------------------------------------ #
-    async def fetch_keyword_posts(self, keyword: str, limit: int = 100) -> List[Dict[str, Any]]:
+    async def fetch_keyword_posts(self, keyword: str, limit: int = 70) -> List[Dict[str, Any]]:
         """
         Anahtar kelime araması — GÜÇLENDİRİLMİŞ CURSOR TABANLI SAYFALAMA.
         • min 50–100 içerik toplayana kadar sayfalama devam eder

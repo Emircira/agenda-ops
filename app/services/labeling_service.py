@@ -2,6 +2,7 @@ import os
 import json
 from loguru import logger
 from app.services.gemini_model import create_gemini_model
+from app.services.karargah_llm_directive import with_karargah_osint_directive
 
 class LabelingService:
     def __init__(self):
@@ -31,7 +32,7 @@ class LabelingService:
             raise
 
     def _llm_analysis(self, text: str, platform: str) -> dict:
-        prompt = f"""
+        prompt = with_karargah_osint_directive(f"""
         Aşağıdaki {platform} içeriğini bir siyasi istihbarat analisti ve OSINT uzmanı gibi incele ve SADECE JSON formatında dön.
         
         İÇERİK:
@@ -51,7 +52,7 @@ class LabelingService:
             "bot_likelihood": 0.0 ile 1.0 arası bot/troll hesabı olma ihtimali,
             "sarcasm_detected": true veya false (alaycı/iğneleyici dil tespiti)
         }}
-        """
+        """)
         response = self.model.generate_content(prompt)
         
         # Olası format hatalarını temizleme (Markdown tagleri vb.)

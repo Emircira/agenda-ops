@@ -10,13 +10,14 @@ from celery import chain
 
 from app.core.celery_app import celery_app
 from app.db.session import AsyncSessionLocal
-from app.models.core import Source, Content, SourceType
+from app.models.core import Source, Content, SourceType, ContentType
 from app.providers.rss_provider import RSSProvider
 from app.providers.youtube_provider import YouTubeProvider, YouTubeQuotaExceeded
 from app.providers.x_provider import RapidXProvider
 from app.core.utils import (
     pre_filter_content,
     extract_youtube_comments_as_articles,
+    extract_youtube_video_stub_article,
     calculate_twitter_bot_likelihood,
     twitter_bot_signal_summary,
     select_ai_triage_candidates,
@@ -83,11 +84,11 @@ def _post_to_article(post: dict, source_id=None, domain="general") -> dict:
         "author_name": author,
         "published_at": _safe_parse_date(post.get("published_at")),
         "text": post.get("text", ""),
-        "content_type": "reply" if is_reply else "post",
+        "content_type": ContentType.reply if is_reply else ContentType.post,
         "url": f"https://twitter.com/x/status/{post.get('external_id')}",
         "domain": domain,
         "raw_json": safe_json,
-        "is_analyzed": True
+        "is_analyzed": False,
     }
 
 
@@ -191,6 +192,9 @@ def ingest_youtube_all_sources(self):
                         articles = extract_youtube_comments_as_articles(
                             video, comments, source_id, source_domain
                         )
+                        if not articles:
+                            stub = extract_youtube_video_stub_article(video, source_id, source_domain)
+                            articles = [stub] if stub else []
                         for art in articles:
                             art['is_analyzed'] = True
 
@@ -280,7 +284,7 @@ def ingest_x_all_sources(self):
 
                 try:
                     if source_type == 'twitter_trend':
-                        posts = await provider.fetch_keyword_posts(source_url, limit=100)
+                        posts = await provider.fetch_top_tweets_shallow(source_url, limit=17)
                     else:
                         posts = await provider.fetch_mentions(source_url)
 
@@ -349,19 +353,55 @@ def ingest_x_all_sources(self):
     acks_late=True,
 )
 def ingest_x_daily_trends(self):
+    """
+    Zamanlanmış X gündem görevi — API maliyet kalkanı:
+    • trends.php ile trend başlıkları
+    • Her trend için yalnızca tek sayfa Top/Latest arama (5–10 tweet)
+    • Reply / thread derinliği YOK
+    """
+
+    TREND_SAMPLE_COUNT = 7
+    TWEETS_PER_TREND = 6
+
     async def _task():
-        logger.info("🐦 Celery: X/Twitter Gündem Araması Başladı")
-        provider = get_x_provider()
+        logger.info("🐦 Celery: X Gündem (düşük maliyet — trend + üst tweet örnekleri)")
+        try:
+            provider = get_x_provider()
+        except Exception as e:
+            logger.error(f"X provider başlatılamadı: {e}")
+            return "Gündem: provider yok"
 
         try:
-            posts = await provider.fetch_keyword_posts("Türkiye Gündemi", limit=100)
+            trend_rows = await provider.fetch_trends()
         except Exception as e:
-            logger.error(f"Gündem araması hatası: {e}")
-            posts = []
+            logger.error(f"Trend listesi alınamadı: {e}")
+            trend_rows = []
+
+        all_posts: list = []
+        seen_names: list = []
+        seen_ids: set = set()
+
+        for row in trend_rows:
+            name = (row.get("target_name") or "").strip()
+            if not name or name in seen_names:
+                continue
+            seen_names.append(name)
+            if len(seen_names) > TREND_SAMPLE_COUNT:
+                break
+            try:
+                chunk = await provider.fetch_top_tweets_shallow(name, limit=TWEETS_PER_TREND)
+                for p in chunk:
+                    eid = p.get("external_id")
+                    if eid and eid not in seen_ids:
+                        seen_ids.add(eid)
+                        all_posts.append(p)
+            except Exception as e:
+                logger.warning(f"Trend '{name}' için örnek tweet atlandı: {e}")
+            await asyncio.sleep(provider.API_DELAY)
 
         async with AsyncSessionLocal() as db:
             total_added = 0
-            for post in posts:
+            for post in all_posts:
                 try:
                     article = _post_to_article(post, source_id=None, domain="general")
                     stmt = insert(Content).values(**article).on_conflict_do_nothing(index_elements=['external_id'])
@@ -372,7 +412,10 @@ def ingest_x_daily_trends(self):
                     logger.warning(f"Gündem kayıt hatası: {e}")
 
             await db.commit()
-            logger.info(f"✅ X/Twitter Gündem Tamamlandı. {total_added} yeni içerik.")
+            logger.info(
+                f"✅ X Gündem (hafif): {len(seen_names)} trend başlığı tarandı, "
+                f"{total_added} yeni tweet (toplam {len(all_posts)} aday)."
+            )
             return f"Gündem: {total_added} yeni içerik"
 
     result = run_async(_task())
@@ -400,7 +443,7 @@ def ingest_x_person_mention_posts(self, target_person: str = "Siyasi Lider"):
         provider = get_x_provider()
 
         try:
-            posts = await provider.fetch_keyword_posts(target_person, limit=100)
+            posts = await provider.fetch_keyword_posts(target_person, limit=70)
         except Exception as e:
             logger.error(f"Kişi takibi hatası: {e}")
             posts = []

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import time
 from datetime import datetime, timedelta
@@ -24,6 +25,23 @@ class YouTubeProvider:
     RATE_LIMIT_DELAY = 30.0
     # Maksimum retry sayısı
     MAX_RETRIES = 3
+
+    @staticmethod
+    def _is_comments_disabled(error: HttpError) -> bool:
+        blob = str(error).lower().replace("_", "").replace(" ", "")
+        if "commentsdisabled" in blob:
+            return True
+        raw = getattr(error, "content", None)
+        if not raw:
+            return False
+        try:
+            data = json.loads(raw.decode("utf-8"))
+            for err in data.get("error", {}).get("errors", []):
+                if err.get("reason") == "commentsDisabled":
+                    return True
+        except Exception:
+            pass
+        return False
 
     def __init__(self):
         self.api_key = os.getenv("YOUTUBE_API_KEY", "").strip()
@@ -214,47 +232,71 @@ class YouTubeProvider:
     async def fetch_video_comments(self, video_id: str, max_results: int = 100) -> list:
         """
         Video yorumları — DERİN SAYFALAMA DESTEKLİ.
-        max_results kadar yorum çeker (her sayfada 100'e kadar).
-        Rate limit koruması ve retry mekanizması mevcut.
+        Yorumları kapalı videolar: API hatası fırlatılmaz, boş liste döner.
         """
-        try:
-            all_comments = []
-            page_token = None
-            remaining = max_results
-            pages_fetched = 0
+        all_comments = []
+        page_token = None
+        remaining = max_results
 
-            while remaining > 0:
-                batch_size = min(remaining, 100)  # commentThreads API max 100
-                req = self.youtube.commentThreads().list(
-                    part="snippet",
-                    videoId=video_id,
-                    maxResults=batch_size,
-                    order="relevance",
-                    pageToken=page_token
-                )
-                res = await self._safe_execute(req, context=f"comments:{video_id}")
-                if not res:
+        while remaining > 0:
+            batch_size = min(remaining, 100)  # commentThreads API max 100
+            req = self.youtube.commentThreads().list(
+                part="snippet",
+                videoId=video_id,
+                maxResults=batch_size,
+                order="relevance",
+                pageToken=page_token,
+            )
+
+            res = None
+            for attempt in range(self.MAX_RETRIES):
+                try:
+                    await asyncio.sleep(self.API_DELAY)
+                    res = await asyncio.to_thread(req.execute)
                     break
+                except HttpError as e:
+                    if self._is_comments_disabled(e):
+                        logger.info(f"YouTube: yorumlar kapalı — video {video_id}, sessizce atlanıyor.")
+                        return all_comments
+                    status = e.resp.status
+                    if status in (403, 429) and self._is_quota_error(e):
+                        wait = self.RATE_LIMIT_DELAY * (attempt + 1)
+                        logger.warning(
+                            f"YouTube yorum quota/rate ({video_id}) "
+                            f"(deneme {attempt + 1}/{self.MAX_RETRIES}), {wait}sn..."
+                        )
+                        await asyncio.sleep(wait)
+                        if attempt == self.MAX_RETRIES - 1:
+                            raise YouTubeQuotaExceeded(f"YouTube kotası (yorumlar {video_id})") from e
+                        continue
+                    if status >= 500:
+                        wait = 10 * (attempt + 1)
+                        logger.warning(f"YouTube yorum sunucu ({status}) {video_id}, {wait}sn...")
+                        await asyncio.sleep(wait)
+                        if attempt == self.MAX_RETRIES - 1:
+                            logger.warning(f"YouTube yorum çekimi iptal ({video_id}).")
+                            return all_comments
+                        continue
+                    logger.warning(f"YouTube yorum istemci hatası ({video_id}): {e}")
+                    return all_comments
+                except YouTubeQuotaExceeded:
+                    raise
+                except Exception as e:
+                    wait = 5 * (attempt + 1)
+                    logger.warning(f"YouTube yorum beklenmeyen hata ({video_id}): {e}, {wait}sn...")
+                    await asyncio.sleep(wait)
+                    if attempt == self.MAX_RETRIES - 1:
+                        return all_comments
 
-                items = res.get("items", [])
-                all_comments.extend(items)
+            if not res:
+                break
 
-                remaining -= len(items)
-                pages_fetched += 1
-                page_token = res.get("nextPageToken")
-                if not page_token or not items:
-                    break
+            items = res.get("items", [])
+            all_comments.extend(items)
 
-            return all_comments
-        except HttpError as e:
-            if e.resp.status == 403:
-                logger.error(f"❌ YouTube yorum erişim/quota hatası: {video_id}")
-            else:
-                logger.error(f"❌ YouTube Yorum Hatası ({video_id}): {e}")
-            raise
-        except YouTubeQuotaExceeded:
-            logger.error(f"❌ YouTube kotası doldu (yorumlar: {video_id}); diğer kaynaklara geçilmeli.")
-            raise
-        except Exception as e:
-            logger.error(f"❌ YouTube Yorum Hatası ({video_id}): {e}")
-            raise
+            remaining -= len(items)
+            page_token = res.get("nextPageToken")
+            if not page_token or not items:
+                break
+
+        return all_comments

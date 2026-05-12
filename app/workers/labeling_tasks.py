@@ -5,7 +5,7 @@ from sqlalchemy import select, and_
 
 from app.core.celery_app import celery_app
 from app.db.session import AsyncSessionLocal
-from app.models.core import Content, ContentLabel
+from app.models.core import Content, ContentLabel, Source
 from app.services.gemini_service import GeminiAIClient
 from app.core.utils import calculate_twitter_bot_likelihood
 
@@ -66,17 +66,21 @@ def batch_analyze_contents(self):
             for iteration in range(max_iterations):
                 # Analiz edilmemiş içerikleri çek (sıralı, en eski önce)
                 stmt = (
-                    select(Content)
+                    select(Content, Source.source_category)
+                    .outerjoin(Source, Content.source_id == Source.id)
                     .where(Content.is_analyzed == False)
                     .order_by(Content.published_at.asc())
                     .limit(DB_BATCH_SIZE)
                 )
                 res = await db.execute(stmt)
-                contents = res.scalars().all()
+                rows = res.all()
 
-                if not contents:
+                if not rows:
                     logger.info(f"📭 Analiz edilecek içerik kalmadı (iterasyon {iteration + 1}).")
                     break
+
+                contents = [r[0] for r in rows]
+                src_cats = [r[1] for r in rows]
 
                 logger.info(
                     f"📦 İterasyon {iteration + 1}: {len(contents)} içerik analiz ediliyor... "
@@ -85,11 +89,12 @@ def batch_analyze_contents(self):
 
                 # Gemini'ye gönderilecek veri
                 batch_data = []
-                for c in contents:
+                for c, src_cat in zip(contents, src_cats):
                     batch_data.append({
                         "id": str(c.id),
                         "text": c.text or "",
                         "platform": c.platform or "unknown",
+                        "source_category": src_cat or "general_agenda",
                     })
 
                 # Gemini AI analiz (mini-batch'ler halinde çalışır)
@@ -209,7 +214,8 @@ def analyze_twitter_contents(self, fetch_result=None):
         async with AsyncSessionLocal() as db:
             for _ in range(5):  # Max 5 iterasyon (250 içerik)
                 stmt = (
-                    select(Content)
+                    select(Content, Source.source_category)
+                    .outerjoin(Source, Content.source_id == Source.id)
                     .where(
                         and_(
                             Content.is_analyzed == False,
@@ -220,12 +226,23 @@ def analyze_twitter_contents(self, fetch_result=None):
                     .limit(DB_BATCH_SIZE)
                 )
                 res = await db.execute(stmt)
-                contents = res.scalars().all()
+                rows = res.all()
 
-                if not contents:
+                if not rows:
                     break
 
-                batch_data = [{"id": str(c.id), "text": c.text or ""} for c in contents]
+                contents = [r[0] for r in rows]
+                src_cats = [r[1] for r in rows]
+
+                batch_data = [
+                    {
+                        "id": str(c.id),
+                        "text": c.text or "",
+                        "platform": c.platform or "unknown",
+                        "source_category": src_cat or "general_agenda",
+                    }
+                    for c, src_cat in zip(contents, src_cats)
+                ]
                 analysis_results = ai_client.analyze_batch(batch_data)
 
                 results_by_id = {str(item.get("id", "")): item for item in analysis_results}
@@ -296,7 +313,8 @@ def analyze_youtube_contents(self, fetch_result=None):
         async with AsyncSessionLocal() as db:
             for _ in range(5):
                 stmt = (
-                    select(Content)
+                    select(Content, Source.source_category)
+                    .outerjoin(Source, Content.source_id == Source.id)
                     .where(
                         and_(
                             Content.is_analyzed == False,
@@ -307,12 +325,23 @@ def analyze_youtube_contents(self, fetch_result=None):
                     .limit(DB_BATCH_SIZE)
                 )
                 res = await db.execute(stmt)
-                contents = res.scalars().all()
+                rows = res.all()
 
-                if not contents:
+                if not rows:
                     break
 
-                batch_data = [{"id": str(c.id), "text": c.text or ""} for c in contents]
+                contents = [r[0] for r in rows]
+                src_cats = [r[1] for r in rows]
+
+                batch_data = [
+                    {
+                        "id": str(c.id),
+                        "text": c.text or "",
+                        "platform": c.platform or "unknown",
+                        "source_category": src_cat or "general_agenda",
+                    }
+                    for c, src_cat in zip(contents, src_cats)
+                ]
                 analysis_results = ai_client.analyze_batch(batch_data)
 
                 results_by_id = {str(item.get("id", "")): item for item in analysis_results}

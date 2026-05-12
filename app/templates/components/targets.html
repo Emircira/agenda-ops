@@ -24,6 +24,16 @@
                     <p class="text-[10px] text-slate-500 mt-1">Verinin hangi kategoriye ait olduğunu belirler. Yapay zeka analizi sırasında kategori karışmasını engeller.</p>
                 </div>
                 <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-2">Kaynak Tipi (AI bağlamı)</label>
+                    <select id="sourceCategory" class="w-full bg-dark border border-slate-700 text-white rounded-lg px-4 py-3 focus:border-ai outline-none">
+                        <option value="competitor">Rakip</option>
+                        <option value="news_agency">Haber Ajansı</option>
+                        <option value="person_or_target">Şahıs / Hedef</option>
+                        <option value="general_agenda" selected>Genel Gündem</option>
+                    </select>
+                    <p class="text-[10px] text-slate-500 mt-1">Yapay zeka bu kaynağı rakip kampanyası mı, haber dili mi diye ayırır.</p>
+                </div>
+                <div>
                     <label id="labelSourceName" class="block text-sm font-medium text-slate-400 mb-2">Hedef Adı (Tanımlayıcı)</label>
                     <input type="text" id="sourceName" placeholder="Örn: Fatih Altaylı, Erken Seçim..." class="w-full bg-dark border border-slate-700 text-white rounded-lg px-4 py-3 focus:border-primary outline-none" required>
                 </div>
@@ -59,6 +69,17 @@
                         <span class="bg-amber-500/20 text-amber-400 text-[10px] px-1.5 py-0.5 rounded">💰 EKO</span>
                         {% else %}
                         <span class="bg-slate-600/20 text-slate-400 text-[10px] px-1.5 py-0.5 rounded">🌐 GNL</span>
+                        {% endif %}
+
+                        {% set scat = src.source_category|default('general_agenda') %}
+                        {% if scat == 'competitor' %}
+                        <span class="bg-rose-500/20 text-rose-300 text-[10px] px-1.5 py-0.5 rounded font-bold">RAKİP</span>
+                        {% elif scat == 'news_agency' %}
+                        <span class="bg-sky-500/20 text-sky-300 text-[10px] px-1.5 py-0.5 rounded font-bold">HABER</span>
+                        {% elif scat == 'person_or_target' %}
+                        <span class="bg-violet-500/20 text-violet-300 text-[10px] px-1.5 py-0.5 rounded font-bold">HEDEF</span>
+                        {% else %}
+                        <span class="bg-slate-500/20 text-slate-300 text-[10px] px-1.5 py-0.5 rounded font-bold">GÜNDEM</span>
                         {% endif %}
                         
                         <span class="text-white text-sm font-medium ml-1">{{ src.name }}</span>

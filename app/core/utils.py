@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 def pre_filter_content(text: str) -> bool:
     """
@@ -130,6 +130,42 @@ def extract_youtube_comments_as_articles(video, comments, source_id, domain='gen
         except Exception:
             pass
     return articles
+
+
+def extract_youtube_video_stub_article(
+    video: Dict[str, Any],
+    source_id,
+    domain: str = "general",
+) -> Optional[Dict[str, Any]]:
+    """Yorum kapalı/boş videolar için kanal + başlık + özet ile tek içerik satırı (akışta görünür)."""
+    try:
+        vid_obj = video.get("id")
+        vid_id = vid_obj if isinstance(vid_obj, str) else (vid_obj or {}).get("videoId")
+        if not vid_id:
+            return None
+        snip = video.get("snippet") or {}
+        title = snip.get("title") or ""
+        channel = snip.get("channelTitle") or "YouTube"
+        desc = (snip.get("description") or "")[:1800]
+        pub_at_str = snip.get("publishedAt") or ""
+        if pub_at_str.endswith("Z"):
+            pub_at_str = pub_at_str[:-1] + "+00:00"
+        pub = datetime.fromisoformat(pub_at_str).replace(tzinfo=None) if pub_at_str else datetime.utcnow()
+        text = f"[Video: {title} | Kanal: {channel} | Bağlam: {domain}]\n{desc}".strip()
+        return {
+            "source_id": source_id,
+            "platform": "youtube",
+            "external_id": f"youtube_video_{vid_id}",
+            "author_name": channel,
+            "published_at": pub,
+            "text": text,
+            "content_type": "article",
+            "url": f"https://youtube.com/watch?v={vid_id}",
+            "domain": domain,
+            "raw_json": {"kind": "youtube_video_stub", "video_snippet": snip},
+        }
+    except Exception:
+        return None
 
 
 def _safe_int(value, default: int = 0) -> int:

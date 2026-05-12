@@ -34,7 +34,9 @@ async def run_district_seeder():
                 growth_rate=item.get("growth_rate", 0.0),
                 university_grad_pct=item.get("university_grad_pct", 0.0),
                 unemployment_rate=item.get("unemployment_rate", 0.0),
-                foreign_pop_pct=item.get("foreign_pop_pct", 0.0)
+                foreign_pop_pct=item.get("foreign_pop_pct", 0.0),
+                source_json_file="district_stats.json",
+                source_category="tuik_district_aggregate",
             )
             db.add(demo)
             eklenen += 1

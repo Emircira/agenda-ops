@@ -5,6 +5,16 @@ import time
 from loguru import logger
 
 
+def _rss_alternate_feed_url(source_url: str) -> str | None:
+    """Bazı kaynaklar boş/ölü endpoint döndürür; bilinen çalışan RSS ile devam edilir."""
+    if not (source_url or "").strip():
+        return None
+    low = source_url.strip().lower().split("?", 1)[0].rstrip("/")
+    if "trthaber.com" in low and "xml_mobile.php" in low:
+        return "https://www.trthaber.com/sondakika.rss"
+    return None
+
+
 class RSSProvider:
     """
     RSS veri sağlayıcısı — limit kaldırıldı, tüm feed'i çeker.
@@ -24,36 +34,58 @@ class RSSProvider:
         max_items: En fazla kaç haber döndürülsün (default 1000 = 5x derin tarama).
         """
         logger.info(f"📡 RSS Avcısı: {source_name} taranıyor...")
-        parsed_data = []
-        try:
-            feed = feedparser.parse(source_url)
+        urls_to_try = [source_url.strip()]
+        alt = _rss_alternate_feed_url(source_url)
+        if alt and alt not in urls_to_try:
+            urls_to_try.append(alt)
 
-            if getattr(feed, "bozo", False):
-                raise RuntimeError(f"RSS parse hatası [{source_name}]: {getattr(feed, 'bozo_exception', 'bilinmeyen hata')}")
+        parsed_data: list[dict] = []
+        for attempt_url in urls_to_try:
+            try:
+                feed = feedparser.parse(attempt_url)
+                if getattr(feed, "bozo", False) and not feed.entries:
+                    logger.warning(
+                        f"RSS [{source_name}] parse uyarısı (entry yok): {attempt_url} — "
+                        f"{getattr(feed, 'bozo_exception', 'bilinmeyen')}"
+                    )
+                    continue
 
-            if not feed.entries:
-                raise RuntimeError(f"RSS [{source_name}] hiç entry döndürmedi. URL kontrol edin: {source_url}")
+                if not feed.entries:
+                    logger.warning(f"RSS [{source_name}] bu URL için entry yok: {attempt_url}")
+                    continue
 
-            for entry in feed.entries[:max_items]:  # Derin Araştırma: 200 → 1000
-                pub_parsed = entry.get("published_parsed")
-                pub_date = datetime.fromtimestamp(time.mktime(pub_parsed)) if pub_parsed else datetime.utcnow()
+                if getattr(feed, "bozo", False):
+                    logger.debug(f"RSS [{source_name}] bozo=True ama {len(feed.entries)} entry kullanılıyor: {attempt_url}")
 
-                title = entry.get("title", "")
-                summary = self._clean_html(entry.get("summary", entry.get("description", "")))
+                if attempt_url != source_url.strip():
+                    logger.info(f"📡 RSS [{source_name}]: yedek URL kullanıldı → {attempt_url}")
 
-                parsed_data.append({
-                    "platform": "rss",
-                    "external_id": entry.get("id", entry.get("link", "")),
-                    "author_name": source_name,
-                    "published_at": pub_date,
-                    "text": f"{title}\n\n{summary}",
-                    "content_type": "article",
-                    "url": entry.get("link", ""),
-                    "raw_json": entry
-                })
+                for entry in feed.entries[:max_items]:
+                    pub_parsed = entry.get("published_parsed")
+                    pub_date = datetime.fromtimestamp(time.mktime(pub_parsed)) if pub_parsed else datetime.utcnow()
 
-            logger.info(f"✅ RSS [{source_name}]: {len(parsed_data)} haber çekildi (feed'de toplam {len(feed.entries)} entry var).")
-        except Exception as e:
-            logger.error(f"❌ RSS Çekim Hatası [{source_name}]: {e}")
-            raise
-        return parsed_data
+                    title = entry.get("title", "")
+                    summary = self._clean_html(entry.get("summary", entry.get("description", "")))
+
+                    parsed_data.append({
+                        "platform": "rss",
+                        "external_id": entry.get("id", entry.get("link", "")),
+                        "author_name": source_name,
+                        "published_at": pub_date,
+                        "text": f"{title}\n\n{summary}",
+                        "content_type": "article",
+                        "url": entry.get("link", ""),
+                        "raw_json": entry
+                    })
+
+                logger.info(
+                    f"✅ RSS [{source_name}]: {len(parsed_data)} haber çekildi "
+                    f"(kaynak: {attempt_url}, feed'de {len(feed.entries)} entry)."
+                )
+                return parsed_data
+
+            except Exception as e:
+                logger.warning(f"RSS [{source_name}] deneme başarısız ({attempt_url}): {e}")
+
+        logger.warning(f"RSS [{source_name}] için kullanılabilir kayıt yok (denenen URL'ler: {urls_to_try}).")
+        return []

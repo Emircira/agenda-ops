@@ -4,6 +4,7 @@ import time
 from loguru import logger
 from typing import List, Dict, Any, Optional
 from app.services.gemini_model import create_gemini_model
+from app.services.karargah_llm_directive import with_karargah_osint_directive
 
 
 class GeminiAIClient:
@@ -44,12 +45,21 @@ class GeminiAIClient:
         # Metni 500 karakterle sınırla (token tasarrufu)
         simplified = []
         for c in contents:
-            simplified.append({
+            entry = {
                 "id": str(c["id"]),
-                "text": str(c.get("text", ""))[:500]
-            })
+                "text": str(c.get("text", ""))[:500],
+                "kaynak_tipi": str(c.get("source_category") or "general_agenda"),
+            }
+            simplified.append(entry)
 
-        return f"""Sen bir siyasi istihbarat analisti ve OSINT uzmanısın. Türkiye bağlamında sosyal medya içeriklerini analiz et.
+        body = f"""GÖREV: Türkiye bağlamında aşağıdaki sosyal medya içeriklerinin her biri için yalnızca istenen JSON nesnelerini üret.
+Kimlik veya yöntem belirtme; metin alanlarında doğrudan içerik odaklı, profesyonel istihbarat özeti dili kullan.
+
+KAYNAK TİPİ (her içerikte "kaynak_tipi" alanı) — analizi buna göre çerçevele:
+- competitor: Ticari veya politik rakip söylemi; stratejik rekabet ve tehdit perspektifi kullan.
+- news_agency: Haber ajansı / objektif bilgi kaynağı; ticari rakip gibi varsayma; haber dili, tarafsızlık ve olası editoryal çerçeve üzerinden değerlendir.
+- person_or_target: Takip edilen şahıs veya hedef; kişi odaklı izleme ve algı.
+- general_agenda: Genel gündem / kolektif konuşma; trend sinyali.
 
 Aşağıda {len(simplified)} adet sosyal medya içeriği verilmiştir. HER BİRİ için aşağıdaki JSON şemasını kullanarak analiz et.
 
@@ -80,9 +90,11 @@ KURALLAR:
 6. bot_likelihood: 0.0-1.0 arası bot/troll hesap ihtimali
 7. crisis_score: 0-100 arası kriz potansiyeli (0: yok, 100: acil kriz)
 8. sarcasm_detected: alaycı/iğneleyici dil varsa true
+9. Haber ajansı kaynaklı içeriklerde "rakip kampanyası" veya "ticari rakip" çerçevesinden kaçın; haber doğruluğu ve çerçeve üzerinden yorumla.
 
 İÇERİKLER:
 {json.dumps(simplified, ensure_ascii=False, indent=2)}"""
+        return with_karargah_osint_directive(body)
 
     def _parse_response(self, response_text: str) -> List[Dict[str, Any]]:
         """
@@ -139,6 +151,7 @@ KURALLAR:
                 if attempt > 0:
                     time.sleep(self.API_DELAY * (attempt + 1))
 
+                # prompt zaten with_karargah_osint_directive ile üretildiyse tekrar sarmalama
                 response = self.model.generate_content(prompt)
                 return response.text
 
@@ -225,7 +238,7 @@ KURALLAR:
         try:
             if not self.model:
                 return "Hata: Gemini modeli başlatılamadı."
-            response = await self.model.generate_content_async(prompt)
+            response = await self.model.generate_content_async(with_karargah_osint_directive(prompt))
             return response.text
         except Exception as e:
             logger.error(f"Gemini Async Hata: {e}")
