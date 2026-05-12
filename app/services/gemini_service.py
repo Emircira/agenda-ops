@@ -53,10 +53,11 @@ class GeminiAIClient:
             simplified.append(entry)
 
         body = f"""GÖREV: Türkiye bağlamında aşağıdaki sosyal medya içeriklerinin her biri için yalnızca istenen JSON nesnelerini üret.
-Kimlik veya yöntem belirtme; metin alanlarında doğrudan içerik odaklı, profesyonel istihbarat özeti dili kullan.
+Kimlik veya yöntem belirtme; "summary" ve çerçeveleyici metinlerde yerli istihbarat brifingi üslubu kullan — kullanıcıya ders verme,
+damgalayıcı akademik etiket kullanma (üst direktifteki terminoloji filtresine uy).
 
 KAYNAK TİPİ (her içerikte "kaynak_tipi" alanı) — analizi buna göre çerçevele:
-- competitor: Ticari veya politik rakip söylemi; stratejik rekabet ve tehdit perspektifi kullan.
+- competitor: Ticari veya politik rakip söylemi; stratejik rekabet ve saha baskısı / algı etkisi perspektifi (suçlayıcı dil yok).
 - news_agency: Haber ajansı / objektif bilgi kaynağı; ticari rakip gibi varsayma; haber dili, tarafsızlık ve olası editoryal çerçeve üzerinden değerlendir.
 - person_or_target: Takip edilen şahıs veya hedef; kişi odaklı izleme ve algı.
 - general_agenda: Genel gündem / kolektif konuşma; trend sinyali.
@@ -91,6 +92,7 @@ KURALLAR:
 7. crisis_score: 0-100 arası kriz potansiyeli (0: yok, 100: acil kriz)
 8. sarcasm_detected: alaycı/iğneleyici dil varsa true
 9. Haber ajansı kaynaklı içeriklerde "rakip kampanyası" veya "ticari rakip" çerçevesinden kaçın; haber doğruluğu ve çerçeve üzerinden yorumla.
+10. Hassas siyasi çerçeveler (anti-siyonist / küresel sermaye eleştirisi vb.): summary ve çerçeve açıklamalarında üst direktifteki terminoloji filtresi ve stratejik raporlama diline uy; olayı suç/tehdit damgasıyla değil, hassasiyet ve mobilizasyon dinamiği ile kodla.
 
 İÇERİKLER:
 {json.dumps(simplified, ensure_ascii=False, indent=2)}"""
