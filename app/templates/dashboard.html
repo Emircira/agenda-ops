@@ -575,9 +575,7 @@
                         if (document.getElementById('stat-tw')) document.getElementById('stat-tw').innerText = deep.stats?.twitter || 0;
                         
                         if (deep.analysis && document.getElementById('deep-analysis')) {
-                            document.getElementById('deep-analysis').innerHTML = deep.analysis
-                                .replace(/\*\*(.*?)\*\*/g, '<div class="report-section-header">$1</div>')
-                                .replace(/\n/g, '<br/>');
+                            document.getElementById('deep-analysis').innerHTML = this.formatDeepResearchAnalysisHtml(deep.analysis);
                         }
                         if (document.getElementById('deep-results')) document.getElementById('deep-results').classList.remove('hidden');
                     }
@@ -1008,6 +1006,16 @@
                 }[ch]));
             }
 
+            /** Derin araştırma Gemini çıktısı (Markdown-benzeri) → güvenli HTML */
+            formatDeepResearchAnalysisHtml(raw) {
+                if (!raw) return '';
+                return String(raw)
+                    .replace(/^### (.*)$/gm, '<h5 class="text-primary font-bold text-sm mt-4 mb-2">$1</h5>')
+                    .replace(/^## (.*)$/gm, '<h4 class="text-white font-bold text-base mt-5 mb-2 border-b border-slate-700/80 pb-1">$1</h4>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white block mt-3 mb-1">$1</strong>')
+                    .replace(/\n/g, '<br/>');
+            }
+
             renderStreamCard(item) {
                 const time = item.published_at ? new Date(item.published_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '';
                 const replyBadge = item.twitter_reply ? '<span class="text-[10px] font-bold text-cyan-400 border border-cyan-500/40 px-1.5 py-0.5 rounded shrink-0">Yanıt</span>' : '';
@@ -1204,9 +1212,7 @@
                         
                         const analysisDiv = document.getElementById('deep-analysis');
                         if (data.analysis) {
-                            analysisDiv.innerHTML = data.analysis
-                                .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white block mt-3 mb-1">$1</strong>')
-                                .replace(/\n/g, '<br/>');
+                            analysisDiv.innerHTML = this.formatDeepResearchAnalysisHtml(data.analysis);
                         } else {
                             analysisDiv.innerHTML = '<p class="text-slate-500 italic">Analiz verisi oluşturulamadı.</p>';
                         }

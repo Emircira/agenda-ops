@@ -1249,6 +1249,20 @@ DEEP_YOUTUBE_VIDEO_LIMIT = 100 * DEEP_RESEARCH_MULTIPLIER
 DEEP_YOUTUBE_COMMENT_LIMIT = 50 * DEEP_RESEARCH_MULTIPLIER
 DEEP_YOUTUBE_COMMENT_VIDEO_LIMIT = 10 * DEEP_RESEARCH_MULTIPLIER
 
+# Derin araştırma → Gemini promptunda kullanılacak temsili dilim (tam ham veri DB'de kalır)
+DEEP_RESEARCH_SAMPLE_LINES = {"rss": 40, "youtube": 50, "twitter": 50}
+
+
+def _deep_research_collect_sample(samples: dict[str, list[str]], bucket: str, text: str, prefix: str = "") -> None:
+    cap = DEEP_RESEARCH_SAMPLE_LINES.get(bucket, 40)
+    if len(samples[bucket]) >= cap:
+        return
+    line = f"{prefix}{(text or '').strip()}".strip()
+    if len(line) < 12:
+        return
+    samples[bucket].append(line[:480])
+
+
 @app.post("/api/deep-research", tags=["Veri Çekme"])
 async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get_db)):
     """Anahtar kelime için YouTube, X ve RSS üzerinde 5x derin tarama yapar."""
@@ -1266,9 +1280,10 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
     added = {"youtube": 0, "rss": 0, "twitter": 0}
     skipped = {"youtube": 0, "rss": 0, "twitter": 0}
     errors = []
+    samples: dict[str, list[str]] = {"rss": [], "youtube": [], "twitter": []}
 
     async def insert_article(article: dict, bucket: str):
-        article["is_analyzed"] = True
+        article["is_analyzed"] = False
         try:
             stmt = pg_insert(Content).values(**article).on_conflict_do_nothing(index_elements=["external_id"])
             res = await db.execute(stmt)
@@ -1314,6 +1329,7 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
             article["source_id"] = source["id"]
             article["domain"] = source["domain"]
             stats["rss"] += 1
+            _deep_research_collect_sample(samples, "rss", article.get("text") or "", f"[{source['name']}] ")
             await insert_article(article, "rss")
 
     RESEARCH_PROGRESS[keyword] = {"status": "YouTube videoları ve yorumları 5x derinlikte taranıyor...", "percent": 35}
@@ -1329,6 +1345,7 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
                 articles = [stub] if stub else []
             stats["youtube"] += len(articles)
             for article in articles:
+                _deep_research_collect_sample(samples, "youtube", article.get("text") or "")
                 await insert_article(article, "youtube")
     except YouTubeQuotaExceeded as e:
         logger.error(f"Deep Research: YouTube kotası doldu, RSS/X akışı devam ediyor: {e}")
@@ -1361,6 +1378,7 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
         for post in posts:
             stats["twitter"] += 1
             article = _post_to_article(post, source_id=None, domain="general")
+            _deep_research_collect_sample(samples, "twitter", post.get("text") or "", f"@{post.get('author') or '?'} ")
             await insert_article(article, "twitter")
     except Exception as e:
         errors.append(f"X/Twitter: {e}")
@@ -1377,8 +1395,6 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
     except Exception as e:
         logger.warning(f"Deep Research analiz kuyruğu tetiklenemedi: {e}")
 
-    RESEARCH_PROGRESS[keyword] = {"status": "Derin araştırma tamamlandı, AI analiz kuyruğu tetiklendi.", "percent": 100}
-
     summary_lines = []
     if stats["rss"] > 0:
         summary_lines.append(f"- RSS: {stats['rss']} haber işlendi ({added['rss']} yeni kayıt).")
@@ -1387,22 +1403,71 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
     if stats["twitter"] > 0:
         summary_lines.append(f"- X/Twitter: {stats['twitter']} gönderi işlendi ({added['twitter']} yeni kayıt).")
 
+    stats_footer = ""
     if summary_lines:
-        analysis = (
-            "**Derin Tarama Özeti**\n"
-            f"'{keyword}' için derin tarama tamamlandı.\n\n"
+        stats_footer = (
+            "**Veri hacmi (otomatik)**\n"
             + "\n".join(summary_lines)
-            + f"\n\n**Kayıt**\nToplam yeni: {sum(added.values())}, atlanan/duplicate: {sum(skipped.values())}. "
-            "AI etiketleme kuyruğu tetiklendi."
+            + f"\nToplam yeni: {sum(added.values())}, atlanan/duplicate: {sum(skipped.values())}. "
+            "Toplu etiketleme/skorlama Celery kuyruğunda işlenecek."
         )
     else:
-        analysis = (
-            f"**Derin Tarama Özeti**\n'{keyword}' için işlenebilir içerik elde edilmedi "
+        stats_footer = (
+            f"'{keyword}' için işlenebilir içerik elde edilmedi "
             "(RSS / YouTube / X kanallarında bu anahtarla kayıt oluşmadı veya gelen içerik filtreye takıldı)."
         )
 
+    strategic_analysis = ""
+    has_samples = any(samples[k] for k in samples)
+    if has_samples:
+        RESEARCH_PROGRESS[keyword] = {"status": "Gemini stratejik analiz üretiliyor...", "percent": 95}
+        corpus_chunks = []
+        if samples["rss"]:
+            corpus_chunks.append(
+                "### RSS / medya dilimi\n"
+                + "\n".join(f"- {ln}" for ln in samples["rss"])
+            )
+        if samples["youtube"]:
+            corpus_chunks.append(
+                "### YouTube dilimi (video/yorum özleri)\n"
+                + "\n".join(f"- {ln}" for ln in samples["youtube"])
+            )
+        if samples["twitter"]:
+            corpus_chunks.append(
+                "### X dilimi\n"
+                + "\n".join(f"- {ln}" for ln in samples["twitter"])
+            )
+        corpus = "\n\n".join(corpus_chunks)
+        ai_prompt = f"""ARAŞTIRMA ODAĞI: «{keyword}»
+
+Karargahta çok kanallı derin taramada toplanan içeriklerin TEMSİLİ dilimi aşağıdadır (tam veri veritabanındadır; satır sayısı kanal başına sınırlı).
+
+{corpus}
+
+GÖREV: Bu dilime ve konuya dayanarak Türkiye bağlamında stratejik istihbarat brifingi yaz.
+ÇIKTI KURALLARI:
+- Markdown kullan (## ve ### başlıklar).
+- Kimlik, yapay zeka veya yönteme atıfta bulunma; doğrudan bulgu ve öneri yaz.
+- En az şu bölümler: (1) Ana çerçeve ve aktör sesleri (2) Riskler ve kutuplaşma sinyalleri (3) İletişim/strateji için fırsat alanı (4) Önümüzdeki 48–72 saat için izlenmesi gereken göstergeler.
+- En fazla ~850 kelime."""
+
+        try:
+            strategic_analysis = (await gemini_generate_content(ai_prompt)).strip()
+        except Exception as e:
+            logger.warning(f"Deep Research Gemini analizi başarısız: {e}")
+            strategic_analysis = f"*Stratejik analiz oluşturulamadı ({e}). Veriler kaydedildi; Celery etiketlemesi devam edebilir.*"
+
+    if strategic_analysis:
+        analysis = strategic_analysis + "\n\n---\n\n" + stats_footer
+    elif summary_lines:
+        analysis = "**Derin Tarama**\n\n" + stats_footer
+    else:
+        analysis = "**Derin Tarama Özeti**\n\n" + stats_footer
+
     if errors:
         analysis += "\n\n**Uyarılar**\n" + "\n".join(f"- {e}" for e in errors[:5])
+
+    RESEARCH_PROGRESS[keyword] = {"status": "Tamamlandı (analiz + kuyruk)", "percent": 100}
 
     return {
         "success": True,
