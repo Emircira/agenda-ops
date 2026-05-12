@@ -17,6 +17,7 @@ from app.providers.x_provider import RapidXProvider
 from app.core.utils import (
     pre_filter_content,
     extract_youtube_comments_as_articles,
+    extract_youtube_video_stub_article,
     calculate_twitter_bot_likelihood,
     twitter_bot_signal_summary,
     select_ai_triage_candidates,
@@ -191,6 +192,9 @@ def ingest_youtube_all_sources(self):
                         articles = extract_youtube_comments_as_articles(
                             video, comments, source_id, source_domain
                         )
+                        if not articles:
+                            stub = extract_youtube_video_stub_article(video, source_id, source_domain)
+                            articles = [stub] if stub else []
                         for art in articles:
                             art['is_analyzed'] = True
 
@@ -280,7 +284,7 @@ def ingest_x_all_sources(self):
 
                 try:
                     if source_type == 'twitter_trend':
-                        posts = await provider.fetch_top_tweets_shallow(source_url, limit=25)
+                        posts = await provider.fetch_top_tweets_shallow(source_url, limit=17)
                     else:
                         posts = await provider.fetch_mentions(source_url)
 
@@ -356,8 +360,8 @@ def ingest_x_daily_trends(self):
     • Reply / thread derinliği YOK
     """
 
-    TREND_SAMPLE_COUNT = 10
-    TWEETS_PER_TREND = 8
+    TREND_SAMPLE_COUNT = 7
+    TWEETS_PER_TREND = 6
 
     async def _task():
         logger.info("🐦 Celery: X Gündem (düşük maliyet — trend + üst tweet örnekleri)")
@@ -439,7 +443,7 @@ def ingest_x_person_mention_posts(self, target_person: str = "Siyasi Lider"):
         provider = get_x_provider()
 
         try:
-            posts = await provider.fetch_keyword_posts(target_person, limit=100)
+            posts = await provider.fetch_keyword_posts(target_person, limit=70)
         except Exception as e:
             logger.error(f"Kişi takibi hatası: {e}")
             posts = []

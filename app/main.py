@@ -38,6 +38,7 @@ from app.services.election_wiki_fallback import fetch_wiki_votes_for_province
 from app.core.utils import (
     pre_filter_content,
     extract_youtube_comments_as_articles,
+    extract_youtube_video_stub_article,
     calculate_twitter_bot_likelihood,
     twitter_bot_signal_summary,
 )
@@ -560,7 +561,10 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                         # Videonun altındaki en hit 10 yorumu çekiyoruz
                         comments = await provider.fetch_video_comments(vid_id, max_results=10)
                         articles = extract_youtube_comments_as_articles(video, comments, source_id, source_domain)
-                        
+                        if not articles:
+                            stub = extract_youtube_video_stub_article(video, source_id, source_domain)
+                            articles = [stub] if stub else []
+
                         for article in articles:
                             article['is_analyzed'] = True
                             stmt = pg_insert(Content).values(**article).on_conflict_do_nothing(index_elements=['external_id'])
@@ -604,7 +608,7 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                     logger.info(f"[{idx+1}/{len(sources)}] Twitter taraması: {source_name} ({source_type})")
                     
                     if source_type == 'twitter_trend':
-                        posts = await provider.fetch_top_tweets_shallow(source_url, limit=25)
+                        posts = await provider.fetch_top_tweets_shallow(source_url, limit=17)
                     else:
                         posts = await provider.fetch_mentions(source_url)
                     
@@ -643,9 +647,9 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                         if not name or name in seen_names:
                             continue
                         seen_names.append(name)
-                        if len(seen_names) > 8:
+                        if len(seen_names) > 6:
                             break
-                        chunk = await provider.fetch_top_tweets_shallow(name, limit=8)
+                        chunk = await provider.fetch_top_tweets_shallow(name, limit=6)
                         for post in chunk:
                             eid = post.get("external_id")
                             if eid and eid not in seen_ids:
@@ -1143,21 +1147,10 @@ async def volume_stats(db: AsyncSession = Depends(get_db)):
 async def recent_content_stream(limit: int = 30, db: AsyncSession = Depends(get_db)):
     """AI analizini beklemeden son kaydedilen gerçek içerikleri stream panellerine döndürür."""
     safe_limit = max(1, min(limit, 100))
-    res = await db.execute(
-        select(Content)
-        .where(Content.platform.in_(["twitter", "x", "youtube", "youtube_comment", "rss"]))
-        .order_by(desc(Content.fetched_at), desc(Content.published_at))
-        .limit(safe_limit * 3)
-    )
-    rows = res.scalars().all()
 
-    grouped = {"twitter": [], "youtube": [], "rss": []}
-    for item in rows:
+    def row_payload(item: Content) -> dict:
         platform = item.platform or ""
-        key = "youtube" if platform in {"youtube", "youtube_comment"} else "twitter" if platform in {"twitter", "x"} else "rss"
-        if len(grouped[key]) >= safe_limit:
-            continue
-        grouped[key].append({
+        return {
             "id": str(item.id),
             "platform": platform,
             "author_name": item.author_name or "Unknown",
@@ -1174,7 +1167,22 @@ async def recent_content_stream(limit: int = 30, db: AsyncSession = Depends(get_
                     and item.raw_json.get("target_type") == "twitter_reply"
                 )
             ),
-        })
+        }
+
+    grouped = {"twitter": [], "youtube": [], "rss": []}
+    buckets = [
+        ("twitter", ["twitter", "x"]),
+        ("youtube", ["youtube", "youtube_comment"]),
+        ("rss", ["rss"]),
+    ]
+    for key, plats in buckets:
+        res = await db.execute(
+            select(Content)
+            .where(Content.platform.in_(plats))
+            .order_by(desc(Content.fetched_at), desc(Content.published_at))
+            .limit(safe_limit)
+        )
+        grouped[key] = [row_payload(item) for item in res.scalars().all()]
 
     return {"success": True, "streams": grouped}
 
@@ -1233,8 +1241,9 @@ class DeepResearchRequest(BaseModel):
 
 
 DEEP_RESEARCH_MULTIPLIER = 5
-DEEP_X_LIMIT = 100 * DEEP_RESEARCH_MULTIPLIER
-DEEP_X_REPLY_THREADS = 5 * DEEP_RESEARCH_MULTIPLIER
+# X hacmi taban değerler ~%30 düşürüldü (çekiş maliyeti / DB yükü)
+DEEP_X_LIMIT = int(round(100 * DEEP_RESEARCH_MULTIPLIER * 0.7))
+DEEP_X_REPLY_THREADS = int(round(5 * DEEP_RESEARCH_MULTIPLIER * 0.7))
 DEEP_RSS_MAX_ITEMS = 200 * DEEP_RESEARCH_MULTIPLIER
 DEEP_YOUTUBE_VIDEO_LIMIT = 100 * DEEP_RESEARCH_MULTIPLIER
 DEEP_YOUTUBE_COMMENT_LIMIT = 50 * DEEP_RESEARCH_MULTIPLIER
@@ -1298,17 +1307,14 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
         errors.append(f"RSS kaynak listesi: {e}")
 
     for source in rss_sources:
-        try:
-            articles = await rss_provider.fetch_feed(source["url"], source["name"], max_items=DEEP_RSS_MAX_ITEMS)
-            for article in articles:
-                if source["filter"] and keyword.lower() not in (article.get("text") or "").lower():
-                    continue
-                article["source_id"] = source["id"]
-                article["domain"] = source["domain"]
-                stats["rss"] += 1
-                await insert_article(article, "rss")
-        except Exception as e:
-            errors.append(f"RSS {source['name']}: {e}")
+        articles = await rss_provider.fetch_feed(source["url"], source["name"], max_items=DEEP_RSS_MAX_ITEMS)
+        for article in articles:
+            if source["filter"] and keyword.lower() not in (article.get("text") or "").lower():
+                continue
+            article["source_id"] = source["id"]
+            article["domain"] = source["domain"]
+            stats["rss"] += 1
+            await insert_article(article, "rss")
 
     RESEARCH_PROGRESS[keyword] = {"status": "YouTube videoları ve yorumları 5x derinlikte taranıyor...", "percent": 35}
     try:
@@ -1318,6 +1324,9 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
             vid_id = video["id"] if isinstance(video.get("id"), str) else video["id"]["videoId"]
             comments = await yt_provider.fetch_video_comments(vid_id, max_results=DEEP_YOUTUBE_COMMENT_LIMIT)
             articles = extract_youtube_comments_as_articles(video, comments, None, "general")
+            if not articles:
+                stub = extract_youtube_video_stub_article(video, None, "general")
+                articles = [stub] if stub else []
             stats["youtube"] += len(articles)
             for article in articles:
                 await insert_article(article, "youtube")
@@ -1369,16 +1378,31 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
         logger.warning(f"Deep Research analiz kuyruğu tetiklenemedi: {e}")
 
     RESEARCH_PROGRESS[keyword] = {"status": "Derin araştırma tamamlandı, AI analiz kuyruğu tetiklendi.", "percent": 100}
-    analysis = (
-        f"**Derin Tarama Özeti**\n"
-        f"{keyword} için 5x derinlikte tarama yapıldı. "
-        f"RSS {stats['rss']}, YouTube {stats['youtube']} yorum, X/Twitter {stats['twitter']} gönderi/reply işlendi.\n\n"
-        f"**Kayıt Durumu**\n"
-        f"Yeni kayıt: {sum(added.values())}, mevcut/atlanan: {sum(skipped.values())}. "
-        f"AI etiketleme kuyruğu tetiklendi; bot ve dijital ayak izi göstergeleri analiz sonrası OSINT paneline yansır."
-    )
+
+    summary_lines = []
+    if stats["rss"] > 0:
+        summary_lines.append(f"- RSS: {stats['rss']} haber işlendi ({added['rss']} yeni kayıt).")
+    if stats["youtube"] > 0:
+        summary_lines.append(f"- YouTube: {stats['youtube']} içerik işlendi ({added['youtube']} yeni kayıt).")
+    if stats["twitter"] > 0:
+        summary_lines.append(f"- X/Twitter: {stats['twitter']} gönderi işlendi ({added['twitter']} yeni kayıt).")
+
+    if summary_lines:
+        analysis = (
+            "**Derin Tarama Özeti**\n"
+            f"'{keyword}' için derin tarama tamamlandı.\n\n"
+            + "\n".join(summary_lines)
+            + f"\n\n**Kayıt**\nToplam yeni: {sum(added.values())}, atlanan/duplicate: {sum(skipped.values())}. "
+            "AI etiketleme kuyruğu tetiklendi."
+        )
+    else:
+        analysis = (
+            f"**Derin Tarama Özeti**\n'{keyword}' için işlenebilir içerik elde edilmedi "
+            "(RSS / YouTube / X kanallarında bu anahtarla kayıt oluşmadı veya gelen içerik filtreye takıldı)."
+        )
+
     if errors:
-        analysis += f"\n\n**Uyarılar**\n" + "\n".join(f"- {e}" for e in errors[:5])
+        analysis += "\n\n**Uyarılar**\n" + "\n".join(f"- {e}" for e in errors[:5])
 
     return {
         "success": True,
@@ -1918,16 +1942,16 @@ async def get_system_stats(db: AsyncSession = Depends(get_db)):
 @app.post("/api/system/trigger-pipeline", tags=["Sistem"], status_code=202)
 async def trigger_pipeline():
     """Yapay Zeka Etiketleme ve Fırsat Kartı Üretimini Tetikler."""
-    try:
-        from celery import chain
-        from app.workers.ingest_tasks import (
-            clean_and_triage_recent_content,
-            run_osint_bot_stage,
-            synthesize_ai_opportunities,
-            publish_stream_update,
-        )
-        from app.workers.labeling_tasks import batch_analyze_contents
+    from celery import chain
+    from app.workers.ingest_tasks import (
+        clean_and_triage_recent_content,
+        run_osint_bot_stage,
+        synthesize_ai_opportunities,
+        publish_stream_update,
+    )
+    from app.workers.labeling_tasks import batch_analyze_contents
 
+    try:
         pipeline = chain(
             clean_and_triage_recent_content.si("Manual Trigger"),
             run_osint_bot_stage.s(),
@@ -1941,10 +1965,22 @@ async def trigger_pipeline():
             "success": True,
             "message": "Görev Alındı: AI analiz pipeline arka planda sırayla çalışacak.",
             "task_id": async_result.id,
+            "mode": "full_pipeline",
         }
     except Exception as e:
-        logger.error(f"Trigger pipeline error: {e}")
-        return {"success": False, "error": str(e)}
+        logger.warning(f"Tam pipeline kuyruğa alınamadı ({e}); yalnızca etiketleme görevi deneniyor...")
+        try:
+            async_result = batch_analyze_contents.delay()
+            return {
+                "success": True,
+                "message": "Etiketleme görevi kuyruğa alındı (tam zincir şu an kullanılamadı).",
+                "task_id": async_result.id,
+                "mode": "labeling_only_fallback",
+                "warning": str(e),
+            }
+        except Exception as e2:
+            logger.exception("Trigger pipeline: labeling fallback da başarısız")
+            raise HTTPException(status_code=503, detail=f"Celery kuyruğu kullanılamıyor: {e2}")
 
 if __name__ == "__main__":
     import uvicorn
