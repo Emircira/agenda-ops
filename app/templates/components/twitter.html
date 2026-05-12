@@ -24,7 +24,16 @@
         <div class="p-4 border-b border-slate-800 bg-slate-900/40"><h3 class="text-white font-medium">X (Twitter) Ham Veri Akışı</h3></div>
         <div id="stream-twitter" class="flex-1 overflow-y-auto p-4 space-y-3 bg-dark/20 custom-scrollbar max-h-[min(500px,calc(100vh-14rem))]">
             {% for item in contents if item.platform == 'twitter' %}
-            <div class="p-4 bg-panel/80 rounded-lg border border-slate-700/60"><div class="flex items-center gap-3 mb-2"><span class="text-white text-sm font-semibold">{{ item.author_name }}</span><span class="text-slate-500 text-xs ml-auto">{{ item.published_at.strftime('%H:%M') }}</span></div><p class="text-sm text-slate-300">{{ item.text }}</p></div>
+            <div class="p-4 bg-panel/80 rounded-lg border border-slate-700/60">
+                <div class="flex items-center gap-2 mb-2 flex-wrap">
+                    {% if (item.content_type and item.content_type.value == 'reply') or (item.raw_json and item.raw_json.get('target_type') == 'twitter_reply') %}
+                    <span class="text-[10px] font-bold text-cyan-400 border border-cyan-500/40 px-1.5 py-0.5 rounded">Yanıt</span>
+                    {% endif %}
+                    <span class="text-white text-sm font-semibold">{{ item.author_name }}</span>
+                    <span class="text-slate-500 text-xs ml-auto">{{ item.published_at.strftime('%H:%M') }}</span>
+                </div>
+                <p class="text-sm text-slate-300">{{ item.text }}</p>
+            </div>
             {% endfor %}
         </div>
     </div>

@@ -10,7 +10,7 @@ from celery import chain
 
 from app.core.celery_app import celery_app
 from app.db.session import AsyncSessionLocal
-from app.models.core import Source, Content, SourceType
+from app.models.core import Source, Content, SourceType, ContentType
 from app.providers.rss_provider import RSSProvider
 from app.providers.youtube_provider import YouTubeProvider, YouTubeQuotaExceeded
 from app.providers.x_provider import RapidXProvider
@@ -83,11 +83,11 @@ def _post_to_article(post: dict, source_id=None, domain="general") -> dict:
         "author_name": author,
         "published_at": _safe_parse_date(post.get("published_at")),
         "text": post.get("text", ""),
-        "content_type": "reply" if is_reply else "post",
+        "content_type": ContentType.reply if is_reply else ContentType.post,
         "url": f"https://twitter.com/x/status/{post.get('external_id')}",
         "domain": domain,
         "raw_json": safe_json,
-        "is_analyzed": True
+        "is_analyzed": False,
     }
 
 

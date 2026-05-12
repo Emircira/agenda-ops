@@ -7,7 +7,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from loguru import logger
 from contextlib import asynccontextmanager
-import glob
+from pathlib import Path
 import re
 
 from fastapi import FastAPI, Request, Depends, HTTPException
@@ -43,6 +43,71 @@ from app.core.utils import (
 def normalize_tr(text):
     if not text: return ""
     return str(text).replace('İ', 'i').replace('I', 'ı').replace('Ş', 'ş').replace('Ğ', 'ğ').replace('Ü', 'ü').replace('Ö', 'ö').replace('Ç', 'ç').lower()
+
+
+def app_data_dir() -> Path:
+    """Docker/uvicorn cwd'den bağımsız: her zaman package içi app/data."""
+    return Path(__file__).resolve().parent / "data"
+
+
+def load_city_district_json_context(province: str, district: str = "") -> str:
+    """TÜİK özet JSON (city_stats / district_stats) — seçim analizi prompt'una eklenir."""
+    parts = []
+    p_norm = normalize_tr(province)
+    d_dir = app_data_dir()
+    city_path = d_dir / "city_stats.json"
+    if city_path.is_file():
+        try:
+            with open(city_path, "r", encoding="utf-8-sig") as f:
+                cities = json.load(f)
+            for item in cities if isinstance(cities, list) else []:
+                if isinstance(item, dict) and normalize_tr(item.get("province", "")) == p_norm:
+                    parts.append("İL DEMOGRAFİ (TÜİK özeti city_stats.json):\n" + json.dumps(item, ensure_ascii=False))
+                    break
+        except Exception as e:
+            logger.warning(f"city_stats.json okunamadı: {e}")
+    if district:
+        dist_path = d_dir / "district_stats.json"
+        if dist_path.is_file():
+            try:
+                with open(dist_path, "r", encoding="utf-8-sig") as f:
+                    rows = json.load(f)
+                d_norm = normalize_tr(district)
+                for item in rows if isinstance(rows, list) else []:
+                    if (
+                        isinstance(item, dict)
+                        and normalize_tr(item.get("province", "")) == p_norm
+                        and normalize_tr(item.get("district", "")) == d_norm
+                    ):
+                        parts.append("İLÇE DEMOGRAFİ (district_stats.json):\n" + json.dumps(item, ensure_ascii=False))
+                        break
+            except Exception as e:
+                logger.warning(f"district_stats.json okunamadı: {e}")
+    return "\n\n".join(parts)
+
+
+def election_category_from_ui(value: str) -> ElectionCategory:
+    v = (value or "local").lower().strip()
+    if v == "presidential":
+        return ElectionCategory.presidential
+    if v == "parliamentary":
+        return ElectionCategory.parliamentary
+    if v == "referendum":
+        return ElectionCategory.referendum
+    return ElectionCategory.local
+
+
+def base_votes_from_rows(election_rows: list) -> dict:
+    """Simülatör için ilk 4 partinin oy yüzdeleri."""
+    totals = {}
+    for row in election_rows:
+        totals[row.party] = totals.get(row.party, 0) + (row.vote_count or 0)
+    sorted_p = sorted(totals.items(), key=lambda x: -x[1])
+    tv = sum(totals.values()) or 1
+    pct = [round(100.0 * v / tv, 1) for _, v in sorted_p[:4]]
+    while len(pct) < 4:
+        pct.append(0.0)
+    return {"a": pct[0], "b": pct[1], "c": pct[2], "d": pct[3]}
 
 # --- BAĞLAM İZOLASYONU (Context Isolation) YARDIMCISI ---
 CONTEXT_ISOLATION_WARNING = """⚠️ DİKKAT — VERİ ZEHİRLENMESİ RİSKİ (CONTEXT ISOLATION):
@@ -89,12 +154,24 @@ RESEARCH_PROGRESS = {} # { "keyword": { "status": "...", "percent": 0 } }
 async def lifespan(app: FastAPI):
     logger.info("🚀 [1/4] Karargah Başlatılıyor: Sistem Kontrolleri Devrede...")
     
-    # 1. VERİTABANI BAĞLANTI KONTROLÜ
+    # 1. VERİTABANI BAĞLANTI KONTROLÜ + minimum şema yamaları (deploy/init-db atlanınca)
     try:
         logger.info("📡 [2/4] Veritabanı bağlantısı kontrol ediliyor...")
         from sqlalchemy import text
         async with engine.connect() as conn:
             await asyncio.wait_for(conn.execute(text("SELECT 1")), timeout=5.0)
+        async with engine.begin() as conn:
+            try:
+                await conn.execute(
+                    text(
+                        "ALTER TABLE sources ADD COLUMN IF NOT EXISTS "
+                        "source_category VARCHAR DEFAULT 'general_agenda'"
+                    )
+                )
+            except Exception as patch_err:
+                logger.warning(
+                    f"Kaynak tablosu şema yaması atlandı (init-db gerekebilir): {patch_err}"
+                )
         logger.info("✅ Veritabanı: BAĞLANTI BAŞARILI")
     except Exception as e:
         logger.error(f"❌ Veritabanı: BAĞLANTI HATASI (Sistem devam ediyor): {e}")
@@ -203,6 +280,10 @@ async def zorla_tablo_olustur():
             await conn.execute(text("ALTER TABLE content_labels ADD COLUMN IF NOT EXISTS sarcasm_detected BOOLEAN DEFAULT FALSE"))
             await conn.execute(text("ALTER TABLE content_labels ADD COLUMN IF NOT EXISTS crisis_score INTEGER DEFAULT 0"))
             await conn.execute(text("ALTER TABLE content_labels ADD COLUMN IF NOT EXISTS sentiment VARCHAR"))
+            try:
+                await conn.execute(text("ALTER TYPE contenttype ADD VALUE IF NOT EXISTS 'reply'"))
+            except Exception:
+                pass
         except Exception as e:
             logger.warning(f"Kolon ekleme atlandı veya hata oluştu: {e}")
             pass
@@ -878,6 +959,14 @@ async def recent_content_stream(limit: int = 30, db: AsyncSession = Depends(get_
             "fetched_at": item.fetched_at.isoformat() if item.fetched_at else None,
             "url": item.url,
             "is_analyzed": bool(item.is_analyzed),
+            "content_type": getattr(item.content_type, "value", str(item.content_type or "post")),
+            "twitter_reply": bool(
+                getattr(item.content_type, "value", None) == "reply"
+                or (
+                    isinstance(item.raw_json, dict)
+                    and item.raw_json.get("target_type") == "twitter_reply"
+                )
+            ),
         })
 
     return {"success": True, "streams": grouped}
@@ -1105,28 +1194,37 @@ async def get_deep_research_status(keyword: str):
 @app.get("/api/districts", tags=["Seçim Veritabanı"])
 async def get_districts(province: str, db: AsyncSession = Depends(get_db)):
     try:
-        # Önce district_stats.json dosyasından oku
-        import os, json
-        data_dir = os.path.join(os.getcwd(), "app", "data")
-        demo_file = os.path.join(data_dir, "district_stats.json")
+        demo_file = app_data_dir() / "district_stats.json"
         districts = []
-        if os.path.exists(demo_file):
+        pn = normalize_tr(province)
+        if demo_file.is_file():
             with open(demo_file, "r", encoding="utf-8-sig") as f:
                 demo_data = json.load(f)
-                if isinstance(demo_data, list):
-                    for item in demo_data:
-                        if isinstance(item, dict) and item.get("province", "").upper() == province.upper():
-                            dist_name = item.get("district")
-                            if dist_name: districts.append(dist_name)
+            if isinstance(demo_data, list):
+                for item in demo_data:
+                    if isinstance(item, dict) and normalize_tr(item.get("province", "")) == pn:
+                        dist_name = item.get("district")
+                        if dist_name:
+                            districts.append(dist_name)
         if districts:
             return {"districts": sorted(list(set(districts)))}
-            
-        # Eğer JSON'da yoksa veritabanından (DistrictDemographics) bak (Fallback)
-        res = await db.execute(select(DistrictDemographics).where(DistrictDemographics.province == province))
+
+        res = await db.execute(
+            select(DistrictDemographics).where(
+                DistrictDemographics.province == province
+            )
+        )
         db_districts = res.scalars().all()
-        # Modelde kolon district olarak tanımlı
-        return {"districts": [d.district for d in db_districts if hasattr(d, 'district') and d.district]}
-    except Exception as e: 
+        fallback = [d.district for d in db_districts if hasattr(d, "district") and d.district]
+        if not fallback:
+            res2 = await db.execute(select(DistrictDemographics))
+            fallback = [
+                d.district
+                for d in res2.scalars().all()
+                if d.district and normalize_tr(d.province) == pn
+            ]
+        return {"districts": sorted(list(set(fallback)))}
+    except Exception as e:
         logger.error(f"İlçe çekme hatası: {e}")
         return {"districts": []}
 
@@ -1137,10 +1235,13 @@ class PollRadarRequest(BaseModel):
 async def poll_radar(req: PollRadarRequest):
     """Anket sonuçlarını analiz eder ve simülasyon yapar."""
     try:
-        prompt = f"""{req.province} {req.district} bölgesi için şu anki anket sonuçlarını değerlendir:
+        demo = load_city_district_json_context(req.province, req.district or "")
+        extras = f"\n\n{demo}" if demo else ""
+        prompt = f"""{req.province} {req.district or ''} bölgesi için şu anki anket sonuçlarını değerlendir:
         Parti A: %{req.party_a}, Parti B: %{req.party_b}, Parti C: %{req.party_c}, Diğer: %{req.party_d}
-        Bu sonuçlara göre bölgedeki siyasi dengeleri ve olası senaryoları özetle."""
-        
+        Aşağıdaki demografik özetleri (TÜİK tabanlı JSON) dikkate al.
+        Bu sonuçlara göre bölgedeki siyasi dengeleri ve olası senaryoları özetle.{extras}"""
+
         analysis = await gemini_generate_content(prompt)
         return {"success": True, "analysis": analysis}
     except Exception as e:
@@ -1148,27 +1249,70 @@ async def poll_radar(req: PollRadarRequest):
 
 @app.post("/api/election/analyze", tags=["Seçim Veritabanı"])
 async def analyze_election(province: str, election_type: str, district: str = "", force_refresh: bool = False, db: AsyncSession = Depends(get_db)):
-    """Seçim verilerini analiz eder."""
+    """YSK (election_results) + TÜİK JSON özetleri ile seçim analizi. election_type: local | presidential | parliamentary"""
     try:
-        # Önce Cache kontrolü
-        cache_query = select(RegionAnalysis).where(RegionAnalysis.province == province, RegionAnalysis.election_year == 2024)
-        if district: cache_query = cache_query.where(RegionAnalysis.district == district)
-        else: cache_query = cache_query.where((RegionAnalysis.district == None) | (RegionAnalysis.district == ""))
-            
+        category = election_category_from_ui(election_type)
+        dist_key = (district or "").strip()
+
+        res = await db.execute(select(ElectionResult).where(ElectionResult.election_type == category))
+        all_of_type = res.scalars().all()
+
+        election_rows = []
+        for r in all_of_type:
+            if normalize_tr(r.province) != normalize_tr(province):
+                continue
+            if not dist_key:
+                if r.district and str(r.district).strip():
+                    continue
+                election_rows.append(r)
+            else:
+                if r.district and normalize_tr(r.district) == normalize_tr(dist_key):
+                    election_rows.append(r)
+
+        if not election_rows and not dist_key:
+            election_rows = [r for r in all_of_type if normalize_tr(r.province) == normalize_tr(province)]
+
+        if not election_rows:
+            logger.error(
+                f"Election analyze: veri yok — il={province!r} ilçe={dist_key!r} tür={election_type!r}. "
+                "DB'de ElectionResult var mı kontrol edin (python -m app.seed_ysk). "
+                "YSK ham verisi app/data/ysk_raw altında *.json olmalı (Excel değil)."
+            )
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "Bu il/tür için veritabanında YSK sonucu yok. "
+                    "app/data/ysk_raw içine JSON sonuç dosyalarını koyup "
+                    "`docker compose exec api python -m app.seed_ysk` çalıştırın."
+                ),
+            )
+
+        max_year = max(r.election_year for r in election_rows)
+
+        cache_query = select(RegionAnalysis).where(
+            RegionAnalysis.province == province,
+            RegionAnalysis.election_year == max_year,
+            RegionAnalysis.neighborhood == election_type,
+        )
+        if dist_key:
+            cache_query = cache_query.where(RegionAnalysis.district == dist_key)
+        else:
+            cache_query = cache_query.where(
+                (RegionAnalysis.district == None) | (RegionAnalysis.district == "")
+            )
+
         cache_result = await db.execute(cache_query.order_by(desc(RegionAnalysis.last_analyzed_at)).limit(1))
         cached_data = cache_result.scalar_one_or_none()
-        
-        if not force_refresh and cached_data and cached_data.ai_summary:
-            return {"success": True, "analysis": cached_data.ai_summary, "cached": True}
 
-        result_query = select(ElectionResult).where(ElectionResult.province == province)
-        if district:
-            result_query = result_query.where(ElectionResult.district == district)
-        result_query = result_query.limit(50)
-        election_rows = (await db.execute(result_query)).scalars().all()
-        if not election_rows:
-            logger.error(f"Election analyze için gerçek seçim verisi bulunamadı: {province} {district}")
-            raise HTTPException(status_code=404, detail="Gerçek seçim verisi bulunamadı. Sahte analiz üretilmez.")
+        base_votes = base_votes_from_rows(election_rows)
+
+        if not force_refresh and cached_data and cached_data.ai_summary:
+            return {
+                "success": True,
+                "analysis": cached_data.ai_summary,
+                "cached": True,
+                "base_votes": base_votes,
+            }
 
         real_rows = [
             {
@@ -1179,27 +1323,43 @@ async def analyze_election(province: str, election_type: str, district: str = ""
                 "party": row.party,
                 "vote_count": row.vote_count,
             }
-            for row in election_rows
+            for row in election_rows[:400]
         ]
-        prompt = f"{province} {district} bölgesi için gerçek seçim verilerini analiz et.\n\nVERİ:\n{json.dumps(real_rows, ensure_ascii=False)}"
+        demo_ctx = load_city_district_json_context(province, dist_key)
+        type_names = {
+            "local": "Yerel (belediye)",
+            "presidential": "Cumhurbaşkanlığı",
+            "parliamentary": "Milletvekili genel",
+        }
+        et_label = type_names.get((election_type or "local").lower(), election_type)
+        prompt = (
+            f"{province} {dist_key or '(il geneli)'} için {et_label} seçim verilerini ve demografiyi analiz et.\n\n"
+        )
+        if demo_ctx:
+            prompt += demo_ctx + "\n\n"
+        prompt += "YSK OY VERİLERİ (veritabanı):\n" + json.dumps(real_rows, ensure_ascii=False)
         analysis = await gemini_generate_content(prompt)
-        
-        # Cache'e kaydet (Basitleştirilmiş)
+
         if cached_data:
             cached_data.ai_summary = analysis
             cached_data.last_analyzed_at = datetime.utcnow()
+            cached_data.neighborhood = election_type
         else:
             new_cache = RegionAnalysis(
-                province=province, district=district, election_year=2024,
-                ai_summary=analysis, last_analyzed_at=datetime.utcnow()
+                province=province,
+                district=dist_key or None,
+                election_year=max_year,
+                neighborhood=election_type,
+                ai_summary=analysis,
+                last_analyzed_at=datetime.utcnow(),
             )
             db.add(new_cache)
-        
+
         await db.commit()
-        return {"success": True, "analysis": analysis, "cached": False}
+        return {"success": True, "analysis": analysis, "cached": False, "base_votes": base_votes}
     except HTTPException:
         raise
-    except Exception as e: 
+    except Exception as e:
         logger.error(f"Election analyze error: {e}")
         return {"success": False, "error": str(e)}
 

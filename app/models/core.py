@@ -17,6 +17,7 @@ class ContentType(str, enum.Enum):
     comment = "comment"
     video = "video"
     article = "article"
+    reply = "reply"
 
 class Source(Base):
     __tablename__ = "sources"
@@ -193,6 +194,7 @@ class RegionAnalysis(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     province: Mapped[str] = mapped_column(String, index=True)
     district: Mapped[Optional[str]] = mapped_column(String, index=True)
+    # Seçim radarı önbellek anahtarı: UI election_type (local / presidential / parliamentary)
     neighborhood: Mapped[Optional[str]] = mapped_column(String, index=True)
     election_year: Mapped[int] = mapped_column(Integer)
     ai_summary: Mapped[str] = mapped_column(Text)

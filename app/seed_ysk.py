@@ -22,7 +22,7 @@ def detect_election_type(folder_name: str):
         return ElectionCategory.presidential, folder_name
     elif "milletvekili" in folder_name or "genel" in folder_name:
         return ElectionCategory.parliamentary, folder_name
-    elif "referandum" in folder_name:
+    elif "referandum" in folder_name or "refarandum" in folder_name:
         return ElectionCategory.referendum, folder_name
     else:
         return ElectionCategory.local, folder_name

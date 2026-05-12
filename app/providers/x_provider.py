@@ -1,5 +1,6 @@
 import os
 import asyncio
+import random
 import httpx
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
@@ -49,8 +50,8 @@ class RapidXProvider(XProvider):
     RATE_LIMIT_DELAY = 15.0
     # API istek timeout (saniye)
     REQUEST_TIMEOUT = 45.0
-    # Maksimum deneme sayısı
-    MAX_RETRIES = 3
+    # Maksimum deneme (5xx geçici RapidAPI/upstream kesintileri için birkaç tur)
+    MAX_RETRIES = 5
 
     def __init__(self):
         self.api_key = os.getenv("RAPIDAPI_KEY") or os.getenv("RAPID_API_KEY")
@@ -242,9 +243,31 @@ class RapidXProvider(XProvider):
                         continue
 
                     if response.status_code >= 500:
-                        # Sunucu hatası — yeniden dene
-                        wait = 5 * (attempt + 1)
-                        logger.warning(f"RapidX: Sunucu hatası {response.status_code}, {wait}sn sonra tekrar deneniyor...")
+                        # 502 Bad Gateway / 503: RapidAPI veya twitter-api45 tarafında geçici yük,
+                        # proxy timeout veya bakım. Uygulama hatası değildir.
+                        ra_hdr = response.headers.get("Retry-After")
+                        if ra_hdr:
+                            try:
+                                wait = float(ra_hdr.strip())
+                            except ValueError:
+                                wait = min(
+                                    120.0,
+                                    8 * (2**attempt) + random.uniform(0, 2.5),
+                                )
+                        else:
+                            wait = min(
+                                120.0,
+                                8 * (2**attempt) + random.uniform(0, 2.5),
+                            )
+                        wait = max(3.0, min(120.0, wait))
+                        body_hint = (response.text or "")[:180].replace("\n", " ").strip()
+                        logger.warning(
+                            f"RapidX: Upstream HTTP {response.status_code} [{endpoint}] — "
+                            f"geçici sunucu veya geçit hatası. {wait:.1f}s sonra tekrar "
+                            f"(deneme {attempt + 1}/{self.MAX_RETRIES})."
+                        )
+                        if body_hint:
+                            logger.debug(f"RapidX yanıt özeti: {body_hint}")
                         await asyncio.sleep(wait)
                         continue
 
