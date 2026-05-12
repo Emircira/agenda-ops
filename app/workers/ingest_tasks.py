@@ -25,12 +25,7 @@ from app.core.utils import (
 
 def run_async(coro):
     """Celery'nin senkron yapısı içinde Asyncio event loop çalıştırma zırhı."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+    return asyncio.run(coro)
 
 
 def get_x_provider():
@@ -114,14 +109,17 @@ def ingest_rss_all_sources(self):
         provider = RSSProvider()
 
         async with AsyncSessionLocal() as db:
-            result = await db.execute(select(Source).where(Source.type == 'rss', Source.active == True))
-            sources = result.scalars().all()
+            result = await db.execute(
+                select(Source.id, Source.name, Source.url, Source.domain)
+                .where(Source.type == 'rss', Source.active == True)
+            )
+            sources = [dict(row) for row in result.mappings().all()]
 
             all_source_infos = [
                 {"name": "Google Haberler", "url": "https://news.google.com/rss?hl=tr&gl=TR&ceid=TR:tr", "id": None}
             ]
             for s in sources:
-                all_source_infos.append({"name": s.name, "url": s.url, "id": s.id})
+                all_source_infos.append({"name": s["name"], "url": s["url"], "id": s["id"], "domain": s.get("domain") or "general"})
 
             total_added = 0
             for s_info in all_source_infos:
@@ -129,7 +127,7 @@ def ingest_rss_all_sources(self):
                     articles = await provider.fetch_feed(s_info["url"], s_info["name"])
                     for article in articles:
                         article['source_id'] = s_info["id"]
-                        article['domain'] = 'general'
+                        article['domain'] = s_info.get("domain", "general")
                         article['is_analyzed'] = True
 
                     for i in range(0, len(articles), 100):
@@ -173,18 +171,25 @@ def ingest_youtube_all_sources(self):
         provider = YouTubeProvider()
 
         async with AsyncSessionLocal() as db:
-            result = await db.execute(select(Source).where(Source.type == 'youtube', Source.active == True))
-            sources = result.scalars().all()
+            result = await db.execute(
+                select(Source.id, Source.name, Source.url, Source.domain)
+                .where(Source.type == 'youtube', Source.active == True)
+            )
+            sources = [dict(row) for row in result.mappings().all()]
 
             total_added = 0
             for source in sources:
+                source_id = source["id"]
+                source_name = source["name"]
+                source_url = source["url"]
+                source_domain = source.get("domain") or "general"
                 try:
-                    videos = await provider.fetch_channel_videos(source.url, max_results=100)
+                    videos = await provider.fetch_channel_videos(source_url, max_results=100)
                     for video in videos:
                         vid_id = video["id"] if isinstance(video.get("id"), str) else video["id"]["videoId"]
                         comments = await provider.fetch_video_comments(vid_id, max_results=50)
                         articles = extract_youtube_comments_as_articles(
-                            video, comments, source.id, getattr(source, 'domain', 'general')
+                            video, comments, source_id, source_domain
                         )
                         for art in articles:
                             art['is_analyzed'] = True
@@ -199,9 +204,9 @@ def ingest_youtube_all_sources(self):
 
                 except Exception as e:
                     if isinstance(e, YouTubeQuotaExceeded):
-                        logger.error(f"YouTube kotası doldu [{source.name}], diğer kaynaklara geçiliyor: {e}")
+                        logger.error(f"YouTube kotası doldu [{source_name}], diğer kaynaklara geçiliyor: {e}")
                         continue
-                    logger.error(f"YouTube hatası [{source.name}]: {e}")
+                    logger.error(f"YouTube hatası [{source_name}]: {e}")
 
             await db.commit()
             logger.info(f"✅ YouTube Ingestion Tamamlandı. {total_added} yeni içerik eklendi.")
@@ -245,12 +250,12 @@ def ingest_x_all_sources(self):
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(
-                select(Source).where(
+                select(Source.id, Source.type, Source.name, Source.url, Source.domain).where(
                     Source.type.in_(['twitter_self', 'twitter_competitor', 'twitter_trend', 'x']),
                     Source.active == True
                 )
             )
-            sources = result.scalars().all()
+            sources = [dict(row) for row in result.mappings().all()]
 
             if not sources:
                 logger.warning("⚠️ Hiç aktif Twitter kaynağı bulunamadı!")
@@ -265,22 +270,25 @@ def ingest_x_all_sources(self):
             for idx, source in enumerate(sources, 1):
                 source_added = 0
                 source_skipped = 0
-                source_name = source.name or source.url
-                source_domain = getattr(source, 'domain', 'general') or 'general'
+                source_id = source["id"]
+                source_type = source["type"]
+                source_url = source["url"]
+                source_name = source["name"] or source_url
+                source_domain = source.get("domain") or "general"
 
-                logger.info(f"--- [{idx}/{len(sources)}] Kaynak: {source_name} (Tip: {source.type}) ---")
+                logger.info(f"--- [{idx}/{len(sources)}] Kaynak: {source_name} (Tip: {source_type}) ---")
 
                 try:
-                    if source.type == 'twitter_trend':
-                        posts = await provider.fetch_keyword_posts(source.url, limit=100)
+                    if source_type == 'twitter_trend':
+                        posts = await provider.fetch_keyword_posts(source_url, limit=100)
                     else:
-                        posts = await provider.fetch_mentions(source.url)
+                        posts = await provider.fetch_mentions(source_url)
 
                     logger.info(f"  📦 Provider'dan {len(posts)} veri geldi.")
 
                     for post in posts:
                         try:
-                            article = _post_to_article(post, source_id=source.id, domain=source_domain)
+                            article = _post_to_article(post, source_id=source_id, domain=source_domain)
                             stmt = insert(Content).values(**article).on_conflict_do_nothing(
                                 index_elements=['external_id']
                             )
