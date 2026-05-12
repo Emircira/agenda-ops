@@ -75,5 +75,6 @@ celery_app.conf.beat_schedule = {
 celery_app.autodiscover_tasks([
     "app.workers.ingest_tasks",
     "app.workers.labeling_tasks",
-    "app.workers.scoring_tasks"
+    "app.workers.scoring_tasks",
+    "app.workers.complaints_tasks",
 ])

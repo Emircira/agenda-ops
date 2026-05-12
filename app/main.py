@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 import re
 
-from fastapi import FastAPI, Request, Depends, HTTPException
+from fastapi import FastAPI, Request, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,7 +25,7 @@ from app.services.karargah_llm_directive import with_karargah_osint_directive
 
 # KARARGAH ANA MİMARİ İMPORTLARI
 from app.db.session import get_db, engine
-from app.models.core import Base, Opportunity, Content, Source
+from app.models.core import Base, Opportunity, Content, Source, ComplaintsRadarCache
 from app.api.routers import router
 
 # ÖZEL SEÇİM/DEMOGRAFİ MODELLERİN
@@ -35,6 +35,7 @@ from app.models.core import (
 )
 from app.services import simulator as election_simulator
 from app.services.election_wiki_fallback import fetch_wiki_votes_for_province
+from app.data.tr_provinces import TR_PROVINCES_81
 from app.core.utils import (
     pre_filter_content,
     extract_youtube_comments_as_articles,
@@ -396,8 +397,9 @@ async def dashboard(request: Request, window: int = 6, db: AsyncSession = Depend
             poll_json = json.dumps(poll_data)
 
         return templates.TemplateResponse("dashboard.html", {
-            "request": request, "contents": c_res.scalars().all(), 
-            "opportunities": o_res.scalars().all(), "sources": s_res.scalars().all(), "poll_json": poll_json
+            "request": request, "contents": c_res.scalars().all(),
+            "opportunities": o_res.scalars().all(), "sources": s_res.scalars().all(), "poll_json": poll_json,
+            "tr_provinces": TR_PROVINCES_81,
         })
     except Exception as e:
         logger.error(f"Dashboard hatası: {e}")
@@ -589,7 +591,7 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
             provider = get_x_provider()
             res = await db.execute(
                 select(Source.id, Source.type, Source.name, Source.url, Source.domain).where(
-                    Source.type.in_(['twitter_self', 'twitter_competitor', 'twitter_trend', 'x']),
+                    Source.type.in_(['twitter_self', 'twitter_competitor', 'twitter_trend', 'twitter_agency', 'x']),
                     Source.active == True
                 )
             )
@@ -609,6 +611,8 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                     
                     if source_type == 'twitter_trend':
                         posts = await provider.fetch_top_tweets_shallow(source_url, limit=17)
+                    elif source_type == 'twitter_agency':
+                        posts = await provider.fetch_from_channel(source_url)
                     else:
                         posts = await provider.fetch_mentions(source_url)
                     
@@ -1187,50 +1191,91 @@ async def recent_content_stream(limit: int = 30, db: AsyncSession = Depends(get_
     return {"success": True, "streams": grouped}
 
 # =======================================================
-# 5. ŞİKAYET RADARI (Complaints Radar — YENİ MODÜL)
+# 5. ŞİKAYET RADARI (Complaints Radar — Celery + önbellek)
 # =======================================================
+COMPLAINTS_RADAR_CACHE_TTL = timedelta(hours=1)
+
+
+def _complaints_province_cache_key(label: str) -> str:
+    s = (label or "").strip()
+    if not s:
+        return "turkiye_geneli"
+    return normalize_tr(s)
+
+
+def _complaints_cache_row_fresh(row: ComplaintsRadarCache) -> bool:
+    if not row or not row.cached_at:
+        return False
+    ts = row.cached_at
+    if getattr(ts, "tzinfo", None) is not None:
+        ts = ts.replace(tzinfo=None)
+    return datetime.utcnow() - ts < COMPLAINTS_RADAR_CACHE_TTL
+
+
 class ComplaintRadarRequest(BaseModel):
     city: Optional[str] = None
 
+
 @app.post("/api/complaints-radar", tags=["Yapay Zeka Analiz"])
-async def complaints_radar(req: ComplaintRadarRequest, db: AsyncSession = Depends(get_db)):
-    """Şehir bazlı şikayet ve zafiyet analizi yapar."""
+async def complaints_radar_post(req: ComplaintRadarRequest, db: AsyncSession = Depends(get_db)):
+    """İl seçimine göre X örneklemesi + Gemini kriz süzgeci; önbellek taze ise anında döner."""
+    province_label = (req.city or "").strip() or "Türkiye Geneli"
+    province_key = _complaints_province_cache_key(province_label)
+
+    res = await db.execute(select(ComplaintsRadarCache).where(ComplaintsRadarCache.province_key == province_key))
+    row = res.scalar_one_or_none()
+    if row and _complaints_cache_row_fresh(row):
+        payload = row.payload_json or {}
+        return {
+            "success": True,
+            "cached": True,
+            "pending": False,
+            "province_label": row.province_label,
+            "analysis": payload.get("analysis", ""),
+        }
+
     try:
-        # Şehir bazlı verileri çek (X, YouTube, RSS fark etmeksizin)
-        query = select(Content)
-        if req.city:
-            query = query.where(Content.text.ilike(f"%{req.city}%"))
-        
-        res = await db.execute(query.limit(50))
-        contents = res.scalars().all()
-        
-        city_name = req.city if req.city else "Genel Türkiye"
-        
-        if not contents:
-            logger.error(f"Complaints radar için gerçek veri bulunamadı: {city_name}")
-            raise HTTPException(status_code=404, detail=f"{city_name} için canlı veri bulunamadı. Sahte öngörü raporu üretilmez.")
-        else:
-            text_blob = "\n".join([f"[{c.platform}] {c.text[:300]}" for c in contents])
-            prompt = f"""
-            Aşağıdaki canlı verileri kullanarak {city_name} için 'Şikayet ve Zafiyet Analizi' yap.
-            Hangi konular (Ulaşım, Ekonomi, Altyapı vb.) öne çıkıyor? Rakip aktörler nerede hata yapıyor?
-            
-            CANLI VERİLER:
-            {text_blob}
-            
-            Lütfen 3 ana başlıkta topla:
-            1. **En Çok Şikayet Edilen Konu**
-            2. **Rakip Zafiyet Noktası** (Nereye saldırılmalı?)
-            3. **Saha Kriz Skoru** (0-100)
-            """
-        
-        analysis = await gemini_generate_content(prompt)
-        return {"success": True, "analysis": analysis}
-    except HTTPException:
-        raise
+        from app.workers.complaints_tasks import complaints_radar_scan
+
+        complaints_radar_scan.delay(province_label)
     except Exception as e:
-        logger.error(f"Complaints radar error: {e}")
-        return {"success": False, "error": str(e)}
+        logger.error(f"Şikayet radarı Celery tetikleme hatası: {e}")
+        return {"success": False, "error": "Arka plan taraması kuyruğa alınamadı. Celery/Redis yapılandırmasını kontrol edin."}
+
+    return {
+        "success": True,
+        "pending": True,
+        "cached": False,
+        "message": "İl bazlı tarama kuyruğa alındı; sonuç hazır olunca aynı il için önbellekten okunur.",
+        "province_key": province_key,
+        "province_label": province_label,
+    }
+
+
+@app.get("/api/complaints-radar", tags=["Yapay Zeka Analiz"])
+async def complaints_radar_poll(city: Optional[str] = Query(None), db: AsyncSession = Depends(get_db)):
+    """Önbellekten taze şikâyet raporu (polling)."""
+    province_label = (city or "").strip() or "Türkiye Geneli"
+    province_key = _complaints_province_cache_key(province_label)
+
+    res = await db.execute(select(ComplaintsRadarCache).where(ComplaintsRadarCache.province_key == province_key))
+    row = res.scalar_one_or_none()
+    if row and _complaints_cache_row_fresh(row):
+        payload = row.payload_json or {}
+        return {
+            "success": True,
+            "cached": True,
+            "pending": False,
+            "province_label": row.province_label,
+            "analysis": payload.get("analysis", ""),
+        }
+
+    return {
+        "success": False,
+        "pending": True,
+        "province_label": province_label,
+        "message": "Önbellek henüz yok veya süresi doldu; tarama tamamlanınca tekrar deneyin.",
+    }
 
 
 # =======================================================

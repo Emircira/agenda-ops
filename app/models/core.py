@@ -265,6 +265,20 @@ class CandidateDemographic(Base):
 
 # --- 4. YAPAY ZEKA KALICI HAFIZA (CACHING) ---
 
+
+class ComplaintsRadarCache(Base):
+    """Şikayet Radarı: il bazlı X örnekleme + Gemini süzgeci sonucu (TTL ile yenilenir)."""
+    __tablename__ = "complaints_radar_cache"
+    __table_args__ = (
+        Index("ix_complaints_radar_cache_cached_at", "cached_at"),
+    )
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    province_key = Column(String(120), nullable=False, unique=True)
+    province_label = Column(String(120), nullable=False)
+    cached_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    payload_json = Column(JSONB, default=dict)
+
+
 class RegionAnalysis(Base):
     __tablename__ = "region_analyses"
     id: Mapped[int] = mapped_column(primary_key=True)

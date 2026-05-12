@@ -3,9 +3,25 @@ import asyncio
 import random
 import httpx
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 from datetime import datetime, timedelta
 from loguru import logger
+
+
+def _x_agency_allowlist_screen_names() -> Optional[Set[str]]:
+    """
+    Opsiyonel: virgülle ayrılmış @handle veya handle listesi.
+    Boşsa tüm ajans kanallarına izin verilir.
+    """
+    raw = (os.getenv("X_AGENCY_FETCH_ALLOWLIST") or "").strip()
+    if not raw:
+        return None
+    out: Set[str] = set()
+    for part in raw.split(","):
+        sn = part.strip().replace("@", "").strip().lower()
+        if sn:
+            out.add(sn)
+    return out
 
 
 class XProvider(ABC):
@@ -33,6 +49,11 @@ class XProvider(ABC):
         """Bir tweet'in altındaki yorumları/yanıtları çeker."""
         pass
 
+    @abstractmethod
+    async def fetch_from_channel(self, channel: str) -> List[Dict[str, Any]]:
+        """Ajans/kanal hesabı — timeline + hit odaklı sınırlı yanıt derinliği."""
+        pass
+
 
 class RapidXProvider(XProvider):
     """
@@ -52,6 +73,11 @@ class RapidXProvider(XProvider):
     REQUEST_TIMEOUT = 45.0
     # Maksimum deneme (5xx geçici RapidAPI/upstream kesintileri için birkaç tur)
     MAX_RETRIES = 5
+    # API maliyeti: tek tweet başına en fazla bu kadar yanıt saklanır
+    MAX_REPLY_COMMENTS = 10
+    _TIMELINE_PARSE_CAP = 105
+    _TIMELINE_PARENT_KEEP = 60
+    _TIMELINE_REPLY_FETCH_BUDGET = 35
 
     def __init__(self):
         self.api_key = os.getenv("RAPIDAPI_KEY") or os.getenv("RAPID_API_KEY")
@@ -59,6 +85,17 @@ class RapidXProvider(XProvider):
         if not self.api_key:
             raise RuntimeError("RAPIDAPI_KEY/RAPID_API_KEY zorunludur; X verisi için mock fallback yoktur.")
         self.base_url = f"https://{self.api_host}"
+
+    @staticmethod
+    def _normalize_screen_name(target: str) -> str:
+        screen_name = (target or "").strip()
+        if "/" in screen_name:
+            screen_name = screen_name.split("/")[-1].split("?")[0]
+        return screen_name.replace("@", "").strip()
+
+    @staticmethod
+    def _engagement_score(p: Dict[str, Any]) -> int:
+        return int(p.get("_likes", 0)) + int(p.get("_retweets", 0))
 
     def _get_headers(self):
         return {
@@ -446,72 +483,87 @@ class RapidXProvider(XProvider):
             # Hit sıralaması: Beğeni + Retweet'e göre
             replies.sort(key=lambda x: x.get("_likes", 0) + x.get("_retweets", 0), reverse=True)
 
-            return replies[:70]  # Derin araştırma / reply — hacim ~%30 düşük
+            return replies[: self.MAX_REPLY_COMMENTS]
         except Exception as e:
             logger.error(f"RapidX fetch_tweet_replies hatası (tweet {tweet_id}): {e}")
             raise
 
-    # ------------------------------------------------------------------ #
-    #  HESAP TAKİBİ: Timeline + Yorumlar (ANA FONKSİYON)
-    # ------------------------------------------------------------------ #
-    async def fetch_mentions(self, target: str) -> List[Dict[str, Any]]:
-        """
-        Bir kullanıcının son tweetlerini çeker, her tweet için
-        altındaki en etkili (hit) yorumları toplar.
-        Kaynaklar arasında asyncio.sleep ile rate-limit koruması sağlar.
-        """
-        # URL / @ temizliği
-        screen_name = target.strip()
-        if "/" in screen_name:
-            screen_name = screen_name.split("/")[-1].split("?")[0]
-        screen_name = screen_name.replace("@", "").strip()
+    async def fetch_from_channel(self, channel: str) -> List[Dict[str, Any]]:
+        """Ajans/Kanal URL veya @handle — timeline.php + hit odaklı üst tweetler ve en fazla 10 yanıt/tweet."""
+        screen_name = self._normalize_screen_name(channel)
+        if not screen_name:
+            logger.warning(f"RapidX fetch_from_channel: boş kanal: {channel!r}")
+            return []
 
+        allow = _x_agency_allowlist_screen_names()
+        if allow is not None and screen_name.lower() not in allow:
+            logger.warning(f"RapidX ajans kanalı izin listesinde değil, atlanıyor: @{screen_name}")
+            return []
+
+        logger.info(f"📰 RapidX ajans/kanal: @{screen_name} (hit odaklı timeline)...")
+        return await self._fetch_timeline_hit_focused(screen_name, parent_target_type="twitter_agency")
+
+    async def fetch_mentions(self, target: str) -> List[Dict[str, Any]]:
+        """VIP/rakip hesap timeline + hit odaklı yanıtlar (tweet başına en fazla 10 yorum)."""
+        screen_name = self._normalize_screen_name(target)
         if not screen_name:
             logger.warning(f"RapidX: Boş kullanıcı adı, atlanıyor: {target}")
             return []
 
-        logger.info(f"🔍 RapidX: @{screen_name} taranıyor (timeline + yorumlar)...")
+        logger.info(f"🔍 RapidX: @{screen_name} taranıyor (timeline + hit yorumlar)...")
+        return await self._fetch_timeline_hit_focused(screen_name, parent_target_type="twitter_self")
 
+    async def _fetch_timeline_hit_focused(
+        self,
+        screen_name: str,
+        parent_target_type: str,
+    ) -> List[Dict[str, Any]]:
+        """Timeline üst gönderileri etkileşime göre sıralar; yanıtları bütçeli ve sınırlı derinlikte çeker."""
         try:
             data = await self._api_request("timeline.php", {"screenname": screen_name})
-
             raw_tweets, _ = self._extract_tweets_from_response(data)
             logger.info(f"RapidX @{screen_name}: Timeline'da {len(raw_tweets)} ham tweet bulundu.")
 
             if not raw_tweets:
                 return []
 
-            all_posts = []
-            seen_ids = set()
             seven_days_ago = datetime.utcnow() - timedelta(days=7)
-            tweets_with_replies = 0
-            reply_requests_sent = 0
+            parents: List[Dict[str, Any]] = []
+            seen_ids: set = set()
 
-            for tweet in raw_tweets[:105]:  # Hesap timeline — ~%30 daha az tweet
-                parsed = self._parse_tweet(tweet, keyword=screen_name, target_type="twitter_self")
+            for tweet in raw_tweets[: self._TIMELINE_PARSE_CAP]:
+                parsed = self._parse_tweet(
+                    tweet, keyword=screen_name, target_type=parent_target_type
+                )
                 if not parsed:
                     continue
-
-                # Duplicate engelleme
                 if parsed["external_id"] in seen_ids:
                     continue
                 seen_ids.add(parsed["external_id"])
-
-                # 7 gün filtresi
                 try:
                     pub_date = datetime.fromisoformat(parsed["published_at"]).replace(tzinfo=None)
                     if pub_date < seven_days_ago:
                         continue
                 except Exception:
                     pass
+                parents.append(parsed)
 
+            parents.sort(key=self._engagement_score, reverse=True)
+            parents = parents[: self._TIMELINE_PARENT_KEEP]
+
+            all_posts: List[Dict[str, Any]] = []
+            reply_requests_sent = 0
+            tweets_with_replies = 0
+
+            for parsed in parents:
                 all_posts.append(parsed)
 
                 if parsed.get("_replies", 0) <= 0:
-                    logger.debug(f"  └── Tweet {parsed['external_id'][:12]}... yorum yok, reply API atlandı")
                     continue
+                if reply_requests_sent >= self._TIMELINE_REPLY_FETCH_BUDGET:
+                    logger.debug("RapidX: Yanıt API bütçesi doldu, kalan üst tweetler yanıtsız bırakıldı.")
+                    break
 
-                # Sadece yorumu olan tweetler için reply API çağrısı yap.
                 if reply_requests_sent > 0:
                     await asyncio.sleep(self.API_DELAY)
 
@@ -526,19 +578,21 @@ class RapidXProvider(XProvider):
                                 r["target_name"] = f"@{screen_name}"
                                 all_posts.append(r)
                                 seen_ids.add(r["external_id"])
-                        logger.info(f"  └── Tweet {parsed['external_id'][:12]}... → {len(replies)} yorum çekildi")
+                        logger.info(
+                            f"  └── Tweet {parsed['external_id'][:12]}... → {len(replies)} yorum (max {self.MAX_REPLY_COMMENTS})"
+                        )
                 except Exception as e:
                     logger.warning(f"  └── Tweet {parsed['external_id'][:12]}... yorum hatası: {e}")
                     raise
 
             logger.info(
-                f"✅ RapidX @{screen_name}: TOPLAM {len(all_posts)} veri çekildi "
-                f"({tweets_with_replies} tweet'ten yorum alındı)"
+                f"✅ RapidX @{screen_name}: TOPLAM {len(all_posts)} veri "
+                f"({len(parents)} üst tweet, {tweets_with_replies} yanıt çekilen gönderi)"
             )
             return all_posts
 
         except Exception as e:
-            logger.error(f"RapidX fetch_mentions GENEL hatası (@{screen_name}): {e}")
+            logger.error(f"RapidX timeline hit-focused hatası (@{screen_name}): {e}")
             raise
 
     # ------------------------------------------------------------------ #
@@ -637,6 +691,7 @@ class RapidXProvider(XProvider):
                 logger.error(f"RapidX arama hatası sayfa {pages_fetched}: {e}")
                 raise
 
+        all_posts.sort(key=self._engagement_score, reverse=True)
         logger.info(
             f"✅ RapidX '{keyword}' DEEP-SCAN TAMAMLANDI: "
             f"{len(all_posts)} tweet ({pages_fetched} sayfa tarandı, {len(seen_ids)} benzersiz ID)"
