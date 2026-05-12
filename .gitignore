@@ -1,0 +1,14 @@
+﻿# Gizli ortam — kökte .env kullanın (bu dosya klasör DEĞİL, metin dosyasıdır)
+.env
+.env.*
+!.env.example
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+.idea/
+.vscode/
+.DS_Store
+celerybeat-schedule
