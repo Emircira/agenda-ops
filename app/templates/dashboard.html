@@ -191,7 +191,7 @@
                         </div>
                         <p class="text-sm font-medium">Stratejik Fırsat Verisi Bekleniyor</p>
                         <p class="text-[10px] uppercase tracking-widest mt-1 mb-4 opacity-50">Yapay Zeka Analiz Motoru Beklemede</p>
-                        <button onclick="window.AgendaOps.triggerPipeline()" class="bg-primary/20 hover:bg-primary/40 text-primary text-xs px-4 py-2 rounded-full border border-primary/30 transition-all font-bold">🚀 ANALİZ HATTINI TETİKLE</button>
+                        <button onclick="window.AgendaOps.triggerPipeline(event, this)" class="bg-primary/20 hover:bg-primary/40 text-primary text-xs px-4 py-2 rounded-full border border-primary/30 transition-all font-bold">🚀 ANALİZ HATTINI TETİKLE</button>
                     </div>
                     {% endif %}
                 </div>
@@ -934,6 +934,21 @@
                 finally { btn.innerHTML = orig; btn.disabled = false; }
             }
 
+            showToast(message, type = 'info') {
+                const container = document.getElementById('toast-container');
+                if (!container) return;
+                const color = type === 'success' ? 'border-l-success text-success' : type === 'error' ? 'border-l-danger text-danger' : 'border-l-primary text-primary';
+                const toast = document.createElement('div');
+                toast.className = `toast-enter bg-slate-800 border-l-4 ${color} p-4 rounded shadow-lg text-sm text-slate-200 max-w-sm pointer-events-auto`;
+                toast.innerHTML = `<p class="font-medium">${this.escapeHtml(message)}</p>`;
+                container.appendChild(toast);
+                setTimeout(() => {
+                    toast.style.opacity = '0';
+                    toast.style.transition = 'opacity 0.3s';
+                    setTimeout(() => toast.remove(), 300);
+                }, 6000);
+            }
+
             escapeHtml(value) {
                 return String(value || '').replace(/[&<>"']/g, (ch) => ({
                     '&': '&amp;',
@@ -1386,16 +1401,47 @@
                 }
             }
 
-            async triggerPipeline() {
-                if(!confirm("Yapay Zeka etiketleme ve skorlama hattını tetiklemek üzeresiniz. Bu işlem Gemini API limitlerini kullanır. Onaylıyor musunuz?")) return;
+            async triggerPipeline(event, btn) {
+                if (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                if(!confirm("Yapay Zeka etiketleme ve skorlama hattını tetiklemek üzeresiniz. Bu işlem Gemini API limitlerini kullanır. Onaylıyor musunuz?")) return false;
+                const button = btn || event?.currentTarget;
+                const original = button ? button.innerHTML : '';
+                let keepSuccessState = false;
+                if (button) {
+                    button.disabled = true;
+                    button.innerHTML = '<span class="inline-block animate-spin mr-2">⏳</span>Tetikleniyor...';
+                }
+                this.showToast('Analiz hattı kuyruğa alınıyor...', 'info');
                 try {
                     const res = await fetch('/api/system/trigger-pipeline', { method: 'POST' });
                     const data = await res.json();
-                    if(data.success) {
-                        alert("Analiz hattı başarıyla tetiklendi. Birkaç dakika içinde fırsat kartları güncellenecektir.");
-                        setTimeout(() => window.location.reload(), 2000);
-                    } else alert("Hata: " + data.error);
-                } catch(e) { alert("Bağlantı koptu."); }
+                    if(res.ok && data.success) {
+                        keepSuccessState = true;
+                        if (button) button.innerHTML = '✅ Görev Alındı';
+                        this.showToast(data.message || 'Görev alındı. Pipeline arka planda çalışıyor.', 'success');
+                        this.loadHotTopics(true);
+                    } else {
+                        this.showToast('Hata: ' + (data.error || data.detail || 'Görev kuyruğa alınamadı.'), 'error');
+                    }
+                } catch(e) {
+                    this.showToast('Bağlantı koptu: ' + e.message, 'error');
+                } finally {
+                    if (button) {
+                        if (keepSuccessState) {
+                            setTimeout(() => {
+                                button.disabled = false;
+                                button.innerHTML = original;
+                            }, 1500);
+                        } else {
+                            button.disabled = false;
+                            button.innerHTML = original;
+                        }
+                    }
+                }
+                return false;
             }
         }
         document.addEventListener('DOMContentLoaded', () => { window.AgendaOps = new DashboardController(); });
