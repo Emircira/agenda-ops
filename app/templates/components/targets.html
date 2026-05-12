@@ -14,6 +14,16 @@
                     </select>
                 </div>
                 <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-2">Kaynak Tipi</label>
+                    <select id="sourceCategory" class="w-full bg-dark border border-slate-700 text-white rounded-lg px-4 py-3 focus:border-primary outline-none">
+                        <option value="rakip">Rakip</option>
+                        <option value="haber_ajansi">Haber Ajansı</option>
+                        <option value="sahis_hedef">Şahıs / Hedef</option>
+                        <option value="genel_gundem" selected>Genel Gündem</option>
+                    </select>
+                    <p class="text-[10px] text-slate-500 mt-1">Yapay zeka bu kaynağı haber, rakip veya nötr sinyal olarak ayırır.</p>
+                </div>
+                <div>
                     <label class="block text-sm font-medium text-slate-400 mb-2">🎯 Domain (Kategori) — Bağlam İzolasyonu</label>
                     <select id="sourceDomain" class="w-full bg-dark border border-slate-700 text-white rounded-lg px-4 py-3 focus:border-warning outline-none">
                         <option value="politics">🏛️ Siyaset</option>
@@ -60,7 +70,17 @@
                         {% else %}
                         <span class="bg-slate-600/20 text-slate-400 text-[10px] px-1.5 py-0.5 rounded">🌐 GNL</span>
                         {% endif %}
-                        
+                        {% set sc = src.source_category|default('genel_gundem') %}
+                        {% if sc == 'haber_ajansi' %}
+                        <span class="bg-cyan-500/20 text-cyan-400 text-[10px] px-1.5 py-0.5 rounded">📰 Haber Ajansı</span>
+                        {% elif sc == 'rakip' %}
+                        <span class="bg-rose-500/20 text-rose-400 text-[10px] px-1.5 py-0.5 rounded">⚔ Rakip</span>
+                        {% elif sc == 'sahis_hedef' %}
+                        <span class="bg-violet-500/20 text-violet-300 text-[10px] px-1.5 py-0.5 rounded">◎ Şahıs/Hedef</span>
+                        {% else %}
+                        <span class="bg-slate-600/25 text-slate-300 text-[10px] px-1.5 py-0.5 rounded">🌐 Genel Gündem</span>
+                        {% endif %}
+
                         <span class="text-white text-sm font-medium ml-1">{{ src.name }}</span>
                     </div>
                     <div class="flex items-center gap-4">

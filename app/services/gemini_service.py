@@ -44,9 +44,12 @@ class GeminiAIClient:
         # Metni 500 karakterle sınırla (token tasarrufu)
         simplified = []
         for c in contents:
+            nk = normalize_source_category(c.get("source_category"))
             simplified.append({
                 "id": str(c["id"]),
-                "text": str(c.get("text", ""))[:500]
+                "text": str(c.get("text", ""))[:500],
+                "platform": str(c.get("platform") or ""),
+                "source_category": nk,
             })
 
         return f"""Sen bir siyasi istihbarat analisti ve OSINT uzmanısın. Türkiye bağlamında sosyal medya içeriklerini analiz et.

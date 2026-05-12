@@ -225,7 +225,21 @@ def analyze_twitter_contents(self, fetch_result=None):
                 if not contents:
                     break
 
-                batch_data = [{"id": str(c.id), "text": c.text or ""} for c in contents]
+                cat_map = await _source_categories_for_contents(db, contents)
+
+                batch_data = []
+                for c in contents:
+                    sc = (
+                        cat_map.get(c.source_id, "genel_gundem")
+                        if c.source_id is not None
+                        else "genel_gundem"
+                    )
+                    batch_data.append({
+                        "id": str(c.id),
+                        "text": c.text or "",
+                        "platform": "twitter",
+                        "source_category": sc,
+                    })
                 analysis_results = ai_client.analyze_batch(batch_data)
 
                 results_by_id = {str(item.get("id", "")): item for item in analysis_results}

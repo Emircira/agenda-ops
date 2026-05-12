@@ -1,7 +1,9 @@
 import os
 import json
+from typing import Optional
 from loguru import logger
 from app.services.gemini_model import create_gemini_model
+from app.core.utils import source_category_prompt_hints
 
 class LabelingService:
     def __init__(self):

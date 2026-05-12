@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import Any, Dict, FrozenSet, List, Optional
 
 def pre_filter_content(text: str) -> bool:
     """
@@ -220,3 +220,56 @@ def twitter_bot_signal_summary(raw_json: Dict[str, Any] | None) -> Dict[str, Any
         "account_age_days": age_days,
         "tweets_per_day": tweets_per_day,
     }
+
+
+ALLOWED_SOURCE_CATEGORY_KEYS: FrozenSet[str] = frozenset(
+    {"rakip", "haber_ajansi", "sahis_hedef", "genel_gundem"}
+)
+
+SOURCE_CATEGORY_LABEL_TR: Dict[str, str] = {
+    "rakip": "Rakip",
+    "haber_ajansi": "Haber Ajansı",
+    "sahis_hedef": "Şahıs/Hedef",
+    "genel_gundem": "Genel Gündem",
+}
+
+
+def normalize_source_category(raw: Optional[str]) -> str:
+    if not raw:
+        return "genel_gundem"
+    s = str(raw).strip().lower()
+    if s in ALLOWED_SOURCE_CATEGORY_KEYS:
+        return s
+    s2 = s.replace(" ", "_").replace("-", "_")
+    if s2 in ALLOWED_SOURCE_CATEGORY_KEYS:
+        return s2
+    if "haber" in s and "ajans" in s:
+        return "haber_ajansi"
+    if "rakip" in s:
+        return "rakip"
+    if "şahıs" in s or "sahis" in s or "hedef" in s:
+        return "sahis_hedef"
+    if "gündem" in s or "gundem" in s:
+        return "genel_gundem"
+    return "genel_gundem"
+
+
+def source_category_prompt_hints(key: Optional[str]) -> str:
+    k = normalize_source_category(key)
+    if k == "haber_ajansi":
+        return (
+            "Bu içerik bir haber ajansı / yayın içeriği gibi işle; ticari rakip analizi veya rakip tehdidi "
+            "çıkarımı yapma. Objektif bilgi ve çerçeve odaklı değerlendir."
+        )
+    if k == "sahis_hedef":
+        return "Bu içerik belirli bir şahıs veya hedef aktöre odaklı söylem olarak yorumla."
+    if k == "rakip":
+        return (
+            "Bu içerik rakip / karşı taraf söylemi olarak değerlendirilebilir; "
+            "rekabet ve pozisyon analizi uygun olabilir."
+        )
+    return (
+        "Bu içeriği genel gündem veya nötr gözlem sinyali olarak işle; gereksiz rakip çıkarımı yapma "
+        "(ancak doğrudan saldırgan bir rakip söylemi varsa işaret edebilirsin)."
+    )
+
