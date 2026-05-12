@@ -106,7 +106,7 @@
                         Sıcak Fırsat Kartları (AI Öncelikli)
                     </h3>
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div id="opportunity-cards-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                     {% for opp in opportunities %}
                     {% set score = opp.score|float %}
                     {% if score >= 75 %}
@@ -986,7 +986,7 @@
             showToast(message, type = 'info') {
                 const container = document.getElementById('toast-container');
                 if (!container) return;
-                const color = type === 'success' ? 'border-l-success text-success' : type === 'error' ? 'border-l-danger text-danger' : 'border-l-primary text-primary';
+                const color = type === 'success' ? 'border-l-success text-success' : type === 'error' ? 'border-l-danger text-danger' : type === 'warning' ? 'border-l-warning text-warning' : 'border-l-primary text-primary';
                 const toast = document.createElement('div');
                 toast.className = `toast-enter bg-slate-800 border-l-4 ${color} p-4 rounded shadow-lg text-sm text-slate-200 max-w-sm pointer-events-auto`;
                 toast.innerHTML = `<p class="font-medium">${this.escapeHtml(message)}</p>`;
@@ -1381,6 +1381,71 @@
                 } catch (e) {}
             }
 
+            updatePipelineTaskBanner(taskId, mode, warning) {
+                const el = document.getElementById('pipeline-task-banner');
+                if (!el || !taskId) return;
+                const modeLabel = mode === 'full_pipeline' ? 'Tam pipeline (etiketleme + fırsat sentezi)' : (mode || '—');
+                el.classList.remove('hidden');
+                el.innerHTML = `<span class="text-ai font-bold">Son Celery Task ID:</span> ${this.escapeHtml(String(taskId))}` +
+                    `<span class="text-slate-500 ml-2">· ${this.escapeHtml(String(modeLabel))}</span>` +
+                    (warning ? `<p class="text-warning mt-1 text-[10px]">${this.escapeHtml(String(warning))}</p>` : '');
+            }
+
+            schedulePipelineFollowUps() {
+                [7000, 18000, 40000].forEach((ms) => {
+                    setTimeout(() => {
+                        try {
+                            this.loadHotTopics(true);
+                            this.refreshOpportunityStrip();
+                            this.loadSystemStats();
+                        } catch (_) {}
+                    }, ms);
+                });
+            }
+
+            async refreshOpportunityStrip() {
+                const grid = document.getElementById('opportunity-cards-grid');
+                if (!grid) return;
+                try {
+                    const res = await fetch('/api/v1/opportunities?limit=10');
+                    if (!res.ok) return;
+                    const rows = await res.json();
+                    if (!Array.isArray(rows) || rows.length === 0) {
+                        grid.innerHTML = `<div class="col-span-5 py-12 flex flex-col items-center justify-center bg-panel/30 rounded-2xl border border-dashed border-slate-700/50 text-slate-500">
+                            <div class="w-16 h-16 bg-dark/50 rounded-full flex items-center justify-center mb-4 border border-slate-800">
+                                <svg class="w-8 h-8 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            </div>
+                            <p class="text-sm font-medium">Stratejik Fırsat Verisi Bekleniyor</p>
+                            <p class="text-[10px] uppercase tracking-widest mt-1 mb-4 opacity-50">Pipeline tamamlanınca yenilenecek</p>
+                            <button onclick="window.AgendaOps.triggerPipeline(event, this)" class="bg-primary/20 hover:bg-primary/40 text-primary text-xs px-4 py-2 rounded-full border border-primary/30 transition-all font-bold">🚀 ANALİZ HATTINI TETİKLE</button>
+                        </div>`;
+                        return;
+                    }
+                    grid.innerHTML = '';
+                    rows.forEach((opp) => {
+                        const score = Number(opp.score) || 0;
+                        const insight = (opp.rationale && opp.rationale.insight) ? String(opp.rationale.insight) : 'Stratejik özet hazırlanıyor...';
+                        const card = document.createElement('div');
+                        card.className = 'bg-gradient-to-br from-slate-900 via-[#121A2B] to-slate-950 border border-indigo-500/30 p-5 rounded-2xl flex flex-col max-h-[500px] min-h-0 shadow-xl';
+                        card.innerHTML = `
+                            <div class="flex justify-between items-start mb-3">
+                                <div class="min-w-0 pr-3">
+                                    <span class="text-[10px] font-bold text-indigo-300 uppercase tracking-widest mb-1 block">${this.escapeHtml(opp.frame || '')}</span>
+                                    <h4 class="text-white font-extrabold text-sm leading-tight line-clamp-2">${this.escapeHtml(opp.topic || '')}</h4>
+                                </div>
+                                <div class="w-14 h-14 rounded-2xl bg-dark/70 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                                    <span class="text-xl font-black text-white leading-none">${Math.round(score)}</span>
+                                </div>
+                            </div>
+                            <div class="mb-4 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
+                                <p class="text-[11px] text-slate-400 leading-relaxed"><span class="text-indigo-300 font-bold">Özet:</span> ${this.escapeHtml(insight)}</p>
+                            </div>
+                            <div class="mt-auto pt-3 border-t border-slate-800/50 text-[10px] text-slate-400">${opp.created_at ? this.escapeHtml(String(opp.created_at).slice(0, 16)) : ''}</div>`;
+                        grid.appendChild(card);
+                    });
+                } catch (_) {}
+            }
+
             cleanMermaid(text) {
                 if(!text) return "";
                 // Remove problematic characters that break Mermaid
@@ -1477,15 +1542,30 @@
                 }
                 this.showToast('Analiz hattı kuyruğa alınıyor...', 'info');
                 try {
-                    const res = await fetch('/api/system/trigger-pipeline', { method: 'POST' });
-                    const data = await res.json();
-                    if(res.ok && data.success) {
+                    const res = await fetch('/api/system/trigger-pipeline', {
+                        method: 'POST',
+                        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                        body: '{}'
+                    });
+                    let data = {};
+                    try {
+                        const ct = (res.headers.get('content-type') || '').toLowerCase();
+                        if (ct.includes('application/json')) data = await res.json();
+                    } catch (_) {}
+                    if (res.ok && data.success && data.task_id) {
                         keepSuccessState = true;
                         if (button) button.innerHTML = '✅ Görev Alındı';
-                        this.showToast(data.message || 'Görev alındı. Pipeline arka planda çalışıyor.', 'success');
+                        const tidMsg = `Task ID: ${data.task_id}`;
+                        this.showToast((data.message || 'Görev alındı.') + ' · ' + tidMsg, 'success');
+                        if (data.warning) this.showToast('Uyarı: ' + data.warning, 'warning');
+                        this.updatePipelineTaskBanner(data.task_id, data.mode, data.warning);
                         this.loadHotTopics(true);
+                        this.refreshOpportunityStrip();
+                        this.loadSystemStats();
+                        this.schedulePipelineFollowUps();
                     } else {
-                        this.showToast('Hata: ' + (data.error || data.detail || 'Görev kuyruğa alınamadı.'), 'error');
+                        const msg = data.detail || data.error || data.message || (res.status === 404 ? '404 — endpoint bulunamadı' : 'Görev kuyruğa alınamadı.');
+                        this.showToast('Hata (' + res.status + '): ' + msg, 'error');
                     }
                 } catch(e) {
                     this.showToast('Bağlantı koptu: ' + e.message, 'error');

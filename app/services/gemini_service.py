@@ -52,7 +52,8 @@ class GeminiAIClient:
             }
             simplified.append(entry)
 
-        body = f"""Sen bir siyasi istihbarat analisti ve OSINT uzmanısın. Türkiye bağlamında sosyal medya içeriklerini analiz et.
+        body = f"""GÖREV: Türkiye bağlamında aşağıdaki sosyal medya içeriklerinin her biri için yalnızca istenen JSON nesnelerini üret.
+Kimlik veya yöntem belirtme; metin alanlarında doğrudan içerik odaklı, profesyonel istihbarat özeti dili kullan.
 
 KAYNAK TİPİ (her içerikte "kaynak_tipi" alanı) — analizi buna göre çerçevele:
 - competitor: Ticari veya politik rakip söylemi; stratejik rekabet ve tehdit perspektifi kullan.
@@ -150,7 +151,8 @@ KURALLAR:
                 if attempt > 0:
                     time.sleep(self.API_DELAY * (attempt + 1))
 
-                response = self.model.generate_content(with_karargah_osint_directive(prompt))
+                # prompt zaten with_karargah_osint_directive ile üretildiyse tekrar sarmalama
+                response = self.model.generate_content(prompt)
                 return response.text
 
             except Exception as e:

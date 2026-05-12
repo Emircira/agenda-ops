@@ -18,12 +18,12 @@ class XProvider(ABC):
         pass
 
     @abstractmethod
-    async def fetch_keyword_posts(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
+    async def fetch_keyword_posts(self, keyword: str, limit: int = 70) -> List[Dict[str, Any]]:
         pass
 
     @abstractmethod
     async def fetch_top_tweets_shallow(
-        self, keyword: str, limit: int = 8, search_type: str = "Top"
+        self, keyword: str, limit: int = 6, search_type: str = "Top"
     ) -> List[Dict[str, Any]]:
         """Tek sayfa arama — trend/gündem maliyet kalkanı (derin sayfalama yok)."""
         pass
@@ -357,7 +357,7 @@ class RapidXProvider(XProvider):
             data = await self._api_request("trends.php", {"country": "turkey"})
             trends = data if isinstance(data, list) else data.get("trends", [])
             results = []
-            for i, trend in enumerate(trends[:50]):
+            for i, trend in enumerate(trends[:35]):
                 name = trend.get("name") or trend.get("trend") or f"Trend_{i}"
                 results.append({
                     "external_id": f"trend_{name}_{datetime.utcnow().strftime('%Y%m%d')}",
@@ -373,13 +373,14 @@ class RapidXProvider(XProvider):
             raise
 
     async def fetch_top_tweets_shallow(
-        self, keyword: str, limit: int = 8, search_type: str = "Top"
+        self, keyword: str, limit: int = 6, search_type: str = "Top"
     ) -> List[Dict[str, Any]]:
         """
         Gündem/trend örnekleme: yalnızca TEK search.php sayfası, çoklu cursor turu yok.
         Reply / conversation API çağrısı yapmaz (API maliyet kalkanı).
         """
-        cap = max(1, min(int(limit), 15))
+        # Üst sınır ~%30 kısılmış (önceki 15 → 10); API maliyeti ve hacim düşer
+        cap = max(1, min(int(limit), 10))
         if not (keyword or "").strip():
             return []
         kw = keyword.strip()
@@ -445,7 +446,7 @@ class RapidXProvider(XProvider):
             # Hit sıralaması: Beğeni + Retweet'e göre
             replies.sort(key=lambda x: x.get("_likes", 0) + x.get("_retweets", 0), reverse=True)
 
-            return replies[:100]  # Derin araştırma için en etkili 100 yorum
+            return replies[:70]  # Derin araştırma / reply — hacim ~%30 düşük
         except Exception as e:
             logger.error(f"RapidX fetch_tweet_replies hatası (tweet {tweet_id}): {e}")
             raise
@@ -486,7 +487,7 @@ class RapidXProvider(XProvider):
             tweets_with_replies = 0
             reply_requests_sent = 0
 
-            for tweet in raw_tweets[:150]:  # Derin tarama: son 150 tweet
+            for tweet in raw_tweets[:105]:  # Hesap timeline — ~%30 daha az tweet
                 parsed = self._parse_tweet(tweet, keyword=screen_name, target_type="twitter_self")
                 if not parsed:
                     continue
@@ -543,7 +544,7 @@ class RapidXProvider(XProvider):
     # ------------------------------------------------------------------ #
     #  ANAHTAR KELİME ARAMASI (GÜÇLENDİRİLMİŞ DEEPScan Pagination)
     # ------------------------------------------------------------------ #
-    async def fetch_keyword_posts(self, keyword: str, limit: int = 100) -> List[Dict[str, Any]]:
+    async def fetch_keyword_posts(self, keyword: str, limit: int = 70) -> List[Dict[str, Any]]:
         """
         Anahtar kelime araması — GÜÇLENDİRİLMİŞ CURSOR TABANLI SAYFALAMA.
         • min 50–100 içerik toplayana kadar sayfalama devam eder
