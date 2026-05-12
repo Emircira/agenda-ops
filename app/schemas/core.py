@@ -8,6 +8,7 @@ class SourceBase(BaseModel):
     name: str
     url: str
     active: bool = True
+    source_category: str = "genel_gundem"
 
 class SourceCreate(SourceBase):
     pass

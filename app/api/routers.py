@@ -24,7 +24,9 @@ router = APIRouter(tags=["Karargah Operasyonları"])
 @router.post("/sources", response_model=SourceResponse)
 async def create_source(source: SourceCreate, db: AsyncSession = Depends(get_db)):
     """Yeni bir istihbarat kaynağı (RSS, YouTube, X) ekler."""
-    new_source = Source(**source.model_dump())
+    data = source.model_dump()
+    data["source_category"] = normalize_source_category(data.get("source_category"))
+    new_source = Source(**data)
     db.add(new_source)
     await db.commit()
     await db.refresh(new_source)

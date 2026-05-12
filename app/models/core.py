@@ -25,6 +25,7 @@ class Source(Base):
     name = Column(String, nullable=False)
     url = Column(String, nullable=False)
     domain = Column(String, default="general")  # politics, sports, economy, general
+    source_category = Column(String, default="genel_gundem", nullable=False)
     active = Column(Boolean, default=True)
 
 class ElectionCategory(str, enum.Enum):

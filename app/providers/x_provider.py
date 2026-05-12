@@ -17,7 +17,9 @@ class XProvider(ABC):
         pass
 
     @abstractmethod
-    async def fetch_keyword_posts(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
+    async def fetch_keyword_posts(
+        self, keyword: str, limit: int = 20, *, deep_scan: bool = True
+    ) -> List[Dict[str, Any]]:
         pass
 
     @abstractmethod

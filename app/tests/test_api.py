@@ -5,10 +5,11 @@ from app.main import app
 client = TestClient(app)
 
 def test_read_root():
-    """API'nin ana dizininin ve ayakta olduğunun testi"""
-    response = client.get("/")
-    assert response.status_code == 200
-    assert "Karargah" in response.json()["status"]
+    """API kök adresi `/dashboard`'a yönlendirir."""
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code in (302, 303, 307)
+    location = response.headers.get("location") or ""
+    assert "/dashboard" in location
 
 def test_api_docs_available():
     """Swagger UI dokümantasyonunun dışa açık olduğunun testi"""

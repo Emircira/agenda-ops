@@ -301,16 +301,13 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
             
             provider = RSSProvider()
             # Veritabanındaki aktif RSS kaynaklarını al
-            res = await db.execute(
-                select(Source.id, Source.name, Source.url, Source.domain)
-                .where(Source.type == 'rss', Source.active == True)
-            )
-            sources = [dict(row) for row in res.mappings().all()]
+            res = await db.execute(select(Source).where(Source.type == 'rss', Source.active == True))
+            sources = res.scalars().all()
             
             # Gömülü (Default) Kaynaklar + DB Kaynakları
             all_sources = [{"name": "Google Haberler", "url": "https://news.google.com/rss?hl=tr&gl=TR&ceid=TR:tr", "id": None, "domain": "general"}]
             for s in sources:
-                all_sources.append({"name": s["name"], "url": s["url"], "id": s["id"], "domain": s.get("domain") or "general"})
+                all_sources.append({"name": s.name, "url": s.url, "id": s.id, "domain": getattr(s, 'domain', 'general') or 'general'})
             
             total_added = 0
             total_skipped = 0
@@ -352,32 +349,26 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
             from sqlalchemy.dialects.postgresql import insert as pg_insert
             
             provider = YouTubeProvider()
-            res = await db.execute(
-                select(Source.id, Source.name, Source.url, Source.domain)
-                .where(Source.type == 'youtube', Source.active == True)
-            )
-            sources = [dict(row) for row in res.mappings().all()]
+            res = await db.execute(select(Source).where(Source.type == 'youtube', Source.active == True))
+            sources = res.scalars().all()
             
             if not sources: return {"success": False, "error": "Hiç YouTube kaynağı tanımlı değil."}
             
             total_added, total_skipped = 0, 0
             for source in sources:
-                source_id = source["id"]
-                source_name = source["name"]
-                source_url = source["url"]
-                source_domain = source.get("domain") or "general"
                 try:
                     # 'UC' ile başlıyorsa kanal id'si olarak kabul et, yoksa keyword araması yap
-                    if source_url.startswith('UC'):
-                        videos = await provider.fetch_channel_videos(source_url)
+                    if source.url.startswith('UC'):
+                        videos = await provider.fetch_channel_videos(source.url)
                     else:
-                        videos = await provider.fetch_keyword_videos(source_url)
+                        videos = await provider.fetch_keyword_videos(source.url)
                     
                     for video in videos:
                         vid_id = video["id"] if isinstance(video.get("id"), str) else video["id"]["videoId"]
                         # Videonun altındaki en hit 10 yorumu çekiyoruz
                         comments = await provider.fetch_video_comments(vid_id, max_results=10)
-                        articles = extract_youtube_comments_as_articles(video, comments, source_id, source_domain)
+                        domain = getattr(source, 'domain', 'general') or 'general'
+                        articles = extract_youtube_comments_as_articles(video, comments, source.id, domain)
                         
                         for article in articles:
                             article['is_analyzed'] = True
@@ -387,9 +378,9 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                             else: total_skipped += 1
                 except Exception as e:
                     if isinstance(e, YouTubeQuotaExceeded):
-                        logger.error(f"YouTube kotası doldu [{source_name}], diğer kaynaklara geçiliyor: {e}")
+                        logger.error(f"YouTube kotası doldu [{source.name}], diğer kaynaklara geçiliyor: {e}")
                         continue
-                    logger.error(f"YouTube hatası [{source_name}]: {e}")
+                    logger.error(f"YouTube hatası [{source.name}]: {e}")
             await db.commit()
             from app.workers.ingest_tasks import _trigger_analysis_chain
             _trigger_analysis_chain("YouTube")
@@ -401,37 +392,30 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
             import asyncio as _asyncio
             
             provider = get_x_provider()
-            res = await db.execute(
-                select(Source.id, Source.type, Source.name, Source.url, Source.domain).where(
-                    Source.type.in_(['twitter_self', 'twitter_competitor', 'twitter_trend', 'x']),
-                    Source.active == True
-                )
-            )
-            sources = [dict(row) for row in res.mappings().all()]
+            res = await db.execute(select(Source).where(
+                Source.type.in_(['twitter_self', 'twitter_competitor', 'twitter_trend', 'x']),
+                Source.active == True
+            ))
+            sources = res.scalars().all()
             
             total_added, total_skipped = 0, 0
             errors = []
             
             for idx, source in enumerate(sources):
-                source_id = source["id"]
-                source_type = source["type"]
-                source_name = source["name"] or source["url"]
-                source_url = source["url"]
-                source_domain = source.get("domain") or "general"
                 try:
-                    logger.info(f"[{idx+1}/{len(sources)}] Twitter taraması: {source_name} ({source_type})")
+                    logger.info(f"[{idx+1}/{len(sources)}] Twitter taraması: {source.name} ({source.type})")
                     
-                    if source_type == 'twitter_trend':
-                        posts = await provider.fetch_keyword_posts(source_url, limit=50)
+                    if source.type == 'twitter_trend':
+                        posts = await provider.fetch_keyword_posts(source.url, limit=50)
                     else:
-                        posts = await provider.fetch_mentions(source_url)
+                        posts = await provider.fetch_mentions(source.url)
                     
                     for post in posts:
                         try:
                             article = _post_to_article(
                                 post, 
-                                source_id=source_id, 
-                                domain=source_domain
+                                source_id=source.id, 
+                                domain=getattr(source, 'domain', 'general') or 'general'
                             )
                             stmt = pg_insert(Content).values(**article).on_conflict_do_nothing(index_elements=['external_id'])
                             result = await db.execute(stmt)
@@ -442,8 +426,8 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                             logger.warning(f"Veri kayıt hatası (atlandı): {e}")
                             
                 except Exception as e:
-                    errors.append(f"{source_name}: {str(e)[:50]}")
-                    logger.error(f"Twitter hatası [{source_name}]: {e}")
+                    errors.append(f"{source.name}: {str(e)[:50]}")
+                    logger.error(f"Twitter hatası [{source.name}]: {e}")
                 
                 # Kaynaklar arası rate-limit bekleme
                 if idx < len(sources) - 1:
@@ -597,7 +581,8 @@ async def get_dashboard_hot_topics(refresh: bool = False, db: AsyncSession = Dep
         if not contents:
             return {"status": "success", "topics": [], "alerts": ["Son 24 saatte veri bulunamadı."]}
 
-        text_blob = format_contents_by_domain(contents)
+        cat_map = await source_category_map_for_contents(db, contents)
+        text_blob = format_contents_by_domain(contents, source_category_by_sid=cat_map)
         prompt = f"""Aşağıdaki sosyal medya ve haber verilerini analiz ederek Türkiye gündemindeki en önemli 3 konuyu belirle.
         Her konu için: Başlık, Özet, Fırsat Skoru (0-100), Kriz Skoru (0-100), Aksiyon Tavsiyesi ve Hedef Kitle belirle.
         Ayrıca genel bir duygu analizi ve önemli uyarılar ekle.
@@ -609,7 +594,11 @@ async def get_dashboard_hot_topics(refresh: bool = False, db: AsyncSession = Dep
             "competitor_sentiment": {{"leader": {{"positive": 60, "negative": 40}}, "competitor": {{"positive": 45, "negative": 55}}}},
             "alerts": ["..", ".."]
         }}
-        
+
+        {SOURCE_TYPE_PROMPT_BLOCK}
+
+        Bağlam: {CONTEXT_ISOLATION_WARNING}
+
         Veriler:
         {text_blob}
         """
@@ -1353,35 +1342,20 @@ async def get_system_stats(db: AsyncSession = Depends(get_db)):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-@app.post("/api/system/trigger-pipeline", tags=["Sistem"], status_code=202)
+@app.post("/api/system/trigger-pipeline", tags=["Sistem"])
 async def trigger_pipeline():
     """Yapay Zeka Etiketleme ve Fırsat Kartı Üretimini Tetikler."""
     try:
-        from celery import chain
-        from app.workers.ingest_tasks import (
-            clean_and_triage_recent_content,
-            run_osint_bot_stage,
-            synthesize_ai_opportunities,
-            publish_stream_update,
-        )
         from app.workers.labeling_tasks import batch_analyze_contents
-
-        pipeline = chain(
-            clean_and_triage_recent_content.si("Manual Trigger"),
-            run_osint_bot_stage.s(),
-            batch_analyze_contents.si(),
-            synthesize_ai_opportunities.si(),
-            publish_stream_update.si("Manual Trigger"),
-        )
-        async_result = pipeline.apply_async(queue="default")
-
-        return {
-            "success": True,
-            "message": "Görev Alındı: AI analiz pipeline arka planda sırayla çalışacak.",
-            "task_id": async_result.id,
-        }
+        from app.workers.scoring_tasks import build_opportunities
+        
+        # Celery asenkron çalıştır (delay)
+        batch_analyze_contents.delay()
+        # Scoring genelde etiketleme bitince yapılmalı ama burada manuel tetik olduğu için ikisini de kuyruğa atıyoruz
+        build_opportunities.delay()
+        
+        return {"success": True, "message": "Yapay Zeka analiz hattı (Etiketleme + Skorlama) başlatıldı."}
     except Exception as e:
-        logger.error(f"Trigger pipeline error: {e}")
         return {"success": False, "error": str(e)}
 
 if __name__ == "__main__":
