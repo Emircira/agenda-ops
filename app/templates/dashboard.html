@@ -205,12 +205,15 @@
                 </div>
         
                 <div class="bg-panel p-5 rounded-xl border border-slate-800 shadow-lg flex flex-col min-h-0 max-h-[min(560px,calc(100vh-10rem))]">
-                    <div class="flex justify-between items-center mb-4 shrink-0">
+                    <div class="flex justify-between items-center mb-4 shrink-0 gap-2 flex-wrap">
                         <h3 class="text-white font-medium flex items-center gap-2">
                             <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                             X (Twitter) Stratejik Üçlü Analiz
                         </h3>
-                        <button id="btnTripleAnalysis" onclick="window.AgendaOps.runTripleAnalysis(this)" class="text-[10px] bg-primary/20 text-primary px-3 py-1.5 rounded uppercase font-bold transition-colors hover:bg-primary/30 border border-primary/30">🧠 Karşılaştır</button>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <button type="button" onclick="window.AgendaOps.clearSavedTripleAnalysis()" class="text-[10px] text-slate-500 hover:text-slate-300 px-2 py-1 rounded border border-slate-700/80">Önbelleği sıfırla</button>
+                            <button id="btnTripleAnalysis" onclick="window.AgendaOps.runTripleAnalysis(this)" class="text-[10px] bg-primary/20 text-primary px-3 py-1.5 rounded uppercase font-bold transition-colors hover:bg-primary/30 border border-primary/30">🧠 Karşılaştır</button>
+                        </div>
                     </div>
                     
                     <div id="triple-analysis-loader" class="hidden flex flex-col items-center justify-center py-12 text-primary">
@@ -273,9 +276,12 @@
             </div>
 
             <div class="bg-panel p-6 rounded-xl border border-slate-800 shadow-lg mt-2 relative z-10">
-                <div class="flex justify-between items-center mb-6">
+                <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
                     <h3 class="text-lg font-bold text-white flex items-center gap-2">Demografik ve İdeolojik Söylem Haritası</h3>
-                    <button id="btnDemoAnalysis" onclick="window.AgendaOps.runDemographicAnalysis(this)" class="bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">🧠 Toplumsal Söylemi Analiz Et</button>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="window.AgendaOps.clearSavedDemographicAnalysis()" class="text-xs text-slate-500 hover:text-slate-300 px-3 py-2 rounded-lg border border-slate-700/80">Önbelleği sıfırla</button>
+                        <button id="btnDemoAnalysis" onclick="window.AgendaOps.runDemographicAnalysis(this)" class="bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">🧠 Toplumsal Söylemi Analiz Et</button>
+                    </div>
                 </div>
                 <div id="demo-loader" class="hidden flex flex-col items-center justify-center py-10 text-primary"><div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-primary mb-3"></div><p class="animate-pulse text-sm">Veriler analiz ediliyor...</p></div>
                 <div id="demo-results" class="grid grid-cols-1 md:grid-cols-3 gap-6 hidden min-h-0">
@@ -597,6 +603,7 @@
                     // 4. Toplumsal Söylem Restorasyonu
                     const demo = this.loadState('demographic_analysis');
                     if (demo && document.getElementById('demo-sec-emotion')) {
+                        document.getElementById('demo-loader').classList.add('hidden');
                         document.getElementById('demo-sec-emotion').innerText = demo.secular?.emotion || '';
                         document.getElementById('demo-sec-summary').innerText = demo.secular?.summary || '';
                         document.getElementById('demo-con-emotion').innerText = demo.conservative?.emotion || '';
@@ -604,6 +611,14 @@
                         document.getElementById('demo-genz-emotion').innerText = demo.genz?.emotion || '';
                         document.getElementById('demo-genz-summary').innerText = demo.genz?.summary || '';
                         document.getElementById('demo-results').classList.remove('hidden');
+                    }
+
+                    const triple = this.loadState('triple_dashboard');
+                    if (triple && triple.html && document.getElementById('triple-analysis-result')) {
+                        document.getElementById('triple-analysis-loader').classList.add('hidden');
+                        const tdiv = document.getElementById('triple-analysis-result');
+                        tdiv.innerHTML = triple.html;
+                        tdiv.classList.remove('hidden');
                     }
 
                     // 5. Platform Analizleri (X, YT, RSS sekmeleri)
@@ -832,15 +847,28 @@
 
                 try {
                     const response = await fetch('/api/news-scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword: keyword }) });
-                    const data = await response.json();
+                    let data = {};
+                    try { data = await response.json(); } catch (_) {}
                     document.getElementById('news-loader').classList.add('hidden');
                     document.getElementById('news-results').classList.remove('hidden');
+                    if (!response.ok) {
+                        const err = data.detail || data.error || (Array.isArray(data.detail) ? data.detail.map(d => d.msg).join(', ') : '') || response.statusText;
+                        document.getElementById('news-results').innerHTML = `<p class="text-danger">${this.escapeHtml(err)}</p>`;
+                        return;
+                    }
                     if(data.success) { 
-                        const contentHtml = data.content.replace(/\*\*(.*?)\*\*/g, '<div class="report-section-header">$1</div>').replace(/\n/g, '<br/>');
+                        const raw = data.content || data.analysis || '';
+                        const contentHtml = String(raw).replace(/\*\*(.*?)\*\*/g, '<div class="report-section-header">$1</div>').replace(/\n/g, '<br/>');
                         document.getElementById('news-results').innerHTML = contentHtml;
                         this.saveState('news_radar', { keyword: keyword, content: contentHtml });
+                    } else {
+                        document.getElementById('news-results').innerHTML = `<p class="text-danger">${this.escapeHtml(data.error || 'Bilinmeyen hata')}</p>`;
                     }
-                } catch(e) {} finally { btn.disabled = false; btn.innerHTML = "Taramayı Başlat"; }
+                } catch(e) {
+                    document.getElementById('news-loader').classList.add('hidden');
+                    document.getElementById('news-results').classList.remove('hidden');
+                    document.getElementById('news-results').innerHTML = '<p class="text-danger">Bağlantı hatası.</p>';
+                } finally { btn.disabled = false; btn.innerHTML = "Taramayı Başlat"; }
             }
 
             async openGeneralAiReport() {
@@ -883,20 +911,40 @@
 
                 try {
                     const response = await fetch('/api/discourse-analyze', { method: 'POST' });
-                    const data = await response.json();
-                    if (data.success && data.analysis) {
+                    let data = {};
+                    try { data = await response.json(); } catch (_) {}
+                    document.getElementById('demo-loader').classList.add('hidden');
+                    if (data.success && data.analysis && data.analysis.secular) {
                         const res = data.analysis;
-                        document.getElementById('demo-sec-emotion').innerText = res.secular.emotion;
-                        document.getElementById('demo-sec-summary').innerText = res.secular.summary;
-                        document.getElementById('demo-con-emotion').innerText = res.conservative.emotion;
-                        document.getElementById('demo-con-summary').innerText = res.conservative.summary;
-                        document.getElementById('demo-genz-emotion').innerText = res.genz.emotion;
-                        document.getElementById('demo-genz-summary').innerText = res.genz.summary;
-                        document.getElementById('demo-loader').classList.add('hidden');
+                        document.getElementById('demo-sec-emotion').innerText = res.secular.emotion || '';
+                        document.getElementById('demo-sec-summary').innerText = res.secular.summary || '';
+                        document.getElementById('demo-con-emotion').innerText = res.conservative.emotion || '';
+                        document.getElementById('demo-con-summary').innerText = res.conservative.summary || '';
+                        document.getElementById('demo-genz-emotion').innerText = res.genz.emotion || '';
+                        document.getElementById('demo-genz-summary').innerText = res.genz.summary || '';
                         document.getElementById('demo-results').classList.remove('hidden');
                         this.saveState('demographic_analysis', res);
+                    } else {
+                        alert(data.error || (!response.ok ? 'Sunucu hatası' : 'Analiz alınamadı'));
                     }
-                } catch (e) {} finally { btn.innerHTML = '🧠 Toplumsal Söylemi Analiz Et'; btn.disabled = false; }
+                } catch (e) {
+                    document.getElementById('demo-loader').classList.add('hidden');
+                    alert('Bağlantı hatası');
+                } finally { btn.innerHTML = '🧠 Toplumsal Söylemi Analiz Et'; btn.disabled = false; }
+            }
+
+            clearSavedDemographicAnalysis() {
+                try { localStorage.removeItem('agenda_ops_state_demographic_analysis'); } catch (_) {}
+                document.getElementById('demo-results').classList.add('hidden');
+                document.getElementById('demo-loader').classList.add('hidden');
+            }
+
+            clearSavedTripleAnalysis() {
+                try { localStorage.removeItem('agenda_ops_state_triple_dashboard'); } catch (_) {}
+                const resultDiv = document.getElementById('triple-analysis-result');
+                if (resultDiv) {
+                    resultDiv.innerHTML = '<p class="text-center py-12 opacity-50 italic">Üçlü analiz raporunu başlatmak için \"Karşılaştır\" butonuna basınız.</p>';
+                }
             }
 
             async runTwitterAnalysis(btn) {
@@ -1003,14 +1051,16 @@
                 resultDiv.classList.add('hidden');
                 try {
                     const res = await fetch('/api/platform-analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform_name: platform, keyword: keyword }) });
-                    const data = await res.json();
+                    let data = {};
+                    try { data = await res.json(); } catch (_) {}
                     resultDiv.classList.remove('hidden');
-                    if(data.success) { 
-                        const contentHtml = data.content.replace(/\*\*(.*?)\*\*/g, '<div class="report-section-header">$1</div>').replace(/\n/g, '<br/>');
+                    const rawText = data.analysis || data.content || '';
+                    if(res.ok && data.success && rawText) { 
+                        const contentHtml = String(rawText).replace(/\*\*(.*?)\*\*/g, '<div class="report-section-header">$1</div>').replace(/\n/g, '<br/>');
                         resultDiv.innerHTML = contentHtml;
                         this.saveState(`platform_${platform}`, { keyword: keyword, content: contentHtml });
                     }
-                    else { resultDiv.innerHTML = `<p class="text-danger">${data.error}</p>`; }
+                    else { resultDiv.innerHTML = `<p class="text-danger">${this.escapeHtml(data.error || data.detail || 'Analiz başarısız')}</p>`; }
                 } catch(e) { resultDiv.classList.remove('hidden'); resultDiv.innerHTML = '<p class="text-danger">Bağlantı hatası.</p>'; }
                 finally { btn.innerHTML = orig; btn.disabled = false; }
             }
@@ -1139,13 +1189,14 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ keyword: keyword })
                     });
-                    const data = await res.json();
+                    let data = {};
+                    try { data = await res.json(); } catch (_) {}
                     
                     clearInterval(pollInterval);
                     loaderDiv.classList.add('hidden');
                     resultsDiv.classList.remove('hidden');
                     
-                    if(data.success) {
+                    if(res.ok && data.success) {
                         document.getElementById('deep-msg').innerText = data.message;
                         document.getElementById('stat-yt').innerText = data.stats?.youtube || 0;
                         document.getElementById('stat-rss').innerText = data.stats?.rss || 0;
@@ -1166,7 +1217,10 @@
                             analysis: data.analysis
                         });
                     } else {
-                        alert("Hata: " + data.error);
+                        const err = data.error || data.detail || res.statusText || 'İstek başarısız';
+                        document.getElementById('deep-msg').innerText = 'Hata: ' + err;
+                        alert("Hata: " + err);
+                        document.getElementById('deep-analysis').innerHTML = `<p class="text-danger text-sm">${this.escapeHtml(err)}</p>`;
                     }
                 } catch(e) {
                     clearInterval(pollInterval);
@@ -1344,16 +1398,17 @@
 
                 try {
                     const res = await fetch('/api/analysis/triple-compare');
-                    const data = await res.json();
+                    let data = {};
+                    try { data = await res.json(); } catch (_) {}
                     
                     loader.classList.add('hidden');
                     resultDiv.classList.remove('hidden');
                     
-                    if (data.success) {
-                        // Format the analysis text for better UI
+                    if (res.ok && data.success) {
                         resultDiv.innerHTML = `<div class="prose prose-invert max-w-none">${data.analysis}</div>`;
+                        this.saveState('triple_dashboard', { html: resultDiv.innerHTML });
                     } else {
-                        resultDiv.innerHTML = `<p class="text-red-400 p-4 bg-red-400/10 rounded-xl border border-red-400/20">${data.error}</p>`;
+                        resultDiv.innerHTML = `<p class="text-red-400 p-4 bg-red-400/10 rounded-xl border border-red-400/20">${this.escapeHtml(data.error || data.detail || 'Analiz alınamadı')}</p>`;
                     }
                 } catch (e) {
                     loader.classList.add('hidden');

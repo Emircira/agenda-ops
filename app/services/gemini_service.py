@@ -4,6 +4,7 @@ import time
 from loguru import logger
 from typing import List, Dict, Any, Optional
 from app.services.gemini_model import create_gemini_model
+from app.services.karargah_llm_directive import with_karargah_osint_directive
 
 
 class GeminiAIClient:
@@ -51,7 +52,7 @@ class GeminiAIClient:
             }
             simplified.append(entry)
 
-        return f"""Sen bir siyasi istihbarat analisti ve OSINT uzmanısın. Türkiye bağlamında sosyal medya içeriklerini analiz et.
+        body = f"""Sen bir siyasi istihbarat analisti ve OSINT uzmanısın. Türkiye bağlamında sosyal medya içeriklerini analiz et.
 
 KAYNAK TİPİ (her içerikte "kaynak_tipi" alanı) — analizi buna göre çerçevele:
 - competitor: Ticari veya politik rakip söylemi; stratejik rekabet ve tehdit perspektifi kullan.
@@ -92,6 +93,7 @@ KURALLAR:
 
 İÇERİKLER:
 {json.dumps(simplified, ensure_ascii=False, indent=2)}"""
+        return with_karargah_osint_directive(body)
 
     def _parse_response(self, response_text: str) -> List[Dict[str, Any]]:
         """
@@ -148,7 +150,7 @@ KURALLAR:
                 if attempt > 0:
                     time.sleep(self.API_DELAY * (attempt + 1))
 
-                response = self.model.generate_content(prompt)
+                response = self.model.generate_content(with_karargah_osint_directive(prompt))
                 return response.text
 
             except Exception as e:
@@ -234,7 +236,7 @@ KURALLAR:
         try:
             if not self.model:
                 return "Hata: Gemini modeli başlatılamadı."
-            response = await self.model.generate_content_async(prompt)
+            response = await self.model.generate_content_async(with_karargah_osint_directive(prompt))
             return response.text
         except Exception as e:
             logger.error(f"Gemini Async Hata: {e}")

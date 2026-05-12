@@ -343,17 +343,35 @@
 
                 loadingIndicator.classList.add('hidden');
                 document.getElementById('ai-content').classList.remove('hidden');
+
+                if (!response.ok || data.success === false) {
+                    const msg = (data && data.detail) ? (Array.isArray(data.detail) ? data.detail.map(d => d.msg || d).join(' ') : data.detail) : (data.error || `API hatası (${response.status})`);
+                    document.getElementById('ai-content').innerHTML = `<span class="text-red-400">${msg}</span>`;
+                    baseVotes = { a: 40.0, b: 35.0, c: 15.0, d: 10.0 };
+                    resetSimulation();
+                    return;
+                }
                 
                 if(data.base_votes) { baseVotes = data.base_votes; } 
                 else { baseVotes = { a: 40.0, b: 35.0, c: 15.0, d: 10.0 }; }
                 resetSimulation();
 
-                if (data.status === "cached" && !forceRefresh && document.getElementById('ai-status')) {
+                if (data.cached === true && !forceRefresh && document.getElementById('ai-status')) {
                     document.getElementById('ai-status').classList.remove('hidden');
                 }
 
+                let analysisHtml = '';
+                if (data.wiki_fallback) {
+                    analysisHtml += '<p class="text-amber-400 text-sm mb-2 border border-amber-700/50 rounded-lg p-2 bg-amber-950/30">Bazı sonuçlar Wikipedia tablolarından otomatik okundu (önizleme). Kesin YSK için ysk_raw + seed_ysk kullanın.</p>';
+                }
+                if (data.data_sources && data.data_sources.length) {
+                    analysisHtml += '<p class="text-slate-400 text-xs mb-2">YSK dosyaları: ' + data.data_sources.map(s => `<code class="text-cyan-300">${s}</code>`).join(', ') + '</p>';
+                }
                 if(data.analysis) {
-                     document.getElementById('ai-content').innerHTML = data.analysis.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white block mt-3 mb-1 text-purple-400">$1</strong>').replace(/\n/g, '<br/>');
+                     analysisHtml += data.analysis.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white block mt-3 mb-1 text-purple-400">$1</strong>').replace(/\n/g, '<br/>');
+                     document.getElementById('ai-content').innerHTML = analysisHtml;
+                } else {
+                     document.getElementById('ai-content').innerHTML = analysisHtml + '<span class="text-slate-400">Analiz metni boş döndü.</span>';
                 }
                 
                 lastAnalyzedState = { province: provinceName, district: districtName, type: electionType };

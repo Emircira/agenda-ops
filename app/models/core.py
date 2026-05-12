@@ -2,7 +2,19 @@ from typing import Optional, List
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import Column, String, Boolean, DateTime, Float, ForeignKey, Integer, Enum as SQLEnum, Index
+from sqlalchemy import (
+    UniqueConstraint,
+    Column,
+    String,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    Enum as SQLEnum,
+    Index,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from app.models.base_class import Base
@@ -162,7 +174,6 @@ class EntityRelation(Base):
 # --- ELECTION RADAR MODELS (From tables.py) ---
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
-from sqlalchemy import Text, JSON
 # --- 3. YSK SEÇİM ARŞİVİ SİSTEMİ ---
 
 class ElectionResult(Base):
@@ -176,6 +187,70 @@ class ElectionResult(Base):
     party: Mapped[str] = mapped_column(String, index=True)
     vote_count: Mapped[int] = mapped_column(Integer, default=0)
     raw_data: Mapped[dict] = mapped_column(JSONB, default={})
+    # app/data/ysk_raw/... göreli yolu veya wikipedia:SayfaAdı
+    source_json_file: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
+
+
+class ElectionRegionArchive(Base):
+    """
+    İl/ilçe bazlı tek kayıt: sonuç özeti + demografi JSONB (simülatör / AI).
+    election_detail: 2015_1, 2023_cb_1_tur, 2019_il_yerel_yenilenme vb.
+    """
+    __tablename__ = "election_region_archives"
+    __table_args__ = (
+        UniqueConstraint(
+            "election_year",
+            "election_type",
+            "election_detail",
+            "province",
+            "district_key",
+            name="uq_election_region_archive",
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    election_year: Mapped[int] = mapped_column(Integer, index=True)
+    election_type: Mapped[ElectionCategory] = mapped_column(SQLEnum(ElectionCategory), index=True)
+    election_detail: Mapped[str] = mapped_column(String(180), index=True, default="")
+    province: Mapped[str] = mapped_column(String(120), index=True)
+    district_key: Mapped[str] = mapped_column(String(120), index=True, default="")
+    total_valid_votes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    winner_party: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    winner_candidate: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    results_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+    demographics_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+    source_files_json: Mapped[list] = mapped_column(JSONB, default=list)
+
+
+class ElectionDemographicStat(Base):
+    """YSK YasDagilim / CinsiyetDagilim JSON satırlarının yıl ve bölge bazlı özeti."""
+    __tablename__ = "election_demographic_stats"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    election_year: Mapped[int] = mapped_column(Integer, index=True)
+    election_type: Mapped[ElectionCategory] = mapped_column(SQLEnum(ElectionCategory), index=True)
+    election_detail: Mapped[Optional[str]] = mapped_column(String, index=True)
+    province: Mapped[Optional[str]] = mapped_column(String, index=True)
+    district: Mapped[Optional[str]] = mapped_column(String, index=True)
+    party: Mapped[str] = mapped_column(String, index=True)
+    dimension: Mapped[str] = mapped_column(String, index=True)  # gender | age
+    bucket: Mapped[str] = mapped_column(String, index=True)
+    count_value: Mapped[int] = mapped_column(Integer, default=0)
+    source_json_file: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
+
+
+class ElectionRegionTrend(Base):
+    """seed sonrası election_results üzerinden hesaplanan yıllık oy payı ve yıllık değişim."""
+    __tablename__ = "election_region_trends"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    province: Mapped[str] = mapped_column(String, index=True)
+    district: Mapped[Optional[str]] = mapped_column(String, index=True)
+    election_type: Mapped[ElectionCategory] = mapped_column(SQLEnum(ElectionCategory), index=True)
+    election_detail: Mapped[Optional[str]] = mapped_column(String(180), index=True, nullable=True)
+    party: Mapped[str] = mapped_column(String, index=True)
+    ref_year: Mapped[int] = mapped_column(Integer, index=True)
+    vote_share_pct: Mapped[float] = mapped_column(Float)
+    vote_count: Mapped[int] = mapped_column(Integer, default=0)
+    yoy_delta_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    source_json_file: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
 
 class CandidateDemographic(Base):
     __tablename__ = "candidate_demographics"
@@ -186,6 +261,7 @@ class CandidateDemographic(Base):
     party: Mapped[str] = mapped_column(String, index=True)
     gender: Mapped[Optional[str]] = mapped_column(String)
     education: Mapped[Optional[str]] = mapped_column(String)
+    source_json_file: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
 
 # --- 4. YAPAY ZEKA KALICI HAFIZA (CACHING) ---
 
@@ -211,6 +287,10 @@ class CityDemographics(Base):
     unemployment_rate = Column(Float, default=0.0)   # İşsizlik oranı
     foreign_pop_pct = Column(Float, default=0.0)     # Yabancı nüfus oranı
     literacy_rate = Column(Float, default=0.0)       # Okuryazarlık oranı
+    source_json_file = Column(String, default="city_stats.json", nullable=False)
+    source_category = Column(String, default="tuik_city_aggregate", nullable=False)
+
+
 class DistrictDemographics(Base):
     __tablename__ = "district_demographics"
     id = Column(Integer, primary_key=True, index=True)
@@ -222,4 +302,6 @@ class DistrictDemographics(Base):
     university_grad_pct = Column(Float, default=0.0)
     unemployment_rate = Column(Float, default=0.0)
     foreign_pop_pct = Column(Float, default=0.0)
+    source_json_file = Column(String, default="district_stats.json", nullable=False)
+    source_category = Column(String, default="tuik_district_aggregate", nullable=False)
 
