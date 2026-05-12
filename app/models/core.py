@@ -25,6 +25,8 @@ class Source(Base):
     name = Column(String, nullable=False)
     url = Column(String, nullable=False)
     domain = Column(String, default="general")  # politics, sports, economy, general
+    # Karargah: Rakip | Haber Ajansı | Şahıs-Hedef | Genel Gündem (UI / AI bağlamı)
+    source_category = Column(String, nullable=False, default="general_agenda")
     active = Column(Boolean, default=True)
 
 class ElectionCategory(str, enum.Enum):

@@ -51,9 +51,10 @@ celery_app.conf.beat_schedule = {
         "task": "ingest_x_all_sources",
         "schedule": crontab(minute="*/15"),  # Her 15 dakikada bir
     },
-    "ingest-x-trends-hourly": {
+    # X trend örnekleme: API maliyeti — en fazla 6 saatte bir (reply/derin tarama yok)
+    "ingest-x-trends-6h": {
         "task": "ingest_x_daily_trends",
-        "schedule": crontab(minute="10", hour="*"),  # Her saat 10. dakika
+        "schedule": crontab(minute="10", hour="*/6"),  # 00:10, 06:10, 12:10, 18:10
     },
 
     # ─── YAPAY ZEKA ANALİZ (Güvenlik ağı — chain tetiklenmezse bile çalışır) ───

@@ -21,6 +21,13 @@ class XProvider(ABC):
         pass
 
     @abstractmethod
+    async def fetch_top_tweets_shallow(
+        self, keyword: str, limit: int = 8, search_type: str = "Top"
+    ) -> List[Dict[str, Any]]:
+        """Tek sayfa arama — trend/gündem maliyet kalkanı (derin sayfalama yok)."""
+        pass
+
+    @abstractmethod
     async def fetch_tweet_replies(self, tweet_id: str) -> List[Dict[str, Any]]:
         """Bir tweet'in altındaki yorumları/yanıtları çeker."""
         pass
@@ -340,6 +347,54 @@ class RapidXProvider(XProvider):
             return results
         except Exception as e:
             logger.error(f"RapidX fetch_trends hatası: {e}")
+            raise
+
+    async def fetch_top_tweets_shallow(
+        self, keyword: str, limit: int = 8, search_type: str = "Top"
+    ) -> List[Dict[str, Any]]:
+        """
+        Gündem/trend örnekleme: yalnızca TEK search.php sayfası, çoklu cursor turu yok.
+        Reply / conversation API çağrısı yapmaz (API maliyet kalkanı).
+        """
+        cap = max(1, min(int(limit), 15))
+        if not (keyword or "").strip():
+            return []
+        kw = keyword.strip()
+        logger.info(
+            f"🔎 RapidX: '{kw}' yüzeysel arama (max {cap} tweet, tek sayfa, {search_type})..."
+        )
+        try:
+            out: List[Dict[str, Any]] = []
+            seen: set = set()
+            attempt_types: List[str] = [search_type]
+            if search_type == "Top":
+                attempt_types.append("Latest")
+
+            for i, attempt_type in enumerate(attempt_types):
+                if i > 0:
+                    logger.warning(f"RapidX: önceki arama boş, '{kw}' için {attempt_type} deneniyor.")
+                    await asyncio.sleep(self.API_DELAY)
+                params = {"query": kw, "search_type": attempt_type}
+                data = await self._api_request("search.php", params)
+                raw_tweets, _ = self._extract_tweets_from_response(data)
+                for tweet in raw_tweets:
+                    parsed = self._parse_tweet(tweet, keyword=kw, target_type="twitter_trend")
+                    if not parsed:
+                        continue
+                    eid = parsed.get("external_id")
+                    if not eid or eid in seen:
+                        continue
+                    seen.add(eid)
+                    out.append(parsed)
+                    if len(out) >= cap:
+                        break
+                if out:
+                    break
+
+            logger.info(f"✅ RapidX '{kw}' yüzeysel: {len(out)} tweet")
+            return out
+        except Exception as e:
+            logger.error(f"RapidX fetch_top_tweets_shallow hatası ({kw}): {e}")
             raise
 
     # ------------------------------------------------------------------ #

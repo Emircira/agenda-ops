@@ -44,12 +44,20 @@ class GeminiAIClient:
         # Metni 500 karakterle sınırla (token tasarrufu)
         simplified = []
         for c in contents:
-            simplified.append({
+            entry = {
                 "id": str(c["id"]),
-                "text": str(c.get("text", ""))[:500]
-            })
+                "text": str(c.get("text", ""))[:500],
+                "kaynak_tipi": str(c.get("source_category") or "general_agenda"),
+            }
+            simplified.append(entry)
 
         return f"""Sen bir siyasi istihbarat analisti ve OSINT uzmanısın. Türkiye bağlamında sosyal medya içeriklerini analiz et.
+
+KAYNAK TİPİ (her içerikte "kaynak_tipi" alanı) — analizi buna göre çerçevele:
+- competitor: Ticari veya politik rakip söylemi; stratejik rekabet ve tehdit perspektifi kullan.
+- news_agency: Haber ajansı / objektif bilgi kaynağı; ticari rakip gibi varsayma; haber dili, tarafsızlık ve olası editoryal çerçeve üzerinden değerlendir.
+- person_or_target: Takip edilen şahıs veya hedef; kişi odaklı izleme ve algı.
+- general_agenda: Genel gündem / kolektif konuşma; trend sinyali.
 
 Aşağıda {len(simplified)} adet sosyal medya içeriği verilmiştir. HER BİRİ için aşağıdaki JSON şemasını kullanarak analiz et.
 
@@ -80,6 +88,7 @@ KURALLAR:
 6. bot_likelihood: 0.0-1.0 arası bot/troll hesap ihtimali
 7. crisis_score: 0-100 arası kriz potansiyeli (0: yok, 100: acil kriz)
 8. sarcasm_detected: alaycı/iğneleyici dil varsa true
+9. Haber ajansı kaynaklı içeriklerde "rakip kampanyası" veya "ticari rakip" çerçevesinden kaçın; haber doğruluğu ve çerçeve üzerinden yorumla.
 
 İÇERİKLER:
 {json.dumps(simplified, ensure_ascii=False, indent=2)}"""

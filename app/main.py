@@ -186,6 +186,11 @@ async def zorla_tablo_olustur():
         try:
             from sqlalchemy import text
             await conn.execute(text("ALTER TABLE sources ADD COLUMN IF NOT EXISTS domain VARCHAR DEFAULT 'general'"))
+            await conn.execute(
+                text(
+                    "ALTER TABLE sources ADD COLUMN IF NOT EXISTS source_category VARCHAR DEFAULT 'general_agenda'"
+                )
+            )
             await conn.execute(text("ALTER TABLE contents ADD COLUMN IF NOT EXISTS domain VARCHAR DEFAULT 'general'"))
             await conn.execute(text("ALTER TABLE contents ADD COLUMN IF NOT EXISTS is_analyzed BOOLEAN DEFAULT FALSE"))
             await conn.execute(text("ALTER TABLE contents ADD COLUMN IF NOT EXISTS raw_json JSONB DEFAULT '{}'"))
@@ -255,17 +260,36 @@ async def secim_page(request: Request):
 # =======================================================
 # KAYNAK YÖNETİMİ (Source CRUD — /api/sources)
 # =======================================================
+ALLOWED_SOURCE_CATEGORIES = frozenset(
+    {"competitor", "news_agency", "person_or_target", "general_agenda"}
+)
+
+
 class SourceCreateRequest(BaseModel):
     name: str
     url: str
     type: str
     domain: str = "general"  # politics, sports, economy, general
+    source_category: str = "general_agenda"
 
 @app.post("/api/sources", tags=["Kaynak Yönetimi"])
 async def create_source_direct(req: SourceCreateRequest, db: AsyncSession = Depends(get_db)):
     """Yeni istihbarat kaynağı ekler (dashboard frontend'den gelen çağrılar için)."""
     try:
-        new_source = Source(name=req.name, url=req.url, type=req.type, domain=req.domain, active=True)
+        cat = (req.source_category or "general_agenda").strip()
+        if cat not in ALLOWED_SOURCE_CATEGORIES:
+            return {
+                "success": False,
+                "error": f"Geçersiz kaynak tipi. İzin verilenler: {', '.join(sorted(ALLOWED_SOURCE_CATEGORIES))}",
+            }
+        new_source = Source(
+            name=req.name,
+            url=req.url,
+            type=req.type,
+            domain=req.domain,
+            source_category=cat,
+            active=True,
+        )
         db.add(new_source)
         await db.commit()
         await db.refresh(new_source)
@@ -422,7 +446,7 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                     logger.info(f"[{idx+1}/{len(sources)}] Twitter taraması: {source_name} ({source_type})")
                     
                     if source_type == 'twitter_trend':
-                        posts = await provider.fetch_keyword_posts(source_url, limit=50)
+                        posts = await provider.fetch_top_tweets_shallow(source_url, limit=25)
                     else:
                         posts = await provider.fetch_mentions(source_url)
                     
@@ -452,8 +476,25 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
             # Kaynak yoksa gündem tara
             if not sources:
                 try:
-                    posts = await provider.fetch_keyword_posts("Türkiye gündemi", limit=50)
-                    for post in posts:
+                    trend_rows = await provider.fetch_trends()
+                    all_posts = []
+                    seen_ids = set()
+                    seen_names = []
+                    for row in trend_rows:
+                        name = (row.get("target_name") or "").strip()
+                        if not name or name in seen_names:
+                            continue
+                        seen_names.append(name)
+                        if len(seen_names) > 8:
+                            break
+                        chunk = await provider.fetch_top_tweets_shallow(name, limit=8)
+                        for post in chunk:
+                            eid = post.get("external_id")
+                            if eid and eid not in seen_ids:
+                                seen_ids.add(eid)
+                                all_posts.append(post)
+                        await _asyncio.sleep(provider.API_DELAY)
+                    for post in all_posts:
                         try:
                             article = _post_to_article(post, source_id=None, domain="general")
                             stmt = pg_insert(Content).values(**article).on_conflict_do_nothing(index_elements=['external_id'])
@@ -638,47 +679,67 @@ async def triple_compare_analysis(db: AsyncSession = Depends(get_db)):
         # Son 24 saatteki X içeriklerini kaynak tiplerine göre çek
         time_threshold = datetime.utcnow() - timedelta(hours=24)
         
-        query = select(Content, Source.type).join(Source, Content.source_id == Source.id).where(
-            Content.platform.in_(['x', 'twitter']),
-            Content.published_at >= time_threshold
+        query = select(Content, Source.type, Source.source_category).join(
+            Source, Content.source_id == Source.id
+        ).where(
+            Content.platform.in_(["x", "twitter"]),
+            Content.published_at >= time_threshold,
         )
         res = await db.execute(query)
         rows = res.all()
-        
-        # Gruplandırma
+
+        cat_tr = {
+            "competitor": "Rakip",
+            "news_agency": "Haber Ajansı",
+            "person_or_target": "Şahıs/Hedef",
+            "general_agenda": "Genel Gündem",
+        }
+
+        def _tagged_line(content, src_cat: Optional[str]) -> str:
+            clean = content.text[:200] + "..." if len(content.text) > 200 else content.text
+            label = cat_tr.get((src_cat or "general_agenda").strip(), src_cat or "Genel Gündem")
+            return f"[Kaynak tipi: {label}] {clean}"
+
+        # Gruplandırma (platform tipi + kaynak kategorisi etiketi)
         data = {"self": [], "competitor": [], "trend": []}
-        for content, s_type in rows:
-            clean_text = content.text[:200] + "..." if len(content.text) > 200 else content.text
+        for content, s_type, src_cat in rows:
+            line = _tagged_line(content, src_cat)
             if s_type == "twitter_self":
-                data["self"].append(clean_text)
+                data["self"].append(line)
             elif s_type == "twitter_competitor":
-                data["competitor"].append(clean_text)
+                data["competitor"].append(line)
             elif s_type == "twitter_trend":
-                data["trend"].append(clean_text)
+                data["trend"].append(line)
 
         if not any(data.values()):
             return {"success": False, "error": "Son 24 saatte analiz edilecek X verisi bulunamadı."}
 
         # Gemini için prompt hazırla
         prompt = f"""
-        Aşağıda bir siyasi aktörün kendi paylaşımları, rakibinin paylaşımları ve genel Twitter gündemi yer almaktadır.
+        Aşağıda bir siyasi aktörün kendi paylaşımları, rakip/muhalif söylemler ve genel Twitter gündemi yer almaktadır.
+        Her satırın başında [Kaynak tipi: ...] etiketi vardır. Bu etikete göre yorum yap:
+        - Haber Ajansı: ticari veya kampanya rakibi gibi çerçeveleme; objektif bilgi kaynağı ve haber dili perspektifini kullan.
+        - Rakip: stratejik rakip tehdidi ve mesaj rekabeti açısından değerlendir.
+        - Şahıs/Hedef: kişi/hedef odaklı izleme ve algı yönetimi açısından değerlendir.
+        - Genel Gündem: kolektif gündem ve trend sinyali olarak değerlendir.
+
         Bu verileri karşılaştırarak stratejik bir 'Üçlü Analiz' (Triple Analysis) yap.
-        
+
         KENDİ PAYLAŞIMLARIMIZ:
         {json.dumps(data["self"][:5], ensure_ascii=False)}
-        
-        RAKİP PAYLAŞIMLARI:
+
+        RAKİP / MUHALİF / DİĞER KARŞI TARAF PAYLAŞIMLARI (etiketlere dikkat):
         {json.dumps(data["competitor"][:5], ensure_ascii=False)}
-        
+
         GENEL GÜNDEM (Trendler):
         {json.dumps(data["trend"][:5], ensure_ascii=False)}
-        
+
         Lütfen şu başlıklarla analiz et:
         1. **Uyum Analizi**: Kendi söylemlerimiz genel gündemle ne kadar örtüşüyor? (Gündemi biz mi belirliyoruz yoksa takip mi ediyoruz?)
-        2. **Rakip Tehdidi**: Rakip hangi konularda bizden daha fazla etkileşim/alan kazanıyor?
+        2. **Rakip ve karşı taraf**: Rakip veya haber ajansı kaynaklı içerikleri ayırarak hangi konularda alan kazanılıyor?
         3. **İdeolojik Farklar**: Söylemlerdeki temel ideolojik ayrışma noktaları neler?
         4. **Aksiyon Önerisi**: Gündemi ele geçirmek için hangi söylem değişikliği yapılmalı?
-        
+
         Yanıtı profesyonel, maddeler halinde ve stratejik bir dille ver. HTML formatında (<b>, <br>, <ul> vb.) zenginleştirilmiş metin dön.
         """
         

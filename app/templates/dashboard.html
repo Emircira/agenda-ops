@@ -21,6 +21,7 @@
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.1); }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(59, 130, 246, 0.5); border-radius: 10px; }
+        .custom-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(59, 130, 246, 0.45) rgba(15, 23, 42, 0.35); }
         
         /* PREMIUM AI ENHANCEMENTS */
         .mermaid-block { position: relative; overflow: hidden; }
@@ -121,7 +122,7 @@
                         {% set importance = 'İZLEMEDE' %}
                         {% set reaction = 'Fırsat Sinyali' %}
                     {% endif %}
-                    <div class="bg-gradient-to-br from-slate-900 via-[#121A2B] to-slate-950 border border-{{ accent }}-500/30 p-5 rounded-2xl hover:border-{{ accent }}-400/70 transition-all group relative overflow-hidden shadow-[0_20px_60px_rgba(2,6,23,0.35)]">
+                    <div class="bg-gradient-to-br from-slate-900 via-[#121A2B] to-slate-950 border border-{{ accent }}-500/30 p-5 rounded-2xl hover:border-{{ accent }}-400/70 transition-all group relative overflow-hidden shadow-[0_20px_60px_rgba(2,6,23,0.35)] flex flex-col max-h-[500px] min-h-0">
                         <div class="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-{{ accent }}-400 via-primary to-ai opacity-80"></div>
                         <div class="absolute -right-12 -top-12 w-32 h-32 bg-{{ accent }}-500/10 rounded-full blur-3xl group-hover:bg-{{ accent }}-500/20 transition-all"></div>
                         <div class="absolute inset-0 bg-white/[0.02] opacity-0 group-hover:opacity-100 transition-opacity"></div>
@@ -144,14 +145,14 @@
                             </div>
                         </div>
 
-                        <div class="mb-4 relative z-10">
-                            <p class="text-[11px] text-slate-400 line-clamp-3 leading-relaxed">
+                        <div class="mb-4 relative z-10 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
+                            <p class="text-[11px] text-slate-400 leading-relaxed">
                                 <span class="text-{{ accent }}-300 font-bold">AI Analizi:</span>
                                 {{ opp.rationale.insight if opp.rationale else 'Stratejik özet hazırlanıyor...' }}
                             </p>
                         </div>
 
-                        <div class="grid grid-cols-1 gap-2 mb-4 relative z-10">
+                        <div class="grid grid-cols-1 gap-2 mb-4 relative z-10 shrink-0">
                             <div class="flex items-center justify-between bg-dark/50 border border-slate-800/80 rounded-xl px-3 py-2">
                                 <span class="text-[10px] text-slate-500 uppercase font-bold">Stratejik Önem</span>
                                 <span class="text-[10px] text-{{ accent }}-300 font-black tracking-wider">{{ importance }}</span>
@@ -198,13 +199,13 @@
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 relative z-10">
-                <div class="lg:col-span-2 bg-panel p-5 rounded-xl border border-slate-800 shadow-lg flex flex-col min-h-[350px]">
-                    <h3 class="text-white font-medium flex items-center gap-2 mb-4">Platform Bazlı Hacim Analizi</h3>
-                    <div class="flex-1 relative w-full h-full min-h-[250px]"><canvas id="volumeChart"></canvas></div>
+                <div class="lg:col-span-2 bg-panel p-5 rounded-xl border border-slate-800 shadow-lg flex flex-col min-h-0 max-h-[min(520px,calc(100vh-10rem))]">
+                    <h3 class="text-white font-medium flex items-center gap-2 mb-4 shrink-0">Platform Bazlı Hacim Analizi</h3>
+                    <div class="flex-1 min-h-0 relative w-full h-full min-h-[200px]"><canvas id="volumeChart"></canvas></div>
                 </div>
         
-                <div class="bg-panel p-5 rounded-xl border border-slate-800 shadow-lg flex flex-col min-h-[350px]">
-                    <div class="flex justify-between items-center mb-4">
+                <div class="bg-panel p-5 rounded-xl border border-slate-800 shadow-lg flex flex-col min-h-0 max-h-[min(560px,calc(100vh-10rem))]">
+                    <div class="flex justify-between items-center mb-4 shrink-0">
                         <h3 class="text-white font-medium flex items-center gap-2">
                             <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                             X (Twitter) Stratejik Üçlü Analiz
@@ -217,7 +218,7 @@
                         <p class="animate-pulse text-xs font-bold uppercase tracking-widest">Kendi vs Rakip vs Gündem Analiz Ediliyor...</p>
                     </div>
 
-                    <div id="triple-analysis-result" class="flex-1 overflow-y-auto text-xs text-slate-400 leading-relaxed space-y-4 pr-2 custom-scrollbar">
+                    <div id="triple-analysis-result" class="flex-1 min-h-0 max-h-[420px] overflow-y-auto text-xs text-slate-400 leading-relaxed space-y-4 pr-2 custom-scrollbar">
                         <p class="text-center py-12 opacity-50 italic">Üçlü analiz raporunu başlatmak için "Karşılaştır" butonuna basınız.</p>
                     </div>
                 </div>
@@ -277,10 +278,10 @@
                     <button id="btnDemoAnalysis" onclick="window.AgendaOps.runDemographicAnalysis(this)" class="bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">🧠 Toplumsal Söylemi Analiz Et</button>
                 </div>
                 <div id="demo-loader" class="hidden flex flex-col items-center justify-center py-10 text-primary"><div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-primary mb-3"></div><p class="animate-pulse text-sm">Veriler analiz ediliyor...</p></div>
-                <div id="demo-results" class="grid grid-cols-1 md:grid-cols-3 gap-6 hidden">
-                    <div class="bg-dark/50 border border-slate-700 p-5 rounded-xl border-t-4 border-t-orange-500"><h4 class="text-orange-500 font-bold mb-2">Seküler / Laik Taban</h4><p class="text-xs text-slate-500 mb-3 uppercase tracking-wider">Baskın Duygu: <span id="demo-sec-emotion" class="text-white font-medium capitalize"></span></p><p id="demo-sec-summary" class="text-sm text-slate-300 leading-relaxed"></p></div>
-                    <div class="bg-dark/50 border border-slate-700 p-5 rounded-xl border-t-4 border-t-emerald-500"><h4 class="text-emerald-500 font-bold mb-2">Muhafazakar Taban</h4><p class="text-xs text-slate-500 mb-3 uppercase tracking-wider">Baskın Duygu: <span id="demo-con-emotion" class="text-white font-medium capitalize"></span></p><p id="demo-con-summary" class="text-sm text-slate-300 leading-relaxed"></p></div>
-                    <div class="bg-dark/50 border border-slate-700 p-5 rounded-xl border-t-4 border-t-purple-500"><h4 class="text-purple-500 font-bold mb-2">Z Kuşağı / Genç Seçmen</h4><p class="text-xs text-slate-500 mb-3 uppercase tracking-wider">Baskın Duygu: <span id="demo-genz-emotion" class="text-white font-medium capitalize"></span></p><p id="demo-genz-summary" class="text-sm text-slate-300 leading-relaxed"></p></div>
+                <div id="demo-results" class="grid grid-cols-1 md:grid-cols-3 gap-6 hidden min-h-0">
+                    <div class="bg-dark/50 border border-slate-700 p-5 rounded-xl border-t-4 border-t-orange-500 flex flex-col min-h-0 max-h-96"><h4 class="text-orange-500 font-bold mb-2 shrink-0">Seküler / Laik Taban</h4><p class="text-xs text-slate-500 mb-3 uppercase tracking-wider shrink-0">Baskın Duygu: <span id="demo-sec-emotion" class="text-white font-medium capitalize"></span></p><p id="demo-sec-summary" class="text-sm text-slate-300 leading-relaxed flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1"></p></div>
+                    <div class="bg-dark/50 border border-slate-700 p-5 rounded-xl border-t-4 border-t-emerald-500 flex flex-col min-h-0 max-h-96"><h4 class="text-emerald-500 font-bold mb-2 shrink-0">Muhafazakar Taban</h4><p class="text-xs text-slate-500 mb-3 uppercase tracking-wider shrink-0">Baskın Duygu: <span id="demo-con-emotion" class="text-white font-medium capitalize"></span></p><p id="demo-con-summary" class="text-sm text-slate-300 leading-relaxed flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1"></p></div>
+                    <div class="bg-dark/50 border border-slate-700 p-5 rounded-xl border-t-4 border-t-purple-500 flex flex-col min-h-0 max-h-96"><h4 class="text-purple-500 font-bold mb-2 shrink-0">Z Kuşağı / Genç Seçmen</h4><p class="text-xs text-slate-500 mb-3 uppercase tracking-wider shrink-0">Baskın Duygu: <span id="demo-genz-emotion" class="text-white font-medium capitalize"></span></p><p id="demo-genz-summary" class="text-sm text-slate-300 leading-relaxed flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1"></p></div>
                 </div>
             </div>
 
@@ -306,7 +307,7 @@
                         <svg class="w-4 h-4 text-ai" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                         Gündem Strateji Şeması (AI Üretimi)
                     </h4>
-                    <div id="mermaid-container" class="flex justify-center bg-dark/30 p-4 rounded-xl min-h-[200px]"></div>
+                    <div id="mermaid-container" class="flex justify-center bg-dark/30 p-4 rounded-xl min-h-[120px] max-h-96 overflow-y-auto custom-scrollbar"></div>
                 </div>
             </div>
         </div>
@@ -331,7 +332,7 @@
                         <button onclick="document.getElementById('aiModal').classList.add('hidden')" class="text-slate-400 hover:text-white p-1">X</button>
                     </div>
                 </div>
-                <div class="p-8 overflow-y-auto text-slate-300 text-sm leading-relaxed">
+                <div class="p-6 max-h-[calc(85vh-4rem)] overflow-y-auto text-slate-300 text-sm leading-relaxed custom-scrollbar">
                     <div id="aiLoader" class="flex flex-col items-center justify-center py-20 text-ai"><div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-ai mb-4"></div><p class="animate-pulse">Analiz ediliyor...</p></div>
                     <div id="aiReportText" class="hidden"></div>
                 </div>
@@ -717,8 +718,8 @@
                                         <span class="w-1 h-1 rounded-full bg-slate-700"></span>
                                         <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider">AI ANALİZİ</span>
                                     </div>
-                                    <h4 class="text-white font-bold text-lg mb-2 group-hover:text-ai transition-colors">${topic.title}</h4>
-                                    <p class="text-xs text-slate-400 leading-relaxed line-clamp-3 group-hover:line-clamp-none transition-all">${topic.summary}</p>
+                                    <h4 class="text-white font-bold text-lg mb-2 group-hover:text-ai transition-colors line-clamp-2">${topic.title}</h4>
+                                    <p class="text-xs text-slate-400 leading-relaxed max-h-36 overflow-y-auto custom-scrollbar pr-1">${topic.summary}</p>
                                 </div>
                                 <div class="flex flex-col gap-4 mt-auto pt-5 border-t border-slate-800/50 relative z-10">
                                     <div class="grid grid-cols-2 gap-4">
@@ -731,7 +732,7 @@
                                             <div class="w-full bg-slate-900 rounded-full h-1.5 shadow-inner"><div class="bg-gradient-to-r from-danger/50 to-danger h-1.5 rounded-full transition-all duration-1000" style="width: ${topic.crisis_score}%"></div></div>
                                         </div>
                                     </div>
-                                    <div class="bg-dark/40 p-3.5 rounded-xl border border-slate-800/50 group-hover:bg-ai/5 group-hover:border-ai/20 transition-all">
+                                    <div class="bg-dark/40 p-3.5 rounded-xl border border-slate-800/50 group-hover:bg-ai/5 group-hover:border-ai/20 transition-all max-h-32 overflow-y-auto custom-scrollbar">
                                         <div class="flex items-start gap-2.5">
                                             <span class="text-ai text-sm mt-0.5">⚡</span>
                                             <div>
@@ -1179,9 +1180,10 @@
                 const name = document.getElementById('sourceName').value;
                 const url = document.getElementById('sourceUrl').value;
                 const domain = document.getElementById('sourceDomain').value;
+                const sourceCategory = document.getElementById('sourceCategory').value;
                 if(!name || !url) return alert('Ad ve URL zorunludur.');
                 try {
-                    const res = await fetch('/api/sources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, url: url, type: type, domain: domain }) });
+                    const res = await fetch('/api/sources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, url: url, type: type, domain: domain, source_category: sourceCategory }) });
                     const data = await res.json();
                     if(data.success) { alert(data.message || 'Kaynak eklendi!'); window.location.reload(); }
                     else { alert('Hata: ' + (data.error || 'Kaynak eklenemedi.')); }
@@ -1352,6 +1354,8 @@
                         resultDiv.innerHTML = `<p class="text-red-400 p-4 bg-red-400/10 rounded-xl border border-red-400/20">${data.error}</p>`;
                     }
                 } catch (e) {
+                    loader.classList.add('hidden');
+                    resultDiv.classList.remove('hidden');
                     resultDiv.innerHTML = `<p class="text-red-400">Bağlantı hatası oluştu.</p>`;
                 } finally {
                     btn.disabled = false;
