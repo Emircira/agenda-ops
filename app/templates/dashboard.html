@@ -1098,52 +1098,6 @@
                 } catch(e) { document.getElementById('sentiment-loader').classList.add('hidden'); alert("Bağlantı hatası."); }
                 finally { btn.innerHTML = orig; btn.disabled = false; }
             }
-            async runComplaintsRadar(btn) {
-                const city = document.getElementById('complaintCity').value;
-                const orig = btn.innerHTML; btn.innerHTML = '⏱️ NLP Taranıyor...'; btn.disabled = true;
-                document.getElementById('complaints-results').classList.add('hidden');
-                document.getElementById('complaints-empty').classList.add('hidden');
-                document.getElementById('complaints-loader').classList.remove('hidden');
-                try {
-                    const res = await fetch('/api/complaints-radar', { 
-                        method: 'POST', 
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ city: city })
-                    });
-                    const data = await res.json();
-                    document.getElementById('complaints-loader').classList.add('hidden');
-                    if (data.success && data.complaints && data.complaints.length > 0) {
-                        const container = document.getElementById('complaints-results');
-                        container.innerHTML = '';
-                        data.complaints.forEach(c => {
-                            const sev = c.severity || 0;
-                            let borderColor = 'border-t-emerald-500', bgBadge = 'bg-emerald-500/20 text-emerald-400', sevLabel = 'DÜŞÜK';
-                            if (sev >= 70) { borderColor = 'border-t-red-500'; bgBadge = 'bg-red-500/20 text-red-400'; sevLabel = 'KRİTİK'; }
-                            else if (sev >= 40) { borderColor = 'border-t-amber-500'; bgBadge = 'bg-amber-500/20 text-amber-400'; sevLabel = 'ORTA'; }
-                            const card = document.createElement('div');
-                            card.className = `bg-dark/50 border border-slate-700 p-5 rounded-xl border-t-4 ${borderColor} hover:border-slate-500 transition-colors`;
-                            card.innerHTML = `
-                                <div class="flex justify-between items-start mb-3">
-                                    <span class="text-xs font-bold uppercase tracking-wider text-slate-500">${c.category || 'Genel'}</span>
-                                    <span class="${bgBadge} text-[10px] px-2 py-0.5 rounded font-bold">${sevLabel} — %${sev}</span>
-                                </div>
-                                <h4 class="text-white font-bold text-sm mb-2">📍 ${c.location || 'Bilinmiyor'}</h4>
-                                <p class="text-slate-300 text-xs leading-relaxed mb-3">${c.summary}</p>
-                                <div class="w-full bg-slate-900 rounded-full h-1.5 mb-3"><div class="h-1.5 rounded-full transition-all duration-500" style="width:${sev}%; background: ${sev >= 70 ? '#EF4444' : sev >= 40 ? '#F59E0B' : '#10B981'}"></div></div>
-                                <div class="bg-slate-900/50 p-3 rounded border border-slate-700/50">
-                                    <p class="text-[11px] text-primary"><strong>⚡ Strateji:</strong> ${c.strategic_advice}</p>
-                                </div>`;
-                            container.appendChild(card);
-                        });
-                        container.classList.remove('hidden');
-                        this.saveState('complaints_radar', { city: city, html: container.innerHTML });
-                    } else {
-                        document.getElementById('complaints-empty').classList.remove('hidden');
-                        if (data.error) alert(data.error);
-                    }
-                } catch(e) { document.getElementById('complaints-loader').classList.add('hidden'); alert('Bağlantı hatası.'); }
-                finally { btn.innerHTML = orig; btn.disabled = false; }
-            }
 
             downloadPDF(elementId, filename) {
                 const element = document.getElementById(elementId);
@@ -1261,8 +1215,13 @@
                 if (type.startsWith('twitter')) {
                     labelName.innerText = "Hesap/Kelime Başlığı";
                     inputName.placeholder = type === 'twitter_trend' ? "Örn: Fenerbahçe Gündemi" : "Örn: Cumhurbaşkanı Mentions";
-                    labelUrl.innerText = type === 'twitter_trend' ? "Aranacak Kelime" : "X Kullanıcı Adı (@yok)";
-                    inputUrl.placeholder = type === 'twitter_trend' ? "Örn: fenerbahçe" : "Örn: RTErdogan";
+                    if (type === 'twitter_agency') {
+                        labelUrl.innerText = "Kanal URL veya @kullanıcı";
+                        inputUrl.placeholder = "Örn: haber_merkezi veya https://x.com/isid_ajans";
+                    } else {
+                        labelUrl.innerText = type === 'twitter_trend' ? "Aranacak Kelime" : "X Kullanıcı Adı (@yok)";
+                        inputUrl.placeholder = type === 'twitter_trend' ? "Örn: fenerbahçe" : "Örn: RTErdogan";
+                    }
                 } else if (type === 'youtube') {
                     labelName.innerText = "Kanal/Konu Başlığı";
                     labelUrl.innerText = "YouTube Kanal ID veya Kelime";
@@ -1492,15 +1451,35 @@
             }
 
             async runComplaintsRadar(btn) {
-                const city = document.getElementById('complaintCity').value;
+                const cityEl = document.getElementById('complaintCity');
+                const city = cityEl ? cityEl.value.trim() : '';
                 const loader = document.getElementById('complaints-loader');
                 const results = document.getElementById('complaints-results');
                 const empty = document.getElementById('complaints-empty');
+                const titleCity = city || 'Türkiye Geneli';
 
                 btn.disabled = true;
                 loader.classList.remove('hidden');
                 results.classList.add('hidden');
                 empty.classList.add('hidden');
+
+                const renderAnalysis = (analysis, cached) => {
+                    loader.classList.add('hidden');
+                    results.classList.remove('hidden');
+                    const cacheNote = cached ? '<p class="text-[10px] text-slate-500 mb-3">Önbellekten (≤1 saat)</p>' : '';
+                    const safe = this.escapeHtml(analysis || '').replace(/\n/g, '<br>');
+                    results.innerHTML = `
+                        <div class="col-span-full p-6 bg-danger/10 border border-danger/20 rounded-2xl text-slate-300 text-sm leading-relaxed prose prose-invert max-w-none">
+                            <h4 class="text-danger font-bold text-lg mb-2 flex items-center gap-2">
+                                <span>🛡️</span> ${this.escapeHtml(titleCity)} — İl bazlı kriz / şikâyet özeti
+                            </h4>
+                            ${cacheNote}
+                            <div class="text-slate-200">${safe}</div>
+                        </div>`;
+                    try {
+                        this.saveState('complaints_radar', { city: city, analysis: analysis });
+                    } catch (_) {}
+                };
 
                 try {
                     const res = await fetch('/api/complaints-radar', {
@@ -1509,25 +1488,44 @@
                         body: JSON.stringify({ city: city })
                     });
                     const data = await res.json();
-                    
-                    loader.classList.add('hidden');
-                    if (data.success) {
-                        results.classList.remove('hidden');
-                        results.innerHTML = `
-                            <div class="col-span-full p-6 bg-danger/10 border border-danger/20 rounded-2xl text-slate-300 text-sm leading-relaxed prose prose-invert max-w-none">
-                                <h4 class="text-danger font-bold text-lg mb-4 flex items-center gap-2">
-                                    <span>🛡️</span> ${city || 'Türkiye Geneli'} Zafiyet Analiz Raporu
-                                </h4>
-                                ${data.analysis.replace(/\n/g, '<br>')}
-                            </div>
-                        `;
-                    } else {
+
+                    if (!data.success) {
+                        loader.classList.add('hidden');
                         empty.classList.remove('hidden');
-                        empty.innerHTML = `<p class="text-red-400">${data.error}</p>`;
+                        empty.innerHTML = `<p class="text-red-400">${this.escapeHtml(data.error || data.detail || 'İstek başarısız.')}</p>`;
+                        return;
                     }
-                } catch (e) {
+
+                    if (data.analysis && !data.pending) {
+                        renderAnalysis(data.analysis, !!data.cached);
+                        return;
+                    }
+
+                    if (data.pending) {
+                        const pollUrl = '/api/complaints-radar?' + new URLSearchParams({ city: city }).toString();
+                        for (let i = 0; i < 60; i++) {
+                            await new Promise(r => setTimeout(r, 2000));
+                            const pr = await fetch(pollUrl);
+                            let pd = {};
+                            try { pd = await pr.json(); } catch (_) {}
+                            if (pd.success && pd.analysis) {
+                                renderAnalysis(pd.analysis, !!pd.cached);
+                                return;
+                            }
+                        }
+                        loader.classList.add('hidden');
+                        empty.classList.remove('hidden');
+                        empty.innerHTML = '<p class="text-amber-400 text-sm text-center">Tarama henüz bitmedi veya zaman aşımı oluştu. Bir süre sonra yeniden deneyin.</p>';
+                        return;
+                    }
+
+                    loader.classList.add('hidden');
                     empty.classList.remove('hidden');
-                    empty.innerHTML = `<p class="text-red-400">Bağlantı hatası.</p>`;
+                    empty.innerHTML = '<p class="text-slate-500 text-sm">Analiz hazır değil.</p>';
+                } catch (e) {
+                    loader.classList.add('hidden');
+                    empty.classList.remove('hidden');
+                    empty.innerHTML = '<p class="text-red-400">Bağlantı hatası.</p>';
                 } finally {
                     btn.disabled = false;
                 }

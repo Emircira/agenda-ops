@@ -255,7 +255,9 @@ def ingest_x_all_sources(self):
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 select(Source.id, Source.type, Source.name, Source.url, Source.domain).where(
-                    Source.type.in_(['twitter_self', 'twitter_competitor', 'twitter_trend', 'x']),
+                    Source.type.in_(
+                        ['twitter_self', 'twitter_competitor', 'twitter_trend', 'twitter_agency', 'x']
+                    ),
                     Source.active == True
                 )
             )
@@ -285,6 +287,8 @@ def ingest_x_all_sources(self):
                 try:
                     if source_type == 'twitter_trend':
                         posts = await provider.fetch_top_tweets_shallow(source_url, limit=17)
+                    elif source_type == 'twitter_agency':
+                        posts = await provider.fetch_from_channel(source_url)
                     else:
                         posts = await provider.fetch_mentions(source_url)
 
