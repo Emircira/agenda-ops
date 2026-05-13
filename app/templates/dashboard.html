@@ -952,18 +952,26 @@
 
                 try {
                     const response = await fetch('/api/twitter-bulk-analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ window: 24 }) });
-                    const data = await response.json();
+                    let data = {};
+                    try { data = await response.json(); } catch (_) {}
+                    document.getElementById('tw-loader').classList.add('hidden');
                     if (data.success && data.analysis) {
                         const res = data.analysis;
-                        document.getElementById('tw-vip').innerText = res.vip_summary;
-                        document.getElementById('tw-comp').innerText = res.competitor_summary;
-                        document.getElementById('tw-trend').innerText = res.trend_summary;
-                        document.getElementById('tw-action').innerText = res.action_plan;
-                        document.getElementById('tw-loader').classList.add('hidden');
+                        document.getElementById('tw-vip').innerText = res.vip_summary || '';
+                        document.getElementById('tw-comp').innerText = res.competitor_summary || '';
+                        document.getElementById('tw-trend').innerText = res.trend_summary || '';
+                        document.getElementById('tw-action').innerText = res.action_plan || '';
                         document.getElementById('tw-results').classList.remove('hidden');
                         this.saveState('twitter_analysis', res);
+                        this.showToast('4\'lü rapor hazır.', 'success');
+                    } else {
+                        const msg = data.error || (!response.ok ? ('HTTP ' + response.status) : 'Rapor üretilemedi.');
+                        this.showToast(msg, 'error');
                     }
-                } catch (e) {} finally { btn.innerHTML = '🧠 4\'lü Rapor Çıkar'; btn.disabled = false; }
+                } catch (e) {
+                    document.getElementById('tw-loader').classList.add('hidden');
+                    this.showToast('Bağlantı hatası: ' + (e && e.message ? e.message : String(e)), 'error');
+                } finally { btn.innerHTML = '🧠 4\'lü Rapor Çıkar'; btn.disabled = false; }
             }
 
             async runWorkerAction(workerName, btn) {
@@ -1233,13 +1241,25 @@
                 }
             }
 
-            async deleteSource(sourceId) {
+            async deleteSource(sourceId, btn) {
                 if(!confirm("Emin misiniz?")) return;
                 try {
                     const res = await fetch(`/api/sources/${sourceId}`, { method: 'DELETE' });
                     const data = await res.json();
-                    if(data.success) { window.location.reload(); }
-                } catch(e) {}
+                    if(data.success) {
+                        if (btn) {
+                            const row = btn.closest('.p-3');
+                            if (row) row.remove();
+                            this.showToast('Kaynak başarıyla silindi.', 'success');
+                        } else {
+                            window.location.reload();
+                        }
+                    } else {
+                        this.showToast('Silinemedi: ' + data.error, 'error');
+                    }
+                } catch(e) {
+                    this.showToast('Bağlantı hatası.', 'error');
+                }
             }
 
             async initChart() {
@@ -1356,16 +1376,33 @@
                     (warning ? `<p class="text-warning mt-1 text-[10px]">${this.escapeHtml(String(warning))}</p>` : '');
             }
 
-            schedulePipelineFollowUps() {
-                [7000, 18000, 40000].forEach((ms) => {
-                    setTimeout(() => {
-                        try {
+            schedulePipelineFollowUps(taskId) {
+                if (!taskId) return;
+                let pollCount = 0;
+                const pollInterval = setInterval(async () => {
+                    pollCount++;
+                    if (pollCount > 400) { // ~20 dk — Gemini etiketleme + skor uzun sürebilir
+                        clearInterval(pollInterval);
+                        const el = document.getElementById('pipeline-task-banner');
+                        if (el) el.classList.add('hidden');
+                        this.showToast('Analiz süresi aşıldı veya zaman aşımına uğradı.', 'error');
+                        return;
+                    }
+                    try {
+                        const res = await fetch(`/api/system/task-status/${taskId}`);
+                        if (!res.ok) return;
+                        const data = await res.json();
+                        if (data.status === 'SUCCESS' || data.status === 'FAILURE') {
+                            clearInterval(pollInterval);
                             this.loadHotTopics(true);
                             this.refreshOpportunityStrip();
                             this.loadSystemStats();
-                        } catch (_) {}
-                    }, ms);
-                });
+                            this.showToast(data.status === 'SUCCESS' ? 'Analiz başarıyla tamamlandı!' : 'Analiz sırasında hata oluştu.', data.status === 'SUCCESS' ? 'success' : 'error');
+                            const el = document.getElementById('pipeline-task-banner');
+                            if (el) el.classList.add('hidden');
+                        }
+                    } catch (e) { console.error('Polling error', e); }
+                }, 3000);
             }
 
             async refreshOpportunityStrip() {
@@ -1450,30 +1487,55 @@
                 }
             }
 
+            onComplaintProvinceSelected(sel) {
+                const btn = document.getElementById('btnComplaintsRadar');
+                if (!btn || !sel || !sel.value || !String(sel.value).trim()) return;
+                this.runComplaintsRadar(btn);
+            }
+
             async runComplaintsRadar(btn) {
                 const cityEl = document.getElementById('complaintCity');
                 const city = cityEl ? cityEl.value.trim() : '';
                 const loader = document.getElementById('complaints-loader');
+                const loaderMsg = document.getElementById('complaints-loader-msg');
                 const results = document.getElementById('complaints-results');
                 const empty = document.getElementById('complaints-empty');
+                const slug = city || 'Türkiye';
                 const titleCity = city || 'Türkiye Geneli';
 
                 btn.disabled = true;
                 loader.classList.remove('hidden');
+                if (loaderMsg) {
+                    loaderMsg.textContent = 'Bölge Kriz Verileri Toplanıyor...';
+                }
                 results.classList.add('hidden');
                 empty.classList.add('hidden');
 
-                const renderAnalysis = (analysis, cached) => {
+                const fmtDetail = (d) => {
+                    if (d == null) return '';
+                    if (typeof d === 'string') return d;
+                    if (Array.isArray(d)) return d.map((x) => (x && x.msg) ? x.msg : JSON.stringify(x)).join(' ');
+                    return String(d);
+                };
+
+                const renderAnalysis = (data) => {
                     loader.classList.add('hidden');
                     results.classList.remove('hidden');
-                    const cacheNote = cached ? '<p class="text-[10px] text-slate-500 mb-3">Önbellekten (≤1 saat)</p>' : '';
-                    const safe = this.escapeHtml(analysis || '').replace(/\n/g, '<br>');
+                    const analysis = data.analysis || '';
+                    const cached = !!data.cached;
+                    const rssN = data.rss_count != null ? data.rss_count : '—';
+                    const xN = data.x_count != null ? data.x_count : '—';
+                    const cacheNote = cached
+                        ? '<span class="text-emerald-400/90">Kayıtlı görünüm</span>'
+                        : '<span class="text-slate-500">Yeni derleme</span>';
+                    const meta = `<p class="text-[10px] text-slate-500 mb-3">${cacheNote} · Haber satırı: ${rssN} · Sosyal kesit: ${xN}</p>`;
+                    const safe = this.escapeHtml(analysis).replace(/\n/g, '<br>');
                     results.innerHTML = `
                         <div class="col-span-full p-6 bg-danger/10 border border-danger/20 rounded-2xl text-slate-300 text-sm leading-relaxed prose prose-invert max-w-none">
                             <h4 class="text-danger font-bold text-lg mb-2 flex items-center gap-2">
-                                <span>🛡️</span> ${this.escapeHtml(titleCity)} — İl bazlı kriz / şikâyet özeti
+                                <span>🛡️</span> ${this.escapeHtml(titleCity)} — Bölge kriz / şikâyet özeti
                             </h4>
-                            ${cacheNote}
+                            ${meta}
                             <div class="text-slate-200">${safe}</div>
                         </div>`;
                     try {
@@ -1482,46 +1544,29 @@
                 };
 
                 try {
-                    const res = await fetch('/api/complaints-radar', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ city: city })
-                    });
-                    const data = await res.json();
+                    const url = '/api/v1/contents/city-news/' + encodeURIComponent(slug);
+                    const res = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
+                    let data = {};
+                    try {
+                        data = await res.json();
+                    } catch (_) {}
+
+                    if (!res.ok) {
+                        loader.classList.add('hidden');
+                        empty.classList.remove('hidden');
+                        const msg = fmtDetail(data.detail) || data.error || data.message || ('Sunucu hatası (HTTP ' + res.status + ')');
+                        empty.innerHTML = `<p class="text-red-400">${this.escapeHtml(msg)}</p>`;
+                        return;
+                    }
 
                     if (!data.success) {
                         loader.classList.add('hidden');
                         empty.classList.remove('hidden');
-                        empty.innerHTML = `<p class="text-red-400">${this.escapeHtml(data.error || data.detail || 'İstek başarısız.')}</p>`;
+                        empty.innerHTML = `<p class="text-red-400">${this.escapeHtml(data.error || fmtDetail(data.detail) || 'İstek başarısız.')}</p>`;
                         return;
                     }
 
-                    if (data.analysis && !data.pending) {
-                        renderAnalysis(data.analysis, !!data.cached);
-                        return;
-                    }
-
-                    if (data.pending) {
-                        const pollUrl = '/api/complaints-radar?' + new URLSearchParams({ city: city }).toString();
-                        for (let i = 0; i < 60; i++) {
-                            await new Promise(r => setTimeout(r, 2000));
-                            const pr = await fetch(pollUrl);
-                            let pd = {};
-                            try { pd = await pr.json(); } catch (_) {}
-                            if (pd.success && pd.analysis) {
-                                renderAnalysis(pd.analysis, !!pd.cached);
-                                return;
-                            }
-                        }
-                        loader.classList.add('hidden');
-                        empty.classList.remove('hidden');
-                        empty.innerHTML = '<p class="text-amber-400 text-sm text-center">Tarama henüz bitmedi veya zaman aşımı oluştu. Bir süre sonra yeniden deneyin.</p>';
-                        return;
-                    }
-
-                    loader.classList.add('hidden');
-                    empty.classList.remove('hidden');
-                    empty.innerHTML = '<p class="text-slate-500 text-sm">Analiz hazır değil.</p>';
+                    renderAnalysis(data);
                 } catch (e) {
                     loader.classList.add('hidden');
                     empty.classList.remove('hidden');
@@ -1566,7 +1611,7 @@
                         this.loadHotTopics(true);
                         this.refreshOpportunityStrip();
                         this.loadSystemStats();
-                        this.schedulePipelineFollowUps();
+                        this.schedulePipelineFollowUps(data.task_id);
                     } else {
                         const msg = data.detail || data.error || data.message || (res.status === 404 ? '404 — endpoint bulunamadı' : 'Görev kuyruğa alınamadı.');
                         this.showToast('Hata (' + res.status + '): ' + msg, 'error');

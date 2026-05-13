@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 import re
 
-from fastapi import FastAPI, Request, Depends, HTTPException, Query
+from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,7 +25,7 @@ from app.services.karargah_llm_directive import with_karargah_osint_directive
 
 # KARARGAH ANA MİMARİ İMPORTLARI
 from app.db.session import get_db, engine
-from app.models.core import Base, Opportunity, Content, Source, ComplaintsRadarCache
+from app.models.core import Base, Opportunity, Content, Source
 from app.api.routers import router
 
 # ÖZEL SEÇİM/DEMOGRAFİ MODELLERİN
@@ -270,8 +270,8 @@ async def lifespan(app: FastAPI):
 
 # FASTAPI TANIMLAMASI
 app = FastAPI(
-    title="AgendaOps MVP", 
-    description="Gündem Kurma ve Karar Destek İstihbarat Sistemi",
+    title="AgendaOps",
+    description="Gündem kurma ve karar destek istihbaratı",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -282,6 +282,10 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api/v1")
+
+from app.api.v1.endpoints import contents as contents_api
+
+app.include_router(contents_api.router, prefix="/api/v1/contents", tags=["İçerikler"])
 templates = Jinja2Templates(directory="app/templates")
 
 def get_gemini_model():
@@ -316,7 +320,12 @@ async def zorla_tablo_olustur():
     her riskli DDL ayrı engine.begin() ile çalıştırılır.
     """
     from sqlalchemy import text
-    from app.models.core import ElectionDemographicStat, ElectionRegionTrend, ElectionRegionArchive  # noqa: F401 — metadata
+    from app.models.core import (  # noqa: F401 — metadata'da tablo kaydı
+        ElectionDemographicStat,
+        ElectionRegionTrend,
+        ElectionRegionArchive,
+        ComplaintsRadarCache,
+    )
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -462,15 +471,20 @@ async def create_source_direct(req: SourceCreateRequest, db: AsyncSession = Depe
 
 @app.delete("/api/sources/{source_id}", tags=["Kaynak Yönetimi"])
 async def delete_source_direct(source_id: int, db: AsyncSession = Depends(get_db)):
-    """Kaynağı siler."""
+    """Kaynağı siler ve ilişkili içerikleri temizler."""
+    from sqlalchemy import delete
     try:
         res = await db.execute(select(Source).where(Source.id == source_id))
         source = res.scalar_one_or_none()
         if not source:
             return {"success": False, "error": "Kaynak bulunamadı."}
+        
+        # Foreign Key kısıtlamasını aşmak için önce bu kaynağa ait içerikleri siliyoruz
+        await db.execute(delete(Content).where(Content.source_id == source_id))
+        
         await db.delete(source)
         await db.commit()
-        return {"success": True, "message": "Kaynak silindi."}
+        return {"success": True, "message": "Kaynak ve ilişkili veriler silindi."}
     except Exception as e:
         await db.rollback()
         return {"success": False, "error": str(e)}
@@ -770,10 +784,127 @@ async def bulk_analyze(req: BulkAnalysisRequest, db: AsyncSession = Depends(get_
 
 @app.post("/api/twitter-bulk-analyze", tags=["Yapay Zeka Analiz"])
 async def twitter_bulk_analyze(req: BulkAnalysisRequest, db: AsyncSession = Depends(get_db)):
-    """Twitter içeriklerini analiz eder."""
-    from app.workers.labeling_tasks import batch_analyze_contents
-    batch_analyze_contents.delay()
-    return {"success": True, "message": "Twitter analizi başlatıldı."}
+    """
+    X panelindeki «4'lü Rapor»: VIP / rakip / trend özeti + eylem planı (senkron Gemini).
+    Celery etiketleme ile karıştırılmamalı — UI doğrudan JSON `analysis` bekler.
+    """
+    from app.models.core import Content, Source
+
+    raw_llm = ""
+    try:
+        window_h = max(1, min(int(req.window), 168))
+        time_threshold = datetime.utcnow() - timedelta(hours=window_h)
+
+        query = (
+            select(Content, Source.type, Source.source_category)
+            .outerjoin(Source, Content.source_id == Source.id)
+            .where(
+                Content.platform.in_(["x", "twitter"]),
+                Content.published_at >= time_threshold,
+            )
+            .order_by(Content.published_at.desc())
+            .limit(500)
+        )
+        res = await db.execute(query)
+        rows = res.all()
+
+        cat_tr = {
+            "competitor": "Rakip",
+            "news_agency": "Haber Ajansı",
+            "person_or_target": "Şahıs/Hedef",
+            "general_agenda": "Genel Gündem",
+        }
+
+        def _tagged_line(content: Content, src_cat: Optional[str]) -> str:
+            t = (content.text or "").strip().replace("\n", " ")
+            if len(t) > 220:
+                t = t[:220] + "..."
+            label = cat_tr.get((src_cat or "general_agenda").strip(), src_cat or "Genel Gündem")
+            auth = (content.author_name or "?").strip()
+            return f"[Kaynak tipi: {label}] @{auth}: {t}"
+
+        buckets = {"self": [], "competitor": [], "trend": []}
+        for content, s_type, src_cat in rows:
+            line = _tagged_line(content, src_cat)
+            st = (s_type or "").strip()
+            if st == "twitter_self":
+                buckets["self"].append(line)
+            elif st in ("twitter_competitor", "twitter_agency"):
+                buckets["competitor"].append(line)
+            elif st == "twitter_trend":
+                buckets["trend"].append(line)
+            else:
+                buckets["trend"].append(line)
+
+        if not any(buckets.values()):
+            return {
+                "success": False,
+                "error": f"Son {window_h} saatte X/Twitter içeriği yok. Önce «Mevcut Kaynakları Çek» ile veri alın.",
+            }
+
+        max_lines = 40
+        payload_self = buckets["self"][:max_lines]
+        payload_comp = buckets["competitor"][:max_lines]
+        payload_trend = buckets["trend"][:max_lines]
+
+        prompt = f"""Sen stratejik iletişim ve OSINT analistisin. Aşağıdaki X (Twitter) satırları son {window_h} saatte veritabanından çekilmiştir.
+Satırlar üç gruba ayrılmıştır: VIP/kendi kaynakları, rakip ve ajans kaynakları, trend ile kaynağı genel/eksik içerikler.
+
+VIP / KENDİ TARAF:
+{json.dumps(payload_self, ensure_ascii=False, indent=2)}
+
+RAKİP / AJANS:
+{json.dumps(payload_comp, ensure_ascii=False, indent=2)}
+
+TREND / GENEL AKIŞ:
+{json.dumps(payload_trend, ensure_ascii=False, indent=2)}
+
+GÖREV: Türkçe «4'lü rapor» üret. Yanıt YALNIZCA tek bir geçerli JSON nesnesi olsun (markdown, code fence veya açıklama yok):
+{{
+  "vip_summary": "VIP/kendi taraf için 3-8 cümle stratejik özet",
+  "competitor_summary": "Rakip ve ajans için 3-8 cümle özet",
+  "trend_summary": "Gündem ve toplumsal akış için 3-8 cümle özet",
+  "action_plan": "Somut eylem önerileri (madde veya kısa paragraflar)"
+}}
+"""
+
+        raw_llm = await gemini_generate_content(prompt)
+        cleaned = raw_llm.strip()
+        for fence in ("```json", "```JSON", "```"):
+            if fence in cleaned:
+                cleaned = cleaned.split(fence, 1)[-1]
+                if "```" in cleaned:
+                    cleaned = cleaned.split("```", 1)[0]
+                cleaned = cleaned.strip()
+                break
+        i0, i1 = cleaned.find("{"), cleaned.rfind("}")
+        if i0 != -1 and i1 > i0:
+            cleaned = cleaned[i0 : i1 + 1]
+
+        analysis_obj = json.loads(cleaned)
+        out = {
+            "vip_summary": "",
+            "competitor_summary": "",
+            "trend_summary": "",
+            "action_plan": "",
+        }
+        for key in out:
+            val = analysis_obj.get(key, "")
+            out[key] = val if isinstance(val, str) else (json.dumps(val, ensure_ascii=False) if val is not None else "")
+
+        return {"success": True, "analysis": out}
+
+    except json.JSONDecodeError as e:
+        logger.error(f"twitter-bulk-analyze JSON çözümleme: {e}")
+        preview = (raw_llm or "")[:900]
+        return {
+            "success": False,
+            "error": "Yapay zeka yanıtı JSON olarak çözümlenemedi; tekrar deneyin.",
+            "raw_preview": preview,
+        }
+    except Exception as e:
+        logger.exception("twitter-bulk-analyze")
+        return {"success": False, "error": str(e)}
 
 class NewsScanRequest(BaseModel): keyword: str
 
@@ -1189,93 +1320,6 @@ async def recent_content_stream(limit: int = 30, db: AsyncSession = Depends(get_
         grouped[key] = [row_payload(item) for item in res.scalars().all()]
 
     return {"success": True, "streams": grouped}
-
-# =======================================================
-# 5. ŞİKAYET RADARI (Complaints Radar — Celery + önbellek)
-# =======================================================
-COMPLAINTS_RADAR_CACHE_TTL = timedelta(hours=1)
-
-
-def _complaints_province_cache_key(label: str) -> str:
-    s = (label or "").strip()
-    if not s:
-        return "turkiye_geneli"
-    return normalize_tr(s)
-
-
-def _complaints_cache_row_fresh(row: ComplaintsRadarCache) -> bool:
-    if not row or not row.cached_at:
-        return False
-    ts = row.cached_at
-    if getattr(ts, "tzinfo", None) is not None:
-        ts = ts.replace(tzinfo=None)
-    return datetime.utcnow() - ts < COMPLAINTS_RADAR_CACHE_TTL
-
-
-class ComplaintRadarRequest(BaseModel):
-    city: Optional[str] = None
-
-
-@app.post("/api/complaints-radar", tags=["Yapay Zeka Analiz"])
-async def complaints_radar_post(req: ComplaintRadarRequest, db: AsyncSession = Depends(get_db)):
-    """İl seçimine göre X örneklemesi + Gemini kriz süzgeci; önbellek taze ise anında döner."""
-    province_label = (req.city or "").strip() or "Türkiye Geneli"
-    province_key = _complaints_province_cache_key(province_label)
-
-    res = await db.execute(select(ComplaintsRadarCache).where(ComplaintsRadarCache.province_key == province_key))
-    row = res.scalar_one_or_none()
-    if row and _complaints_cache_row_fresh(row):
-        payload = row.payload_json or {}
-        return {
-            "success": True,
-            "cached": True,
-            "pending": False,
-            "province_label": row.province_label,
-            "analysis": payload.get("analysis", ""),
-        }
-
-    try:
-        from app.workers.complaints_tasks import complaints_radar_scan
-
-        complaints_radar_scan.delay(province_label)
-    except Exception as e:
-        logger.error(f"Şikayet radarı Celery tetikleme hatası: {e}")
-        return {"success": False, "error": "Arka plan taraması kuyruğa alınamadı. Celery/Redis yapılandırmasını kontrol edin."}
-
-    return {
-        "success": True,
-        "pending": True,
-        "cached": False,
-        "message": "İl bazlı tarama kuyruğa alındı; sonuç hazır olunca aynı il için önbellekten okunur.",
-        "province_key": province_key,
-        "province_label": province_label,
-    }
-
-
-@app.get("/api/complaints-radar", tags=["Yapay Zeka Analiz"])
-async def complaints_radar_poll(city: Optional[str] = Query(None), db: AsyncSession = Depends(get_db)):
-    """Önbellekten taze şikâyet raporu (polling)."""
-    province_label = (city or "").strip() or "Türkiye Geneli"
-    province_key = _complaints_province_cache_key(province_label)
-
-    res = await db.execute(select(ComplaintsRadarCache).where(ComplaintsRadarCache.province_key == province_key))
-    row = res.scalar_one_or_none()
-    if row and _complaints_cache_row_fresh(row):
-        payload = row.payload_json or {}
-        return {
-            "success": True,
-            "cached": True,
-            "pending": False,
-            "province_label": row.province_label,
-            "analysis": payload.get("analysis", ""),
-        }
-
-    return {
-        "success": False,
-        "pending": True,
-        "province_label": province_label,
-        "message": "Önbellek henüz yok veya süresi doldu; tarama tamamlanınca tekrar deneyin.",
-    }
 
 
 # =======================================================
@@ -2049,6 +2093,18 @@ async def get_system_stats(db: AsyncSession = Depends(get_db)):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+@app.get("/api/system/task-status/{task_id}", tags=["Sistem"])
+async def get_task_status(task_id: str):
+    from celery.result import AsyncResult
+    from app.core.celery_app import celery_app
+    res = AsyncResult(task_id, app=celery_app)
+    payload = {"task_id": task_id, "status": res.status, "result": None, "traceback": None}
+    if res.ready():
+        payload["result"] = str(res.result)
+        if res.failed():
+            payload["traceback"] = str(res.traceback) if res.traceback else None
+    return payload
+
 @app.post("/api/system/trigger-pipeline", tags=["Sistem"], status_code=202)
 async def trigger_pipeline():
     """Yapay Zeka Etiketleme ve Fırsat Kartı Üretimini Tetikler."""
@@ -2069,22 +2125,27 @@ async def trigger_pipeline():
             synthesize_ai_opportunities.si(),
             publish_stream_update.si("Manual Trigger"),
         )
-        async_result = pipeline.apply_async(queue="default")
+        async_result = pipeline.apply_async()
+        # Celery 5: chain.apply_async sonucu zincirin SON görevinin AsyncResult id'sidir (poll ile tamamlanmayı doğru izler).
+        tail_id = async_result.id
 
         return {
             "success": True,
             "message": "Görev Alındı: AI analiz pipeline arka planda sırayla çalışacak.",
-            "task_id": async_result.id,
+            "task_id": tail_id,
+            "pipeline_tail_task_id": tail_id,
             "mode": "full_pipeline",
         }
     except Exception as e:
         logger.warning(f"Tam pipeline kuyruğa alınamadı ({e}); yalnızca etiketleme görevi deneniyor...")
         try:
             async_result = batch_analyze_contents.delay()
+            tid = async_result.id
             return {
                 "success": True,
                 "message": "Etiketleme görevi kuyruğa alındı (tam zincir şu an kullanılamadı).",
-                "task_id": async_result.id,
+                "task_id": tid,
+                "pipeline_tail_task_id": tid,
                 "mode": "labeling_only_fallback",
                 "warning": str(e),
             }
