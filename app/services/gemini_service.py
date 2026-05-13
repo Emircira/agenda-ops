@@ -42,17 +42,26 @@ class GeminiAIClient:
         Güçlendirilmiş analiz prompt'u (Toplu/Batch mimarisi).
         Tüm içerikleri tek tek değil, genel kitle psikolojisi olarak analiz eder.
         """
-        # Metni 500 karakterle sınırla (token tasarrufu)
         simplified = []
         for c in contents:
+            raw_t = str(c.get("text", "") or "")
+            is_reaction_pair = "[ANA PAYLAŞIM/HABER:" in raw_t and "[GELEN TEPKİ/YORUM:" in raw_t
+            cap = 1600 if is_reaction_pair else 500
             entry = {
                 "id": str(c["id"]),
-                "text": str(c.get("text", ""))[:500],
+                "text": raw_t[:cap],
                 "kaynak_tipi": str(c.get("source_category") or "general_agenda"),
+                "icerik_modu": "tepki_cifti" if is_reaction_pair else "tek_baslik",
             }
             simplified.append(entry)
 
         body = f"""GÖREV: Sana {len(simplified)} farklı gönderi veriyorum. Bunları tek tek değil, genel kitle psikolojisi olarak analiz et.
+
+ÖNEMLİ — TOPLUMSAL TEPKİ RADARI:
+- Verilerde "[ANA PAYLAŞIM/HABER: ...] -> [GELEN TEPKİ/YORUM: ...]" biçimi görebilirsin; bu, bir kullanıcının hangi ana gönderiye tepki verdiğini gösterir.
+- Bu formatta görevin yalnızca haberi özetlemek DEĞİL; ana odağın, halkın bu olaya verdiği TEPKİNİN (öfke, destek, protesto, alay, ironi) şiddeti, kutuplaşma düzeyi ve kitlesel kriz potansiyelidir.
+- "icerik_modu": "tepki_cifti" olan öğelerde özeti tepki dinamiğine göre yaz; "tek_baslik" olanlarda (ajans/kanal veya yalnız ana gönderi) kamu güvenliği, ekonomi, siyasi risk gibi stratejik önem ve çerçeveyi analiz et.
+
 Ortak bir kategori (Label) ve bu kitle hareketinin genel risk skorunu (Score) tek bir JSON nesnesi olarak dön.
 Kimlik veya yöntem belirtme; "summary" ve çerçeveleyici metinlerde yerli istihbarat brifingi üslubu kullan.
 
@@ -64,7 +73,7 @@ ZORUNLU JSON ŞEMASI (SADECE TEK BİR NESNE DÖN):
     "target": "Mesajın hedef aldığı kişi/kurum (yoksa 'Genel')",
     "risk_level": "low | medium | high | critical",
     "confidence": 0.0,
-    "summary": "Tek cümlelik stratejik kitle psikolojisi özeti",
+    "summary": "Tek cümlelik stratejik kitle psikolojisi özeti (tepki çiftiyse tepkiyi vurgula)",
     "sentiment": "Pozitif | Negatif | Nötr",
     "sentiment_score": 0.0,
     "manipulation_prob": 0.0,
@@ -81,7 +90,7 @@ KURALLAR:
 5. bot_likelihood: 0.0-1.0 arası bot/troll hesap ihtimali
 6. crisis_score: 0-100 arası kriz potansiyeli (0: yok, 100: acil kriz)
 7. sarcasm_detected: alaycı/iğneleyici dil varsa true
-8. Haber ajansı kaynaklı içeriklerde "rakip kampanyası" veya "ticari rakip" çerçevesinden kaçın; haber doğruluğu ve çerçeve üzerinden yorumla.
+8. Haber ajansı kaynaklı tekil içeriklerde "rakip kampanyası" veya "ticari rakip" çerçevesinden kaçın; haber doğruluğu ve çerçeve üzerinden yorumla.
 9. Hassas siyasi çerçeveler: summary ve çerçeve açıklamalarında üst direktifteki terminoloji filtresi ve stratejik raporlama diline uy.
 
 İÇERİKLER (Toplu olarak değerlendir):

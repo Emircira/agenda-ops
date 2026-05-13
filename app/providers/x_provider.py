@@ -84,6 +84,12 @@ class RapidXProvider(XProvider):
     _TIMELINE_PARENT_KEEP = 20
     _TIMELINE_REPLY_FETCH_BUDGET = 1
 
+    # Gündem / yüzeysel arama: düşük etkileşimli tweetleri ele (env ile sıkılaştırılabilir)
+    _TREND_MIN_LIKES = int(os.getenv("X_TREND_MIN_LIKES", "25"))
+    _TREND_MIN_RETWEETS = int(os.getenv("X_TREND_MIN_RETWEETS", "5"))
+    _TREND_MIN_REPLIES = int(os.getenv("X_TREND_MIN_REPLIES", "10"))
+    _TREND_MIN_COMPOSITE = int(os.getenv("X_TREND_MIN_COMPOSITE_SCORE", "40"))
+
     def __init__(self):
         self.api_key = os.getenv("RAPIDAPI_KEY") or os.getenv("RAPID_API_KEY")
         self.api_host = os.getenv("RAPIDAPI_HOST") or os.getenv("RAPID_API_HOST", "twitter-api45.p.rapidapi.com")
@@ -100,7 +106,41 @@ class RapidXProvider(XProvider):
 
     @staticmethod
     def _engagement_score(p: Dict[str, Any]) -> int:
-        return int(p.get("_likes", 0)) + int(p.get("_retweets", 0))
+        """Beğeni + RT ağırlığı + yanıt sayısı — viral sıralama ve baraj için."""
+        return (
+            int(p.get("_likes", 0))
+            + int(p.get("_retweets", 0)) * 2
+            + int(p.get("_replies", 0))
+        )
+
+    def _passes_trend_viral_bar(self, parsed: Dict[str, Any]) -> bool:
+        """Trend / gündem örneklemesinde yalnızca belirgin etkileşimli gönderiler."""
+        likes = int(parsed.get("_likes", 0) or 0)
+        rt = int(parsed.get("_retweets", 0) or 0)
+        rep = int(parsed.get("_replies", 0) or 0)
+        if likes >= self._TREND_MIN_LIKES:
+            return True
+        if rt >= self._TREND_MIN_RETWEETS:
+            return True
+        if rep >= self._TREND_MIN_REPLIES:
+            return True
+        return self._engagement_score(parsed) >= self._TREND_MIN_COMPOSITE
+
+    @staticmethod
+    def _clip_for_storage(text: str, max_len: int) -> str:
+        t = " ".join((text or "").split())
+        if len(t) <= max_len:
+            return t
+        return t[: max_len - 1].rstrip() + "…"
+
+    @classmethod
+    def format_reaction_context(cls, parent_text: str, reply_text: str) -> str:
+        """
+        DB + Gemini için tek metin: tepkinin hangi ana gönderiye olduğu kaybolmasın.
+        """
+        p = cls._clip_for_storage(parent_text, 1400)
+        r = cls._clip_for_storage(reply_text, 900)
+        return f"[ANA PAYLAŞIM/HABER: {p}] -> [GELEN TEPKİ/YORUM: {r}]"
 
     def _get_headers(self):
         return {
@@ -443,17 +483,25 @@ class RapidXProvider(XProvider):
                 params = {"query": kw, "search_type": attempt_type}
                 data = await self._api_request("search.php", params)
                 raw_tweets, _ = self._extract_tweets_from_response(data)
+                candidates: List[Dict[str, Any]] = []
                 for tweet in raw_tweets:
                     parsed = self._parse_tweet(tweet, keyword=kw, target_type="twitter_trend")
                     if not parsed:
+                        continue
+                    if not self._passes_trend_viral_bar(parsed):
                         continue
                     eid = parsed.get("external_id")
                     if not eid or eid in seen:
                         continue
                     seen.add(eid)
-                    out.append(parsed)
+                    candidates.append(parsed)
+                    if len(candidates) >= cap * 4:
+                        break
+                candidates.sort(key=self._engagement_score, reverse=True)
+                for parsed in candidates:
                     if len(out) >= cap:
                         break
+                    out.append(parsed)
                 if out:
                     break
 
@@ -488,7 +536,15 @@ class RapidXProvider(XProvider):
             # Hit sıralaması: Beğeni + Retweet'e göre
             replies.sort(key=lambda x: x.get("_likes", 0) + x.get("_retweets", 0), reverse=True)
 
-            return replies[: self.MAX_REPLY_COMMENTS]
+            min_re = max(0, int(os.getenv("X_REPLY_MIN_ENGAGEMENT", "1")))
+            filtered = []
+            for x in replies[: self.MAX_REPLY_COMMENTS * 3]:
+                eng = int(x.get("_likes", 0)) + int(x.get("_retweets", 0))
+                if eng >= min_re:
+                    filtered.append(x)
+                if len(filtered) >= self.MAX_REPLY_COMMENTS:
+                    break
+            return filtered[: self.MAX_REPLY_COMMENTS]
         except Exception as e:
             logger.error(f"RapidX fetch_tweet_replies hatası (tweet {tweet_id}): {e}")
             raise
@@ -627,14 +683,20 @@ class RapidXProvider(XProvider):
                     replies = await self.fetch_tweet_replies(parsed["external_id"])
                     if replies:
                         tweets_with_replies += 1
+                        parent_ctx = self._clip_for_storage(parsed.get("text") or "", 1600)
                         for r in replies:
-                            if r["external_id"] not in seen_ids:
-                                r["target_type"] = "twitter_reply"
-                                r["target_name"] = f"@{screen_name}"
-                                all_posts.append(r)
-                                seen_ids.add(r["external_id"])
+                            if r["external_id"] in seen_ids:
+                                continue
+                            reply_plain = (r.get("text") or "").strip()
+                            r["_reply_plain_text"] = reply_plain
+                            r["_parent_post_snippet"] = parent_ctx
+                            r["text"] = self.format_reaction_context(parent_ctx, reply_plain)
+                            r["target_type"] = "twitter_reply"
+                            r["target_name"] = f"@{screen_name}"
+                            all_posts.append(r)
+                            seen_ids.add(r["external_id"])
                         logger.info(
-                            f"  └── Tweet {parsed['external_id'][:12]}... → {len(replies)} yorum (max {self.MAX_REPLY_COMMENTS})"
+                            f"  └── Tweet {parsed['external_id'][:12]}... → {len(replies)} yorum (bağlam birleştirildi, max {self.MAX_REPLY_COMMENTS})"
                         )
                 except Exception as e:
                     logger.warning(f"  └── Tweet {parsed['external_id'][:12]}... yorum hatası: {e}")
