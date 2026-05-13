@@ -4,8 +4,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from app.db.session import get_db
 from app.models.core import Content
+from app.services.city_complaints_service import run_city_complaints_pipeline
 
 router = APIRouter()
+
+
+@router.get("/city-news/{city}")
+async def city_complaints_radar(city: str, db: AsyncSession = Depends(get_db)):
+    """İl bazlı şikâyet/kriz özeti — çoklu kaynak derlemesi ve özet önbelleği."""
+    return await run_city_complaints_pipeline(city, db)
+
 
 @router.get("/")
 async def get_analyzed_contents(db: AsyncSession = Depends(get_db)):

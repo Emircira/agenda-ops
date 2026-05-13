@@ -74,6 +74,10 @@ class YouTubeProvider:
                 return result
             except HttpError as e:
                 status = e.resp.status
+                if status == 403 and self._is_quota_error(e):
+                    logger.error(f"❌ YouTube API quota aşıldı [{context}], işlem iptal ediliyor (Retry atlandı).")
+                    raise YouTubeQuotaExceeded(f"YouTube kotası doldu [{context}]") from e
+                
                 if status in (403, 429):
                     wait = self.RATE_LIMIT_DELAY * (attempt + 1)
                     logger.warning(

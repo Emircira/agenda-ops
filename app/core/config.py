@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # Temel Ayarlar
-    PROJECT_NAME: str = "AgendaOps MVP"
+    PROJECT_NAME: str = "AgendaOps"
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = "secret"
     DEBUG: bool = True
