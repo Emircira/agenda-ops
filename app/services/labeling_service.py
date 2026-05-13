@@ -32,11 +32,18 @@ class LabelingService:
             raise
 
     def _llm_analysis(self, text: str, platform: str) -> dict:
+        is_rx = "[ANA PAYLAŞIM/HABER:" in text and "[GELEN TEPKİ/YORUM:" in text
+        tepki_bloku = """
+Veride "[ANA PAYLAŞIM/HABER: ...] -> [GELEN TEPKİ/YORUM: ...]" yapısı varsa:
+Görevin sadece ana haberi özetlemek değil; halkın bu olaya verdiği TEPKİNİN (öfke, destek, protesto, alay) şiddeti, kutuplaşma ve kriz potansiyelini ölçmektir.
+Yalnız ana gönderi (ajans/kanal) ise stratejik/kamu önemini (güvenlik, ekonomi vb.) değerlendir.
+"""
         prompt = with_karargah_osint_directive(f"""
         Aşağıdaki {platform} içeriğini bir siyasi istihbarat analisti ve OSINT uzmanı gibi incele ve SADECE JSON formatında dön.
+        {tepki_bloku if is_rx else ""}
         
         İÇERİK:
-        "{text[:1500]}"
+        "{text[:1800]}"
         
         JSON FORMATI:
         {{

@@ -1444,6 +1444,7 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
 
     RESEARCH_PROGRESS[keyword] = {"status": "X gönderileri ve reply threadleri 5x derinlikte taranıyor...", "percent": 65}
     try:
+        from app.providers.x_provider import RapidXProvider
         x_provider = get_x_provider()
         posts = await x_provider.fetch_keyword_posts(keyword, limit=DEEP_X_LIMIT)
         seen_ids = {p.get("external_id") for p in posts}
@@ -1457,8 +1458,13 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
                 await asyncio.sleep(getattr(x_provider, "API_DELAY", 3.0))
             replies = await x_provider.fetch_tweet_replies(post["external_id"])
             reply_threads += 1
+            parent_ctx = RapidXProvider._clip_for_storage(post.get("text") or "", 1600)
             for reply in replies:
                 if reply.get("external_id") not in seen_ids:
+                    reply_plain = (reply.get("text") or "").strip()
+                    reply["_reply_plain_text"] = reply_plain
+                    reply["_parent_post_snippet"] = parent_ctx
+                    reply["text"] = RapidXProvider.format_reaction_context(parent_ctx, reply_plain)
                     reply["target_type"] = "twitter_reply"
                     reply["target_name"] = keyword
                     posts.append(reply)

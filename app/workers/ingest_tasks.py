@@ -75,6 +75,12 @@ def _post_to_article(post: dict, source_id=None, domain="general") -> dict:
         },
         "account_metrics": post.get("_account_metrics") or {},
     }
+    if is_reply:
+        safe_json["parent_post_snippet"] = (post.get("_parent_post_snippet") or "")[:1600]
+        safe_json["reply_plain"] = (post.get("_reply_plain_text") or "")[:900]
+        safe_json["reaction_context"] = True
+        safe_json["text"] = post.get("text", "")[:2400]
+
     safe_json["bot_likelihood"] = calculate_twitter_bot_likelihood(safe_json)
     safe_json["bot_signals"] = twitter_bot_signal_summary(safe_json)
 
@@ -84,7 +90,7 @@ def _post_to_article(post: dict, source_id=None, domain="general") -> dict:
         "external_id": post.get("external_id"),
         "author_name": author,
         "published_at": _safe_parse_date(post.get("published_at")),
-        "text": post.get("text", ""),
+        "text": (post.get("text", "") or "")[:8000],
         "content_type": ContentType.reply if is_reply else ContentType.post,
         "url": f"https://twitter.com/x/status/{post.get('external_id')}",
         "domain": domain,
