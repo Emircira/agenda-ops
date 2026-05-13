@@ -19,6 +19,7 @@ celery_app = Celery(
 celery_app.conf.update(
     timezone="Europe/Istanbul",
     enable_utc=False,
+    task_default_queue="celery",
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
@@ -76,5 +77,4 @@ celery_app.autodiscover_tasks([
     "app.workers.ingest_tasks",
     "app.workers.labeling_tasks",
     "app.workers.scoring_tasks",
-    "app.workers.complaints_tasks",
 ])

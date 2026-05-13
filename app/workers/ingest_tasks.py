@@ -16,6 +16,7 @@ from app.providers.youtube_provider import YouTubeProvider, YouTubeQuotaExceeded
 from app.providers.x_provider import RapidXProvider
 from app.core.utils import (
     pre_filter_content,
+    is_retweet_like,
     extract_youtube_comments_as_articles,
     extract_youtube_video_stub_article,
     calculate_twitter_bot_likelihood,
@@ -499,62 +500,114 @@ def cleanup_old_content(days: int = 30):
 # =============================================================================
 # CELERY PIPELINE — Fetch → Clean/Triage → OSINT/Bot → AI → Stream
 # =============================================================================
-@celery_app.task(name="clean_and_triage_recent_content")
-def clean_and_triage_recent_content(source_name: str = "GENEL", limit: int = 50, window_hours: int = 6):
-    async def _task():
-        from datetime import timedelta
-        from app.models.core import ContentLabel
+@celery_app.task(
+    name="clean_and_triage_recent_content",
+    bind=True,
+    soft_time_limit=300,
+    time_limit=360,
+)
+def clean_and_triage_recent_content(self, source_name: str = "GENEL", limit: int = 50, window_hours: int = 6):
+    """Etiketsiz içeriklerden AI adayı seçer; Celery broker uyumu için JSON-safe list[dict] döner."""
+    try:
+        async def _task():
+            from datetime import timedelta
+            from app.models.core import ContentLabel
 
-        cutoff = datetime.utcnow() - timedelta(hours=window_hours)
-        async with AsyncSessionLocal() as db:
-            stmt = (
-                select(Content)
-                .outerjoin(ContentLabel, Content.id == ContentLabel.content_id)
-                .where(
-                    ContentLabel.content_id == None,
-                    Content.fetched_at >= cutoff,
+            eff_hours = 24 if source_name == "Manual Trigger" else window_hours
+            cutoff = datetime.utcnow() - timedelta(hours=eff_hours)
+            async with AsyncSessionLocal() as db:
+                stmt = (
+                    select(Content)
+                    .outerjoin(ContentLabel, Content.id == ContentLabel.content_id)
+                    .where(
+                        ContentLabel.content_id.is_(None),
+                        Content.fetched_at >= cutoff,
+                    )
                 )
-            )
-            res = await db.execute(stmt)
-            contents = res.scalars().all()
+                res = await db.execute(stmt)
+                contents = res.scalars().all()
 
-            for content in contents:
-                content.is_analyzed = True
+                for content in contents:
+                    content.is_analyzed = True
 
-            selected = select_ai_triage_candidates(contents, limit=limit)
-            selected_ids = {content.id for content in selected}
-            for content in contents:
-                if content.id in selected_ids:
-                    content.is_analyzed = False
+                if source_name == "Manual Trigger":
+                    relaxed = []
+                    for c in contents:
+                        txt = c.text or ""
+                        if pre_filter_content(txt) and not is_retweet_like(txt, c.raw_json):
+                            relaxed.append(c)
+                    relaxed.sort(key=lambda x: x.fetched_at or datetime.utcnow(), reverse=True)
+                    selected = relaxed[:limit]
+                else:
+                    selected = select_ai_triage_candidates(contents, limit=limit)
 
-            await db.commit()
-            logger.info(
-                f"🧹 TRIAGE [{source_name}]: {len(contents)} kayıt temizlendi, "
-                f"{len(selected)} kayıt AI analizine seçildi."
-            )
-            return {"source": source_name, "total": len(contents), "selected": len(selected)}
+                selected_ids = {content.id for content in selected}
+                for content in contents:
+                    if content.id in selected_ids:
+                        content.is_analyzed = False
 
-    return run_async(_task())
+                await db.commit()
+                logger.info(
+                    f"🧹 TRIAGE [{source_name}]: {len(contents)} kayıt tarandı, "
+                    f"{len(selected)} kayıt AI analizine seçildi (pencere={eff_hours}h)."
+                )
+                return [
+                    {
+                        "stage": "triage",
+                        "source": source_name,
+                        "total": len(contents),
+                        "selected": len(selected),
+                        "window_hours": eff_hours,
+                    }
+                ]
+
+        rows = run_async(_task())
+        return rows if isinstance(rows, list) else [{"stage": "triage", "payload": rows}]
+    except Exception as e:
+        logger.exception(f"TASK FAILED: {e}")
+        raise
 
 
-@celery_app.task(name="run_osint_bot_stage")
-def run_osint_bot_stage(triage_result=None):
-    logger.info(f"🛡️ OSINT/Bot aşaması tamamlandı: {triage_result}")
-    return triage_result or {}
+@celery_app.task(name="run_osint_bot_stage", bind=True, soft_time_limit=120, time_limit=150)
+def run_osint_bot_stage(self, triage_payload=None):
+    """Önceki aşamanın list[dict] çıktısını aynen iletir (zincir serileştirmesi için)."""
+    try:
+        logger.info(f"🛡️ OSINT/Bot aşaması tamamlandı: {triage_payload}")
+        if triage_payload is None:
+            return []
+        if isinstance(triage_payload, list):
+            return triage_payload
+        if isinstance(triage_payload, dict):
+            return [triage_payload]
+        return [{"stage": "osint", "note": "unexpected_payload", "raw_type": type(triage_payload).__name__}]
+    except Exception as e:
+        logger.exception(f"TASK FAILED: {e}")
+        raise
 
 
-@celery_app.task(name="synthesize_ai_opportunities")
-def synthesize_ai_opportunities():
-    from app.workers.scoring_tasks import build_opportunities
+@celery_app.task(name="synthesize_ai_opportunities", bind=True, soft_time_limit=600, time_limit=720)
+def synthesize_ai_opportunities(self):
+    try:
+        from app.workers.scoring_tasks import build_opportunities
 
-    logger.info("🎯 AI sentez aşaması: fırsat kartları üretiliyor.")
-    return build_opportunities()
+        logger.info("🎯 AI sentez aşaması: fırsat kartları üretiliyor.")
+        raw_result = build_opportunities()
+        if isinstance(raw_result, list):
+            return raw_result
+        return [{"stage": "synthesize", "result": raw_result}]
+    except Exception as e:
+        logger.exception(f"TASK FAILED: {e}")
+        raise
 
 
-@celery_app.task(name="publish_stream_update")
-def publish_stream_update(source_name: str = "GENEL"):
-    logger.info(f"📡 Stream update hazır: {source_name} verileri /api/stream/recent endpointinden alınabilir.")
-    return {"source": source_name, "stream": "/api/stream/recent"}
+@celery_app.task(name="publish_stream_update", bind=True, soft_time_limit=60, time_limit=90)
+def publish_stream_update(self, source_name: str = "GENEL"):
+    try:
+        logger.info(f"📡 Stream update hazır: {source_name} verileri /api/stream/recent endpointinden alınabilir.")
+        return [{"stage": "publish", "source": source_name, "stream": "/api/stream/recent"}]
+    except Exception as e:
+        logger.exception(f"TASK FAILED: {e}")
+        raise
 
 
 def _trigger_analysis_chain(source_name: str):
@@ -572,7 +625,8 @@ def _trigger_analysis_chain(source_name: str):
             synthesize_ai_opportunities.si(),
             publish_stream_update.si(source_name),
         )
-        pipeline.apply_async(countdown=5, queue="default")
+        # Worker docker-compose'ta -Q celery ile çalışıyor; "default" kuyruğu dinlenmiyor.
+        pipeline.apply_async(countdown=5)
         logger.info(f"✅ CHAIN: {source_name} → batch_analyze_contents görevi kuyruğa eklendi.")
     except Exception as e:
         logger.error(f"❌ CHAIN tetikleme hatası ({source_name}): {e}")

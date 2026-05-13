@@ -1,13 +1,11 @@
 import asyncio
-from datetime import datetime, timedelta
+from typing import Any, Dict, List
+
 from loguru import logger
-from sqlalchemy import select
-from collections import defaultdict
-from sqlalchemy import String
 from app.core.celery_app import celery_app
 from app.db.session import AsyncSessionLocal
-from app.models.core import ContentLabel, Opportunity, Content
 from app.services.scoring_service import ScoringService
+
 
 def run_async(coro):
     loop = asyncio.new_event_loop()
@@ -17,23 +15,30 @@ def run_async(coro):
     finally:
         loop.close()
 
-@celery_app.task(name="build_opportunities")
-def build_opportunities():
-    async def _task():
-        logger.info("🎯 Celery: Opportunity Score (Fırsat Kartları) Üretimi Başladı")
-        service = ScoringService()
-        
-        async with AsyncSessionLocal() as db:
-            try:
-                # Son 24 saatteki etiketlenmiş içerikleri al
-                time_threshold = datetime.utcnow() - timedelta(hours=24)
-                await service.generate_opportunities(db, window_hours=24)
-                logger.info("✅ Fırsat Kartları başarıyla üretildi.")
-                return "Opportunities Generated Successfully."
-            except Exception as e:
-                logger.error(f"Fırsat kartı üretim hatası: {e}")
-                return f"Error: {str(e)}"
 
+@celery_app.task(
+    name="build_opportunities",
+    bind=True,
+    soft_time_limit=600,
+    time_limit=720,
+)
+def build_opportunities(self) -> List[Dict[str, Any]]:
+    try:
+        async def _task() -> List[Dict[str, Any]]:
+            logger.info("🎯 Celery: Opportunity Score (Fırsat Kartları) Üretimi Başladı")
+            service = ScoringService()
 
+            async with AsyncSessionLocal() as db:
+                try:
+                    await service.generate_opportunities(db, window_hours=24)
+                    logger.info("✅ Fırsat Kartları başarıyla üretildi.")
+                    return [{"stage": "scoring", "ok": True, "message": "Opportunities Generated Successfully."}]
+                except Exception as e:
+                    logger.exception(f"TASK FAILED: {e}")
+                    return [{"stage": "scoring", "ok": False, "error": str(e)}]
 
-    return run_async(_task())
+        out = run_async(_task())
+        return out if isinstance(out, list) else [{"stage": "scoring", "payload": str(out)}]
+    except Exception as e:
+        logger.exception(f"TASK FAILED: {e}")
+        raise
