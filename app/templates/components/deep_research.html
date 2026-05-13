@@ -27,9 +27,9 @@
                 <p class="text-slate-500 text-sm animate-pulse">YouTube yorumları, X reply threadleri ve RSS arşivleri genişletilmiş limitlerle taranıyor...</p>
             </div>
 
-            <div id="deep-results" class="hidden flex flex-col min-h-0 max-h-[70vh] bg-slate-900/50 border border-primary/20 rounded-2xl relative">
+            <div id="deep-results" class="hidden flex flex-col min-h-0 max-h-[70vh] overflow-y-auto bg-slate-900/50 border border-primary/20 rounded-2xl relative">
                 <button type="button" onclick="document.getElementById('deep-results').classList.add('hidden')" class="absolute top-3 right-3 text-slate-500 hover:text-white transition-colors z-30 bg-slate-900/80 rounded p-1" aria-label="Kapat"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
-                <div id="deep-results-scroll" class="flex-1 min-h-0 max-h-[70vh] overflow-y-auto overflow-x-hidden custom-scrollbar p-6 pr-5 pb-8 pt-12 rounded-2xl">
+                <div id="deep-results-scroll" class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar p-6 pr-5 pb-8 pt-12 rounded-2xl">
                     <div class="flex items-center gap-4 mb-4 shrink-0">
                         <div class="w-10 h-10 bg-success/20 rounded-full flex items-center justify-center text-success"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></div>
                         <h4 class="text-white font-bold text-lg">Araştırma Sonuçları</h4>

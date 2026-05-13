@@ -2,6 +2,7 @@ import feedparser
 from bs4 import BeautifulSoup
 from datetime import datetime
 import time
+from urllib.parse import quote
 from loguru import logger
 
 
@@ -16,10 +17,41 @@ def _rss_alternate_feed_url(source_url: str) -> str | None:
 
 
 class RSSProvider:
-    """
-    RSS veri sağlayıcısı — limit kaldırıldı, tüm feed'i çeker.
-    Google News genelde 60-100+ haber döndürür; Derin Araştırma 5x tarama için 1000'e kadar entry okur.
-    """
+    """RSS kaynaklarından haber çekimi (feed başına yapılandırılabilir üst sınır)."""
+
+    @staticmethod
+    def google_news_city_complaints_url(city: str) -> str:
+        c = (city or "").strip()
+        if not c:
+            c = "Türkiye"
+        q = f'"{c}"+(şikayet+OR+protesto+OR+isyan+OR+tepki+OR+kesinti)'
+        return (
+            f"https://news.google.com/rss/search?q={quote(q, safe='')}"
+            f"&hl=tr&gl=TR&ceid=TR:tr"
+        )
+
+    async def fetch_google_news_city_complaints(self, city: str, max_items: int = 10) -> list[dict]:
+        url = self.google_news_city_complaints_url(city)
+        name = f"GoogleNews Şikayet:{(city or '').strip() or 'Türkiye'}"
+        items = await self.fetch_feed(url, name, max_items=max(1, min(int(max_items), 30)))
+        return items[:max_items]
+
+    @staticmethod
+    def google_news_city_news_url(city: str) -> str:
+        c = (city or "").strip()
+        if not c:
+            c = "Türkiye"
+        q = f'"{c}" son dakika haber'
+        return (
+            f"https://news.google.com/rss/search?q={quote(q, safe='')}"
+            f"&hl=tr&gl=TR&ceid=TR:tr"
+        )
+
+    async def fetch_google_news_city_news(self, city: str, max_items: int = 15) -> list[dict]:
+        url = self.google_news_city_news_url(city)
+        name = f"GoogleNews Son Dakika:{(city or '').strip() or 'Türkiye'}"
+        items = await self.fetch_feed(url, name, max_items=max(1, min(int(max_items), 30)))
+        return items[:max_items]
 
     def _clean_html(self, raw_html: str) -> str:
         """Haber metinlerindeki gereksiz HTML etiketlerini temizler."""

@@ -54,6 +54,11 @@ class XProvider(ABC):
         """Ajans/kanal hesabı — timeline + hit odaklı sınırlı yanıt derinliği."""
         pass
 
+    @abstractmethod
+    async def fetch_city_complaints_posts(self, city: str, limit: int = 15) -> List[Dict[str, Any]]:
+        """Tek kombineli X araması — şikâyet/kriz anahtarları (şehir + OR blok + min_faves emülasyonu)."""
+        pass
+
 
 class RapidXProvider(XProvider):
     """
@@ -74,10 +79,10 @@ class RapidXProvider(XProvider):
     # Maksimum deneme (5xx geçici RapidAPI/upstream kesintileri için birkaç tur)
     MAX_RETRIES = 5
     # API maliyeti: tek tweet başına en fazla bu kadar yanıt saklanır
-    MAX_REPLY_COMMENTS = 10
-    _TIMELINE_PARSE_CAP = 105
-    _TIMELINE_PARENT_KEEP = 60
-    _TIMELINE_REPLY_FETCH_BUDGET = 35
+    MAX_REPLY_COMMENTS = 5
+    _TIMELINE_PARSE_CAP = 20
+    _TIMELINE_PARENT_KEEP = 20
+    _TIMELINE_REPLY_FETCH_BUDGET = 1
 
     def __init__(self):
         self.api_key = os.getenv("RAPIDAPI_KEY") or os.getenv("RAPID_API_KEY")
@@ -503,6 +508,51 @@ class RapidXProvider(XProvider):
         logger.info(f"📰 RapidX ajans/kanal: @{screen_name} (hit odaklı timeline)...")
         return await self._fetch_timeline_hit_focused(screen_name, parent_target_type="twitter_agency")
 
+    async def fetch_city_complaints_posts(self, city: str, limit: int = 15) -> List[Dict[str, Any]]:
+        """
+        Şehir Radarı Son Dakika Haberleri - tek sorgu.
+        min_faves:20 barajı ile önemli gelişmeleri süzer.
+        """
+        city_clean = (city or "").strip()
+        if not city_clean:
+            return []
+
+        q = (
+            f'{city_clean} ("son dakika" OR "flaş" OR "önemli gelişme" OR "haber") '
+            f"min_faves:20"
+        )
+        cap = max(1, min(int(limit), 20))
+        logger.info(f"📡 RapidX Şehir Radarı: {q[:110]}...")
+
+        out: List[Dict[str, Any]] = []
+        seen: set = set()
+        attempt_types: List[str] = ["Top", "Latest"]
+
+        for i, attempt_type in enumerate(attempt_types):
+            if i > 0:
+                await asyncio.sleep(self.API_DELAY)
+            data = await self._api_request("search.php", {"query": q, "search_type": attempt_type})
+            raw_tweets, _ = self._extract_tweets_from_response(data)
+            for tweet in raw_tweets:
+                parsed = self._parse_tweet(tweet, keyword=city_clean, target_type="twitter_trend")
+                if not parsed:
+                    continue
+                if int(parsed.get("_likes", 0) or 0) < 10:
+                    continue
+                eid = parsed.get("external_id")
+                if not eid or eid in seen:
+                    continue
+                seen.add(eid)
+                out.append(parsed)
+                if len(out) >= cap:
+                    break
+            if out:
+                break
+
+        out.sort(key=self._engagement_score, reverse=True)
+        logger.info(f"✅ RapidX şikâyet kombosu: {len(out)} tweet")
+        return out[:cap]
+
     async def fetch_mentions(self, target: str) -> List[Dict[str, Any]]:
         """VIP/rakip hesap timeline + hit odaklı yanıtlar (tweet başına en fazla 10 yorum)."""
         screen_name = self._normalize_screen_name(target)
@@ -537,6 +587,11 @@ class RapidXProvider(XProvider):
                 )
                 if not parsed:
                     continue
+                    
+                # SNIPER STRATEGY: Enforce minimum 20 likes to prevent processing low quality tweets
+                if int(parsed.get("_likes", 0)) < 20:
+                    continue
+                    
                 if parsed["external_id"] in seen_ids:
                     continue
                 seen_ids.add(parsed["external_id"])
@@ -598,7 +653,7 @@ class RapidXProvider(XProvider):
     # ------------------------------------------------------------------ #
     #  ANAHTAR KELİME ARAMASI (GÜÇLENDİRİLMİŞ DEEPScan Pagination)
     # ------------------------------------------------------------------ #
-    async def fetch_keyword_posts(self, keyword: str, limit: int = 70) -> List[Dict[str, Any]]:
+    async def fetch_keyword_posts(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
         """
         Anahtar kelime araması — GÜÇLENDİRİLMİŞ CURSOR TABANLI SAYFALAMA.
         • min 50–100 içerik toplayana kadar sayfalama devam eder
@@ -606,6 +661,9 @@ class RapidXProvider(XProvider):
         • Ardışık boş sayfa koruması (2 boş sayfa → dur)
         • Her sayfa arasında rate-limit bekleme süresi
         """
+        if "min_faves:" not in keyword:
+            keyword = f"{keyword} min_faves:20"
+
         logger.info(f"🔎 RapidX: '{keyword}' DERİN araması başlatılıyor (hedef: {limit})...")
 
         all_posts = []

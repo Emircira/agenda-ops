@@ -1,5 +1,6 @@
 import asyncio
-import time
+from typing import Any, Dict, List
+
 from loguru import logger
 from sqlalchemy import select, and_
 
@@ -30,8 +31,10 @@ def run_async(coro):
     retry_backoff_max=300,
     max_retries=2,
     acks_late=True,
+    soft_time_limit=1200,
+    time_limit=1500,
 )
-def batch_analyze_contents(self):
+def batch_analyze_contents(self) -> List[Dict[str, Any]]:
     """
     Production-Ready AI Analiz Görevi.
     • is_analyzed=False olan içerikleri 50'lik batch'ler halinde çeker
@@ -39,146 +42,148 @@ def batch_analyze_contents(self):
     • Sonuçları ContentLabel tablosuna yazar + Content.is_analyzed=True günceller
     • Hata olan kayıtları atlar, diğerleri devam eder
     • Platform bazlı filtreleme (twitter, youtube_comment, rss, tümü)
+
+    Dönüş: broker uyumu için JSON-safe list[dict] (bir sonraki .si() zaten tüketmez).
     """
-    async def _task():
-        logger.info("=" * 60)
-        logger.info("🧠 Celery: Gemini AI Toplu Analiz BAŞLADI")
-        logger.info("=" * 60)
+    try:
+        async def _task() -> List[Dict[str, Any]]:
+            logger.info("=" * 60)
+            logger.info("🧠 Celery: Gemini AI Toplu Analiz BAŞLADI")
+            logger.info("=" * 60)
 
-        try:
-            ai_client = GeminiAIClient()
-        except Exception as e:
-            logger.error(f"❌ GeminiAIClient başlatılamadı: {e}")
-            return f"Error: GeminiAIClient init failed: {e}"
+            try:
+                ai_client = GeminiAIClient()
+            except Exception as e:
+                logger.error(f"❌ GeminiAIClient başlatılamadı: {e}")
+                return [{"stage": "labeling", "ok": False, "error": f"GeminiAIClient init failed: {e}"}]
 
-        if not ai_client.model:
-            logger.error("❌ Gemini modeli yüklenemedi, analiz atlanıyor.")
-            return "Error: Gemini model not available."
+            if not ai_client.model:
+                logger.error("❌ Gemini modeli yüklenemedi, analiz atlanıyor.")
+                return [{"stage": "labeling", "ok": False, "error": "Gemini model not available."}]
 
-        # DB boyutu = 50 (Gemini mini-batch=20, bu yüzden 50=2.5 API çağrısı)
-        DB_BATCH_SIZE = 50
-        total_analyzed = 0
-        total_failed = 0
-        total_skipped = 0
-        max_iterations = 1  # Triage sonrası tek çalışmada en fazla 50 içerik analiz edilir.
+            DB_BATCH_SIZE = 20
+            total_analyzed = 0
+            total_failed = 0
+            total_skipped = 0
+            max_iterations = 10
 
-        async with AsyncSessionLocal() as db:
-            for iteration in range(max_iterations):
-                # Analiz edilmemiş içerikleri çek (sıralı, en eski önce)
-                stmt = (
-                    select(Content, Source.source_category)
-                    .outerjoin(Source, Content.source_id == Source.id)
-                    .where(Content.is_analyzed == False)
-                    .order_by(Content.published_at.asc())
-                    .limit(DB_BATCH_SIZE)
-                )
-                res = await db.execute(stmt)
-                rows = res.all()
+            async with AsyncSessionLocal() as db:
+                for iteration in range(max_iterations):
+                    stmt = (
+                        select(Content, Source.source_category)
+                        .outerjoin(Source, Content.source_id == Source.id)
+                        .where(Content.is_analyzed == False)
+                        .order_by(Content.published_at.asc())
+                        .limit(DB_BATCH_SIZE)
+                    )
+                    res = await db.execute(stmt)
+                    rows = res.all()
 
-                if not rows:
-                    logger.info(f"📭 Analiz edilecek içerik kalmadı (iterasyon {iteration + 1}).")
-                    break
+                    if not rows:
+                        logger.info(f"📭 Analiz edilecek içerik kalmadı (iterasyon {iteration + 1}).")
+                        break
 
-                contents = [r[0] for r in rows]
-                src_cats = [r[1] for r in rows]
+                    contents = [r[0] for r in rows]
+                    src_cats = [r[1] for r in rows]
 
-                logger.info(
-                    f"📦 İterasyon {iteration + 1}: {len(contents)} içerik analiz ediliyor... "
-                    f"(toplam şu ana kadar: {total_analyzed} başarılı, {total_failed} hatalı)"
-                )
+                    logger.info(
+                        f"📦 İterasyon {iteration + 1}: {len(contents)} içerik analiz ediliyor... "
+                        f"(toplam şu ana kadar: {total_analyzed} başarılı, {total_failed} hatalı)"
+                    )
 
-                # Gemini'ye gönderilecek veri
-                batch_data = []
-                for c, src_cat in zip(contents, src_cats):
-                    batch_data.append({
-                        "id": str(c.id),
-                        "text": c.text or "",
-                        "platform": c.platform or "unknown",
-                        "source_category": src_cat or "general_agenda",
-                    })
+                    batch_data = []
+                    for c, src_cat in zip(contents, src_cats):
+                        batch_data.append({
+                            "id": str(c.id),
+                            "text": c.text or "",
+                            "platform": c.platform or "unknown",
+                            "source_category": src_cat or "general_agenda",
+                        })
 
-                # Gemini AI analiz (mini-batch'ler halinde çalışır)
-                try:
-                    analysis_results = ai_client.analyze_batch(batch_data)
-                except Exception as e:
-                    logger.error(f"❌ Gemini batch analiz hatası: {e}")
-                    # Bu batch'i atla ama devam et
-                    # İçerikleri is_analyzed=True yap ki sonsuz döngüye girmesin
-                    for c in contents:
-                        c.is_analyzed = True
-                    await db.commit()
-                    total_skipped += len(contents)
-                    continue
+                    try:
+                        analysis_results = ai_client.analyze_batch(batch_data)
+                    except Exception as e:
+                        logger.error(f"❌ Gemini batch analiz hatası: {e}")
+                        for c in contents:
+                            c.is_analyzed = True
+                        await db.commit()
+                        total_skipped += len(contents)
+                        continue
 
-                # Sonuçları ID'ye göre indexle (hızlı eşleşme)
-                results_by_id = {}
-                for item in analysis_results:
-                    item_id = str(item.get("id", ""))
-                    if item_id:
-                        results_by_id[item_id] = item
+                    results_by_id = {}
+                    for item in analysis_results:
+                        item_id = str(item.get("id", ""))
+                        if item_id:
+                            results_by_id[item_id] = item
 
-                # Her içerik için sonuçları DB'ye yaz
-                for content in contents:
-                    content_id_str = str(content.id)
-                    match = results_by_id.get(content_id_str)
+                    for content in contents:
+                        content_id_str = str(content.id)
+                        match = results_by_id.get(content_id_str)
 
-                    if match:
-                        try:
-                            # ContentLabel oluştur veya güncelle (UPSERT benzeri)
-                            label = ContentLabel(
-                                content_id=content.id,
-                                topic=match.get("topic", "Genel"),
-                                frame=match.get("frame", "Genel"),
-                                stance=match.get("stance", "neutral"),
-                                target=match.get("target", "Bilinmiyor"),
-                                risk_level=match.get("risk_level", "low"),
-                                confidence=_safe_float(match.get("confidence"), 0.5),
-                                summary=match.get("summary", ""),
-                                sentiment_score=_safe_float(match.get("sentiment_score"), 0.0),
-                                manipulation_prob=_safe_float(match.get("manipulation_prob"), 0.0),
-                                bot_likelihood=_combined_bot_likelihood(match, content),
-                                sarcasm_detected=bool(match.get("sarcasm_detected", False)),
-                                crisis_score=_safe_int(match.get("crisis_score"), 0),
-                                sentiment=match.get("sentiment", "Nötr"),
-                            )
+                        if match:
+                            try:
+                                label = ContentLabel(
+                                    content_id=content.id,
+                                    topic=match.get("topic", "Genel"),
+                                    frame=match.get("frame", "Genel"),
+                                    stance=match.get("stance", "neutral"),
+                                    target=match.get("target", "Bilinmiyor"),
+                                    risk_level=match.get("risk_level", "low"),
+                                    confidence=_safe_float(match.get("confidence"), 0.5),
+                                    summary=match.get("summary", ""),
+                                    sentiment_score=_safe_float(match.get("sentiment_score"), 0.0),
+                                    manipulation_prob=_safe_float(match.get("manipulation_prob"), 0.0),
+                                    bot_likelihood=_combined_bot_likelihood(match, content),
+                                    sarcasm_detected=bool(match.get("sarcasm_detected", False)),
+                                    crisis_score=_safe_int(match.get("crisis_score"), 0),
+                                    sentiment=match.get("sentiment", "Nötr"),
+                                )
 
-                            # Merge: Mevcut label varsa güncelle, yoksa ekle
-                            await db.merge(label)
+                                await db.merge(label)
+                                content.is_analyzed = True
+                                total_analyzed += 1
+
+                            except Exception as e:
+                                logger.warning(f"⚠️ Label kayıt hatası (content {content_id_str[:8]}): {e}")
+                                content.is_analyzed = True
+                                total_failed += 1
+                        else:
+                            logger.debug(f"Gemini sonuç bulunamadı: {content_id_str[:8]}")
                             content.is_analyzed = True
-                            total_analyzed += 1
+                            total_skipped += 1
 
-                        except Exception as e:
-                            logger.warning(f"⚠️ Label kayıt hatası (content {content_id_str[:8]}): {e}")
-                            content.is_analyzed = True  # Sonsuz döngü engeli
-                            total_failed += 1
-                    else:
-                        # Gemini bu içerik için sonuç üretemedi
-                        logger.debug(f"Gemini sonuç bulunamadı: {content_id_str[:8]}")
-                        content.is_analyzed = True  # Tekrar denemeye gerek yok
-                        total_skipped += 1
+                    try:
+                        await db.commit()
+                    except Exception as e:
+                        logger.error(f"❌ DB commit hatası: {e}")
+                        await db.rollback()
+                        total_failed += len(contents)
 
-                # Her iterasyon sonunda commit
-                try:
-                    await db.commit()
-                except Exception as e:
-                    logger.error(f"❌ DB commit hatası: {e}")
-                    await db.rollback()
-                    total_failed += len(contents)
+                    if iteration < max_iterations - 1:
+                        await asyncio.sleep(3)
 
-                # İterasyonlar arası kısa bekleme (Gemini rate limit koruması)
-                if iteration < max_iterations - 1:
-                    await asyncio.sleep(3)
+            summary = (
+                f"🏁 AI Analiz Tamamlandı: "
+                f"{total_analyzed} başarılı, {total_failed} hatalı, {total_skipped} atlandı"
+            )
+            logger.info("=" * 60)
+            logger.info(summary)
+            logger.info("=" * 60)
+            return [
+                {
+                    "stage": "labeling",
+                    "summary": summary,
+                    "total_analyzed": total_analyzed,
+                    "total_failed": total_failed,
+                    "total_skipped": total_skipped,
+                }
+            ]
 
-        summary = (
-            f"🏁 AI Analiz Tamamlandı: "
-            f"{total_analyzed} başarılı, {total_failed} hatalı, {total_skipped} atlandı"
-        )
-        logger.info("=" * 60)
-        logger.info(summary)
-        logger.info("=" * 60)
-        return summary
-
-    return run_async(_task())
+        out = run_async(_task())
+        return out if isinstance(out, list) else [{"stage": "labeling", "payload": str(out)}]
+    except Exception as e:
+        logger.exception(f"TASK FAILED: {e}")
+        raise
 
 
 # =============================================================================
@@ -190,97 +195,103 @@ def batch_analyze_contents(self):
     autoretry_for=(Exception,),
     retry_backoff=30,
     max_retries=2,
+    soft_time_limit=900,
+    time_limit=1080,
 )
 def analyze_twitter_contents(self, fetch_result=None):
     """
     Sadece Twitter platformu için AI analizi.
     Celery chain'den fetch_result parametresi ile tetiklenebilir.
     """
-    async def _task():
-        logger.info(f"🐦 Twitter AI Analizi Başladı (tetikleyen: {fetch_result or 'manuel'})")
+    try:
+        async def _task():
+            logger.info(f"🐦 Twitter AI Analizi Başladı (tetikleyen: {fetch_result or 'manuel'})")
 
-        try:
-            ai_client = GeminiAIClient()
-        except Exception as e:
-            logger.error(f"GeminiAIClient başlatılamadı: {e}")
-            return f"Error: {e}"
+            try:
+                ai_client = GeminiAIClient()
+            except Exception as e:
+                logger.error(f"GeminiAIClient başlatılamadı: {e}")
+                return f"Error: {e}"
 
-        if not ai_client.model:
-            return "Error: Gemini model not available."
+            if not ai_client.model:
+                return "Error: Gemini model not available."
 
-        DB_BATCH_SIZE = 50
-        total_analyzed = 0
+            DB_BATCH_SIZE = 20
+            total_analyzed = 0
 
-        async with AsyncSessionLocal() as db:
-            for _ in range(5):  # Max 5 iterasyon (250 içerik)
-                stmt = (
-                    select(Content, Source.source_category)
-                    .outerjoin(Source, Content.source_id == Source.id)
-                    .where(
-                        and_(
-                            Content.is_analyzed == False,
-                            Content.platform == "twitter"
-                        )
-                    )
-                    .order_by(Content.published_at.asc())
-                    .limit(DB_BATCH_SIZE)
-                )
-                res = await db.execute(stmt)
-                rows = res.all()
-
-                if not rows:
-                    break
-
-                contents = [r[0] for r in rows]
-                src_cats = [r[1] for r in rows]
-
-                batch_data = [
-                    {
-                        "id": str(c.id),
-                        "text": c.text or "",
-                        "platform": c.platform or "unknown",
-                        "source_category": src_cat or "general_agenda",
-                    }
-                    for c, src_cat in zip(contents, src_cats)
-                ]
-                analysis_results = ai_client.analyze_batch(batch_data)
-
-                results_by_id = {str(item.get("id", "")): item for item in analysis_results}
-
-                for content in contents:
-                    match = results_by_id.get(str(content.id))
-                    if match:
-                        try:
-                            label = ContentLabel(
-                                content_id=content.id,
-                                topic=match.get("topic", "Genel"),
-                                frame=match.get("frame", "Genel"),
-                                stance=match.get("stance", "neutral"),
-                                target=match.get("target", "Bilinmiyor"),
-                                risk_level=match.get("risk_level", "low"),
-                                confidence=_safe_float(match.get("confidence"), 0.5),
-                                summary=match.get("summary", ""),
-                                sentiment_score=_safe_float(match.get("sentiment_score"), 0.0),
-                                manipulation_prob=_safe_float(match.get("manipulation_prob"), 0.0),
-                                bot_likelihood=_combined_bot_likelihood(match, content),
-                                sarcasm_detected=bool(match.get("sarcasm_detected", False)),
-                                crisis_score=_safe_int(match.get("crisis_score"), 0),
-                                sentiment=match.get("sentiment", "Nötr"),
+            async with AsyncSessionLocal() as db:
+                for _ in range(5):
+                    stmt = (
+                        select(Content, Source.source_category)
+                        .outerjoin(Source, Content.source_id == Source.id)
+                        .where(
+                            and_(
+                                Content.is_analyzed == False,
+                                Content.platform == "twitter"
                             )
-                            await db.merge(label)
-                            total_analyzed += 1
-                        except Exception as e:
-                            logger.warning(f"Label hatası: {e}")
-                    content.is_analyzed = True
+                        )
+                        .order_by(Content.published_at.asc())
+                        .limit(DB_BATCH_SIZE)
+                    )
+                    res = await db.execute(stmt)
+                    rows = res.all()
 
-                await db.commit()
-                await asyncio.sleep(3)
+                    if not rows:
+                        break
 
-        result = f"Twitter AI Analiz: {total_analyzed} içerik analiz edildi."
-        logger.info(f"✅ {result}")
-        return result
+                    contents = [r[0] for r in rows]
+                    src_cats = [r[1] for r in rows]
 
-    return run_async(_task())
+                    batch_data = [
+                        {
+                            "id": str(c.id),
+                            "text": c.text or "",
+                            "platform": c.platform or "unknown",
+                            "source_category": src_cat or "general_agenda",
+                        }
+                        for c, src_cat in zip(contents, src_cats)
+                    ]
+                    analysis_results = ai_client.analyze_batch(batch_data)
+
+                    results_by_id = {str(item.get("id", "")): item for item in analysis_results}
+
+                    for content in contents:
+                        match = results_by_id.get(str(content.id))
+                        if match:
+                            try:
+                                label = ContentLabel(
+                                    content_id=content.id,
+                                    topic=match.get("topic", "Genel"),
+                                    frame=match.get("frame", "Genel"),
+                                    stance=match.get("stance", "neutral"),
+                                    target=match.get("target", "Bilinmiyor"),
+                                    risk_level=match.get("risk_level", "low"),
+                                    confidence=_safe_float(match.get("confidence"), 0.5),
+                                    summary=match.get("summary", ""),
+                                    sentiment_score=_safe_float(match.get("sentiment_score"), 0.0),
+                                    manipulation_prob=_safe_float(match.get("manipulation_prob"), 0.0),
+                                    bot_likelihood=_combined_bot_likelihood(match, content),
+                                    sarcasm_detected=bool(match.get("sarcasm_detected", False)),
+                                    crisis_score=_safe_int(match.get("crisis_score"), 0),
+                                    sentiment=match.get("sentiment", "Nötr"),
+                                )
+                                await db.merge(label)
+                                total_analyzed += 1
+                            except Exception as e:
+                                logger.warning(f"Label hatası: {e}")
+                        content.is_analyzed = True
+
+                    await db.commit()
+                    await asyncio.sleep(3)
+
+            result = f"Twitter AI Analiz: {total_analyzed} içerik analiz edildi."
+            logger.info(f"✅ {result}")
+            return result
+
+        return run_async(_task())
+    except Exception as e:
+        logger.exception(f"TASK FAILED: {e}")
+        raise
 
 
 @celery_app.task(
@@ -289,97 +300,103 @@ def analyze_twitter_contents(self, fetch_result=None):
     autoretry_for=(Exception,),
     retry_backoff=30,
     max_retries=2,
+    soft_time_limit=900,
+    time_limit=1080,
 )
 def analyze_youtube_contents(self, fetch_result=None):
     """
     Sadece YouTube platformu için AI analizi.
     Celery chain'den fetch_result parametresi ile tetiklenebilir.
     """
-    async def _task():
-        logger.info(f"🎥 YouTube AI Analizi Başladı (tetikleyen: {fetch_result or 'manuel'})")
+    try:
+        async def _task():
+            logger.info(f"🎥 YouTube AI Analizi Başladı (tetikleyen: {fetch_result or 'manuel'})")
 
-        try:
-            ai_client = GeminiAIClient()
-        except Exception as e:
-            logger.error(f"GeminiAIClient başlatılamadı: {e}")
-            return f"Error: {e}"
+            try:
+                ai_client = GeminiAIClient()
+            except Exception as e:
+                logger.error(f"GeminiAIClient başlatılamadı: {e}")
+                return f"Error: {e}"
 
-        if not ai_client.model:
-            return "Error: Gemini model not available."
+            if not ai_client.model:
+                return "Error: Gemini model not available."
 
-        DB_BATCH_SIZE = 50
-        total_analyzed = 0
+            DB_BATCH_SIZE = 20
+            total_analyzed = 0
 
-        async with AsyncSessionLocal() as db:
-            for _ in range(5):
-                stmt = (
-                    select(Content, Source.source_category)
-                    .outerjoin(Source, Content.source_id == Source.id)
-                    .where(
-                        and_(
-                            Content.is_analyzed == False,
-                            Content.platform == "youtube_comment"
-                        )
-                    )
-                    .order_by(Content.published_at.asc())
-                    .limit(DB_BATCH_SIZE)
-                )
-                res = await db.execute(stmt)
-                rows = res.all()
-
-                if not rows:
-                    break
-
-                contents = [r[0] for r in rows]
-                src_cats = [r[1] for r in rows]
-
-                batch_data = [
-                    {
-                        "id": str(c.id),
-                        "text": c.text or "",
-                        "platform": c.platform or "unknown",
-                        "source_category": src_cat or "general_agenda",
-                    }
-                    for c, src_cat in zip(contents, src_cats)
-                ]
-                analysis_results = ai_client.analyze_batch(batch_data)
-
-                results_by_id = {str(item.get("id", "")): item for item in analysis_results}
-
-                for content in contents:
-                    match = results_by_id.get(str(content.id))
-                    if match:
-                        try:
-                            label = ContentLabel(
-                                content_id=content.id,
-                                topic=match.get("topic", "Genel"),
-                                frame=match.get("frame", "Genel"),
-                                stance=match.get("stance", "neutral"),
-                                target=match.get("target", "Bilinmiyor"),
-                                risk_level=match.get("risk_level", "low"),
-                                confidence=_safe_float(match.get("confidence"), 0.5),
-                                summary=match.get("summary", ""),
-                                sentiment_score=_safe_float(match.get("sentiment_score"), 0.0),
-                                manipulation_prob=_safe_float(match.get("manipulation_prob"), 0.0),
-                                bot_likelihood=_combined_bot_likelihood(match, content),
-                                sarcasm_detected=bool(match.get("sarcasm_detected", False)),
-                                crisis_score=_safe_int(match.get("crisis_score"), 0),
-                                sentiment=match.get("sentiment", "Nötr"),
+            async with AsyncSessionLocal() as db:
+                for _ in range(5):
+                    stmt = (
+                        select(Content, Source.source_category)
+                        .outerjoin(Source, Content.source_id == Source.id)
+                        .where(
+                            and_(
+                                Content.is_analyzed == False,
+                                Content.platform == "youtube_comment"
                             )
-                            await db.merge(label)
-                            total_analyzed += 1
-                        except Exception as e:
-                            logger.warning(f"Label hatası: {e}")
-                    content.is_analyzed = True
+                        )
+                        .order_by(Content.published_at.asc())
+                        .limit(DB_BATCH_SIZE)
+                    )
+                    res = await db.execute(stmt)
+                    rows = res.all()
 
-                await db.commit()
-                await asyncio.sleep(3)
+                    if not rows:
+                        break
 
-        result = f"YouTube AI Analiz: {total_analyzed} içerik analiz edildi."
-        logger.info(f"✅ {result}")
-        return result
+                    contents = [r[0] for r in rows]
+                    src_cats = [r[1] for r in rows]
 
-    return run_async(_task())
+                    batch_data = [
+                        {
+                            "id": str(c.id),
+                            "text": c.text or "",
+                            "platform": c.platform or "unknown",
+                            "source_category": src_cat or "general_agenda",
+                        }
+                        for c, src_cat in zip(contents, src_cats)
+                    ]
+                    analysis_results = ai_client.analyze_batch(batch_data)
+
+                    results_by_id = {str(item.get("id", "")): item for item in analysis_results}
+
+                    for content in contents:
+                        match = results_by_id.get(str(content.id))
+                        if match:
+                            try:
+                                label = ContentLabel(
+                                    content_id=content.id,
+                                    topic=match.get("topic", "Genel"),
+                                    frame=match.get("frame", "Genel"),
+                                    stance=match.get("stance", "neutral"),
+                                    target=match.get("target", "Bilinmiyor"),
+                                    risk_level=match.get("risk_level", "low"),
+                                    confidence=_safe_float(match.get("confidence"), 0.5),
+                                    summary=match.get("summary", ""),
+                                    sentiment_score=_safe_float(match.get("sentiment_score"), 0.0),
+                                    manipulation_prob=_safe_float(match.get("manipulation_prob"), 0.0),
+                                    bot_likelihood=_combined_bot_likelihood(match, content),
+                                    sarcasm_detected=bool(match.get("sarcasm_detected", False)),
+                                    crisis_score=_safe_int(match.get("crisis_score"), 0),
+                                    sentiment=match.get("sentiment", "Nötr"),
+                                )
+                                await db.merge(label)
+                                total_analyzed += 1
+                            except Exception as e:
+                                logger.warning(f"Label hatası: {e}")
+                        content.is_analyzed = True
+
+                    await db.commit()
+                    await asyncio.sleep(3)
+
+            result = f"YouTube AI Analiz: {total_analyzed} içerik analiz edildi."
+            logger.info(f"✅ {result}")
+            return result
+
+        return run_async(_task())
+    except Exception as e:
+        logger.exception(f"TASK FAILED: {e}")
+        raise
 
 
 # =============================================================================
