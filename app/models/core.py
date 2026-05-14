@@ -69,6 +69,12 @@ class Content(Base):
     domain = Column(String, default="general")  # politics, sports, economy, general
     raw_json = Column(JSONB) # Ham JSON verisi için
     is_analyzed = Column(Boolean, default=False, index=True)
+
+    labels = relationship(
+        "ContentLabel",
+        back_populates="content",
+        uselist=False,
+    )
     
     # OSINT: Devasa veri sorguları için optimizasyon
     __table_args__ = (
@@ -101,6 +107,8 @@ class ContentLabel(Base):
     risk_level = Column(String) # low/med/high
     confidence = Column(Float)
     summary = Column(String)
+    
+    content = relationship("Content", back_populates="labels")
     
     # OSINT: Yapay Zeka Destekli Anlam Analizi Eklemeleri
     sentiment_score = Column(Float, default=0.0) # -1.0 ile 1.0 arası

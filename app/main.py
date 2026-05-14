@@ -1351,17 +1351,33 @@ class DeepResearchRequest(BaseModel):
     keyword: str
 
 
-DEEP_RESEARCH_MULTIPLIER = 5
-# X hacmi taban değerler ~%30 düşürüldü (çekiş maliyeti / DB yükü)
-DEEP_X_LIMIT = int(round(100 * DEEP_RESEARCH_MULTIPLIER * 0.7))
-DEEP_X_REPLY_THREADS = int(round(5 * DEEP_RESEARCH_MULTIPLIER * 0.7))
-DEEP_RSS_MAX_ITEMS = 200 * DEEP_RESEARCH_MULTIPLIER
+DEEP_RESEARCH_MULTIPLIER = 8
+# Derin araştırma: Celery’den daha geniş hacim (maliyet RapidAPI / YouTube kotası ile sınırlı)
+DEEP_X_LIMIT = int(round(110 * DEEP_RESEARCH_MULTIPLIER * 0.9))
+DEEP_X_REPLY_THREADS = int(round(10 * DEEP_RESEARCH_MULTIPLIER * 0.85))
+DEEP_X_REPLIES_PER_THREAD = 12
+DEEP_RSS_MAX_ITEMS = 400
 DEEP_YOUTUBE_VIDEO_LIMIT = 100 * DEEP_RESEARCH_MULTIPLIER
 DEEP_YOUTUBE_COMMENT_LIMIT = 50 * DEEP_RESEARCH_MULTIPLIER
-DEEP_YOUTUBE_COMMENT_VIDEO_LIMIT = 10 * DEEP_RESEARCH_MULTIPLIER
+DEEP_YOUTUBE_COMMENT_VIDEO_LIMIT = min(12 * DEEP_RESEARCH_MULTIPLIER, 44)
 
-# Derin araştırma → Gemini promptunda kullanılacak temsili dilim (tam ham veri DB'de kalır)
-DEEP_RESEARCH_SAMPLE_LINES = {"rss": 40, "youtube": 50, "twitter": 50}
+DEEP_RESEARCH_SAMPLE_LINES = {"rss": 80, "youtube": 80, "twitter": 80}
+
+
+def _deep_rss_matches_keyword(text: str, keyword: str) -> bool:
+    """Kayıtlı RSS'lerde tam alt-dize yerine çok kelimeli / gevşek eşleşme (hacim korur)."""
+    t = (text or "").lower()
+    k = (keyword or "").strip().lower()
+    if not k:
+        return True
+    if k in t:
+        return True
+    parts = [p.strip(".,;:!?\"'()[]") for p in re.split(r"\s+", k) if len(p.strip(".,;:!?\"'()[]")) >= 2]
+    if not parts:
+        return True
+    hits = sum(1 for p in parts if p in t)
+    need = max(1, (len(parts) + 1) // 2)
+    return hits >= need
 
 
 def _deep_research_collect_sample(samples: dict[str, list[str]], bucket: str, text: str, prefix: str = "") -> None:
@@ -1376,7 +1392,7 @@ def _deep_research_collect_sample(samples: dict[str, list[str]], bucket: str, te
 
 @app.post("/api/deep-research", tags=["Veri Çekme"])
 async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get_db)):
-    """Anahtar kelime için YouTube, X ve RSS üzerinde 5x derin tarama yapar."""
+    """Anahtar kelime için YouTube, X ve RSS üzerinde geniş hacimli derin tarama yapar."""
     keyword = (req.keyword or "").strip()
     if not keyword:
         return {"success": False, "error": "Anahtar kelime zorunludur."}
@@ -1408,16 +1424,35 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
             skipped[bucket] += 1
             logger.warning(f"Deep Research kayıt hatası [{bucket}]: {e}")
 
-    RESEARCH_PROGRESS[keyword] = {"status": "RSS kaynakları 5x derinlikte taranıyor...", "percent": 10}
+    RESEARCH_PROGRESS[keyword] = {"status": "RSS kaynakları (geniş tarama) taranıyor...", "percent": 10}
 
     rss_provider = RSSProvider()
-    rss_sources = [{
-        "name": f"Google News Search: {keyword}",
-        "url": f"https://news.google.com/rss/search?q={quote_plus(keyword)}&hl=tr&gl=TR&ceid=TR:tr",
-        "id": None,
-        "domain": "general",
-        "filter": False,
-    }]
+    q_enc = quote_plus(keyword)
+    q_tr = quote_plus(keyword + " Türkiye")
+    q_exact = quote_plus(f'"{keyword}"')
+    rss_sources = [
+        {
+            "name": f"Google News Search: {keyword}",
+            "url": f"https://news.google.com/rss/search?q={q_enc}&hl=tr&gl=TR&ceid=TR:tr",
+            "id": None,
+            "domain": "general",
+            "filter": False,
+        },
+        {
+            "name": f"Google News (TR bağlam): {keyword}",
+            "url": f"https://news.google.com/rss/search?q={q_tr}&hl=tr&gl=TR&ceid=TR:tr",
+            "id": None,
+            "domain": "general",
+            "filter": False,
+        },
+        {
+            "name": f'Google News ("tam ifade"): {keyword}',
+            "url": f"https://news.google.com/rss/search?q={q_exact}&hl=tr&gl=TR&ceid=TR:tr",
+            "id": None,
+            "domain": "general",
+            "filter": False,
+        },
+    ]
     try:
         res = await db.execute(select(Source).where(Source.type == "rss", Source.active == True))
         for source in res.scalars().all():
@@ -1435,7 +1470,7 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
     for source in rss_sources:
         articles = await rss_provider.fetch_feed(source["url"], source["name"], max_items=DEEP_RSS_MAX_ITEMS)
         for article in articles:
-            if source["filter"] and keyword.lower() not in (article.get("text") or "").lower():
+            if source["filter"] and not _deep_rss_matches_keyword(article.get("text") or "", keyword):
                 continue
             article["source_id"] = source["id"]
             article["domain"] = source["domain"]
@@ -1443,7 +1478,7 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
             _deep_research_collect_sample(samples, "rss", article.get("text") or "", f"[{source['name']}] ")
             await insert_article(article, "rss")
 
-    RESEARCH_PROGRESS[keyword] = {"status": "YouTube videoları ve yorumları 5x derinlikte taranıyor...", "percent": 35}
+    RESEARCH_PROGRESS[keyword] = {"status": "YouTube videoları ve yorumları taranıyor...", "percent": 35}
     try:
         yt_provider = YouTubeProvider()
         videos = await yt_provider.fetch_keyword_videos(keyword, max_results=DEEP_YOUTUBE_VIDEO_LIMIT)
@@ -1464,11 +1499,11 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
     except Exception as e:
         errors.append(f"YouTube: {e}")
 
-    RESEARCH_PROGRESS[keyword] = {"status": "X gönderileri ve reply threadleri 5x derinlikte taranıyor...", "percent": 65}
+    RESEARCH_PROGRESS[keyword] = {"status": "X gönderileri ve yanıt iplikleri (araştırma modu) taranıyor...", "percent": 65}
     try:
         from app.providers.x_provider import RapidXProvider
         x_provider = get_x_provider()
-        posts = await x_provider.fetch_keyword_posts(keyword, limit=DEEP_X_LIMIT)
+        posts = await x_provider.fetch_keyword_posts(keyword, limit=DEEP_X_LIMIT, deep_research=True)
         seen_ids = {p.get("external_id") for p in posts}
         reply_threads = 0
         for post in list(posts):
@@ -1478,7 +1513,11 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
                 continue
             if reply_threads > 0:
                 await asyncio.sleep(getattr(x_provider, "API_DELAY", 3.0))
-            replies = await x_provider.fetch_tweet_replies(post["external_id"])
+            replies = await x_provider.fetch_tweet_replies(
+                post["external_id"],
+                apply_locale_filter=False,
+                max_return=DEEP_X_REPLIES_PER_THREAD,
+            )
             reply_threads += 1
             parent_ctx = RapidXProvider._clip_for_storage(post.get("text") or "", 1600)
             for reply in replies:
@@ -1588,7 +1627,7 @@ GÖREV: Bu dilime ve konuya dayanarak Türkiye bağlamında stratejik istihbarat
 
     return {
         "success": True,
-        "message": f"'{keyword}' için 5x derin araştırma tamamlandı.",
+        "message": f"'{keyword}' için derin araştırma tamamlandı.",
         "stats": stats,
         "added": added,
         "skipped": skipped,

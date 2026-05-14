@@ -23,3 +23,13 @@ def test_labeling_service_does_not_emit_deterministic_fallback(monkeypatch):
     service = LabelingService()
     with pytest.raises(RuntimeError, match="sahte"):
         service.analyze_content("enflasyon ve zam hakkında gerçek içerik", "twitter")
+
+
+def test_content_model_defines_labels_for_contents_api_joinedload():
+    """GET /api/v1/contents/ joinedload(Content.labels) — Content'ta ilişki yoksa AttributeError (500)."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import joinedload
+
+    from app.models.core import Content
+
+    select(Content).options(joinedload(Content.labels))

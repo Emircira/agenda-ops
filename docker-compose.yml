@@ -33,7 +33,10 @@ services:
   api:
     build: .
     restart: always
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # --reload kapalı: Windows + bind mount altında WatchFiles sık worker restart'ı
+    # → tarayıcıda ERR_EMPTY_RESPONSE / connection reset. Geliştirici reload için:
+    # docker compose run --rm -p 8000:8000 api uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     volumes:
       - .:/app
     ports:
