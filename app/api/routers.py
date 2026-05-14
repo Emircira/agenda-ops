@@ -51,7 +51,12 @@ async def run_ingestion():
 @router.get("/opportunities", response_model=List[OpportunityResponse])
 async def get_opportunities(limit: int = 10, db: AsyncSession = Depends(get_db)):
     """Siyasi hedefin önüne çıkacak en sıcak fırsat kartlarını getirir."""
-    result = await db.execute(select(Opportunity).order_by(desc(Opportunity.score)).limit(limit))
+    result = await db.execute(
+        select(Opportunity).order_by(
+            desc(Opportunity.created_at),
+            desc(Opportunity.score),
+        ).limit(limit)
+    )
     return result.scalars().all()
 
 @router.get("/contents/{id}", response_model=ContentResponse)
@@ -66,7 +71,12 @@ async def get_content(id: UUID, db: AsyncSession = Depends(get_db)):
 @router.get("/reports/daily")
 async def get_daily_report(db: AsyncSession = Depends(get_db)):
     """Günlük İstihbarat Briefing Raporu (Dashboard Uyumlu)"""
-    result = await db.execute(select(Opportunity).order_by(desc(Opportunity.score)).limit(3))
+    result = await db.execute(
+        select(Opportunity).order_by(
+            desc(Opportunity.created_at),
+            desc(Opportunity.score),
+        ).limit(3)
+    )
     top_opps = result.scalars().all()
     
     brief = [f"[Skor: {opp.score}] {opp.topic} -> Kriz/Çerçeve: {opp.frame}" for opp in top_opps]

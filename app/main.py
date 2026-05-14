@@ -190,7 +190,10 @@ def format_contents_by_domain(contents, max_chars=4000):
     groups = {}
     for c in contents:
         d = getattr(c, 'domain', 'general') or 'general'
-        groups.setdefault(d, []).append(f"[{c.platform.upper()}] @{c.author_name}: {c.text}")
+        pub = getattr(c, "published_at", None)
+        ts = pub.strftime("%Y-%m-%d %H:%M UTC") if pub else "tarih yok"
+        line = f"[{ts}][{c.platform.upper()}] @{c.author_name}: {c.text or ''}"
+        groups.setdefault(d, []).append(line)
     
     parts = []
     total = 0
@@ -406,7 +409,12 @@ async def dashboard(request: Request, window: int = 6, db: AsyncSession = Depend
         
         # Veritabanı sorguları
         c_res = await db.execute(select(Content).where(Content.published_at >= time_threshold).order_by(desc(Content.published_at)).limit(100))
-        o_res = await db.execute(select(Opportunity).order_by(desc(Opportunity.score)).limit(10))
+        o_res = await db.execute(
+            select(Opportunity).order_by(
+                desc(Opportunity.created_at),
+                desc(Opportunity.score),
+            ).limit(10)
+        )
         s_res = await db.execute(select(Source).order_by(desc(Source.id)))
         
         poll_query = select(Content).where(Content.platform == 'poll').order_by(desc(Content.published_at)).limit(1)
@@ -995,7 +1003,9 @@ Kaynak satırları (özet):
 
 # --- GÜNDEM ÖZETİ CACHE SİSTEMİ ---
 _hot_topics_cache = {"data": None, "timestamp": None}
-HOT_TOPICS_CACHE_TTL = timedelta(hours=6)
+HOT_TOPICS_CACHE_TTL = timedelta(
+    hours=float(os.getenv("HOT_TOPICS_CACHE_HOURS", "1"))
+)
 
 @app.get("/api/dashboard/hot-topics", tags=["Dashboard Verileri"])
 async def get_dashboard_hot_topics(refresh: bool = False, db: AsyncSession = Depends(get_db)):
@@ -1008,16 +1018,29 @@ async def get_dashboard_hot_topics(refresh: bool = False, db: AsyncSession = Dep
 
     try:
         time_threshold = now - timedelta(hours=24)
-        res = await db.execute(select(Content).where(Content.published_at >= time_threshold).limit(50))
+        res = await db.execute(
+            select(Content)
+            .where(Content.published_at >= time_threshold)
+            .order_by(desc(Content.published_at), desc(Content.fetched_at))
+            .limit(50)
+        )
         contents = res.scalars().all()
         
         if not contents:
             return {"status": "success", "topics": [], "alerts": ["Son 24 saatte veri bulunamadı."]}
 
         text_blob = format_contents_by_domain(contents)
+        as_of = now.strftime("%Y-%m-%d %H:%M UTC")
         prompt = f"""Aşağıdaki sosyal medya ve haber verilerini analiz ederek Türkiye gündemindeki en önemli 3 konuyu belirle.
         Her konu için: Başlık, Özet, Fırsat Skoru (0-100), Kriz Skoru (0-100), Aksiyon Tavsiyesi ve Hedef Kitle belirle.
         Ayrıca genel bir duygu analizi ve önemli uyarılar ekle.
+
+        ZAMAN BAĞLAMI (zorunlu):
+        - Analiz penceresi: son 24 saat; her veri satırı köşeli parantez içinde [YYYY-MM-DD HH:MM UTC] yayın zamanı ile başlar.
+        - Rapor üretim anı (UTC): {as_of}
+        - Bu pencerede geçmiş olaylara atıf yapan veya eski haberlerin yeniden dolaşmasını içeren metinler olabilir. Olayları "şu an oldu", "yeni gelişme" veya "gündeme yeni düştü" diye sunma; yalnızca bu 24 saatlik tartışmanın tonunu ve çerçevesini özetle.
+        - Başlık ve özet mümkünse bu penceredeki tartışmayı (yorum akışı, tepki, çerçeve) vurgulasın; satırlardaki zaman damgalarıyla çelişen güncel haber iddiasından kaçın.
+
         Yanıtı SADECE JSON formatında şu yapıda dön:
         {{
             "topics": [
