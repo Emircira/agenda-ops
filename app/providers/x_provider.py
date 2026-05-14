@@ -4,7 +4,7 @@ import asyncio
 import random
 import httpx
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 from datetime import datetime, timedelta
 from loguru import logger
 
@@ -31,7 +31,9 @@ class XProvider(ABC):
         pass
 
     @abstractmethod
-    async def fetch_keyword_posts(self, keyword: str, limit: int = 70) -> List[Dict[str, Any]]:
+    async def fetch_keyword_posts(
+        self, keyword: str, limit: int = 70, *, deep_research: bool = False
+    ) -> List[Dict[str, Any]]:
         pass
 
     @abstractmethod
@@ -42,7 +44,13 @@ class XProvider(ABC):
         pass
 
     @abstractmethod
-    async def fetch_tweet_replies(self, tweet_id: str) -> List[Dict[str, Any]]:
+    async def fetch_tweet_replies(
+        self,
+        tweet_id: str,
+        *,
+        apply_locale_filter: bool = True,
+        max_return: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """Bir tweet'in altındaki yorumları/yanıtları çeker."""
         pass
 
@@ -619,7 +627,13 @@ class RapidXProvider(XProvider):
     # ------------------------------------------------------------------ #
     #  TWEET YORUMLARI (Hit odaklı)
     # ------------------------------------------------------------------ #
-    async def fetch_tweet_replies(self, tweet_id: str) -> List[Dict[str, Any]]:
+    async def fetch_tweet_replies(
+        self,
+        tweet_id: str,
+        *,
+        apply_locale_filter: bool = True,
+        max_return: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """Bir tweet'in altındaki en etkili yorumları çeker."""
         try:
             data = await self._api_request("tweet_thread.php", {"id": str(tweet_id)})
@@ -642,18 +656,23 @@ class RapidXProvider(XProvider):
             replies.sort(key=lambda x: x.get("_likes", 0) + x.get("_retweets", 0), reverse=True)
 
             min_re = max(0, int(os.getenv("X_REPLY_MIN_ENGAGEMENT", "1")))
+            take_cap = max_return if max_return is not None else self.MAX_REPLY_COMMENTS
+            take_cap = max(1, min(int(take_cap), 20))
             filtered: List[Dict[str, Any]] = []
-            scan_cap = min(len(replies), max(self.MAX_REPLY_COMMENTS * 10, 50))
+            scan_cap = min(len(replies), max(take_cap * 12, self.MAX_REPLY_COMMENTS * 10, 50))
             for x in replies[:scan_cap]:
                 eng = int(x.get("_likes", 0)) + int(x.get("_retweets", 0))
                 if eng < min_re:
                     continue
-                if not self._tweet_text_passes_turkish_filter(x.get("text") or "", x.get("_api_lang")):
-                    continue
+                if apply_locale_filter:
+                    if not self._tweet_text_passes_turkish_filter(
+                        x.get("text") or "", x.get("_api_lang")
+                    ):
+                        continue
                 filtered.append(x)
-                if len(filtered) >= self.MAX_REPLY_COMMENTS:
+                if len(filtered) >= take_cap:
                     break
-            return filtered[: self.MAX_REPLY_COMMENTS]
+            return filtered[:take_cap]
         except Exception as e:
             logger.error(f"RapidX fetch_tweet_replies hatası (tweet {tweet_id}): {e}")
             raise
@@ -747,7 +766,7 @@ class RapidXProvider(XProvider):
 
             seven_days_ago = datetime.utcnow() - timedelta(days=7)
             parents: List[Dict[str, Any]] = []
-            seen_ids: set = set()
+            seen_ids: Set[str] = set()
 
             for tweet in raw_tweets[: self._TIMELINE_PARSE_CAP]:
                 parsed = self._parse_tweet(
@@ -830,42 +849,52 @@ class RapidXProvider(XProvider):
     # ------------------------------------------------------------------ #
     #  ANAHTAR KELİME ARAMASI (GÜÇLENDİRİLMİŞ DEEPScan Pagination)
     # ------------------------------------------------------------------ #
-    async def fetch_keyword_posts(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
+    async def fetch_keyword_posts(
+        self, keyword: str, limit: int = 20, *, deep_research: bool = False
+    ) -> List[Dict[str, Any]]:
         """
-        Anahtar kelime araması — GÜÇLENDİRİLMİŞ CURSOR TABANLI SAYFALAMA.
-        • min 50–100 içerik toplayana kadar sayfalama devam eder
-        • seen_ids ile her sayfada duplicate engellenir
-        • Ardışık boş sayfa koruması (2 boş sayfa → dur)
-        • Her sayfa arasında rate-limit bekleme süresi
+        Anahtar kelime araması — cursor sayfalama.
+        deep_research=True: min_faves yok, Türkçe süzgeç yok, daha çok sayfa ve 60 günlük pencere.
         """
-        if "min_faves:" not in keyword:
-            keyword = f"{keyword} min_faves:3"
+        q = (keyword or "").strip()
+        if not q:
+            return []
+        if deep_research:
+            query_arg = q if "min_faves:" in q else q
+        elif "min_faves:" not in q:
+            query_arg = f"{q} min_faves:3"
+        else:
+            query_arg = q
 
-        logger.info(f"🔎 RapidX: '{keyword}' DERİN araması başlatılıyor (hedef: {limit})...")
+        logger.info(
+            f"🔎 RapidX: '{query_arg[:160]}' araması (hedef: {limit}"
+            f"{' [derin araştırma]' if deep_research else ''})..."
+        )
 
-        all_posts = []
-        seen_ids = set()
+        all_posts: List[Dict[str, Any]] = []
+        seen_ids: Set[str] = set()
         cursor = None
-        # Daha fazla sayfa izni — API'den yeterli veri çekmek için
-        max_pages = max(limit // 10, 10)  # En az 10 sayfa
+        max_pages = max(limit // 10, 10)
+        if deep_research:
+            max_pages = min(max(limit // 5, 35), 48)
         pages_fetched = 0
-        empty_pages_streak = 0  # Ardışık boş sayfa sayacı
+        empty_pages_streak = 0
         search_type = "Latest"
 
         thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        horizon = datetime.utcnow() - timedelta(days=60) if deep_research else thirty_days_ago
 
         while pages_fetched < max_pages and len(all_posts) < limit:
             try:
-                params = {"query": keyword, "search_type": search_type}
+                params = {"query": query_arg, "search_type": search_type}
                 if cursor:
                     params["cursor"] = cursor
 
                 data = await self._api_request("search.php", params)
                 raw_tweets, next_cursor = self._extract_tweets_from_response(data)
 
-                # Latest boşsa aynı gerçek API üzerinde Top aramasına geç.
                 if not raw_tweets and pages_fetched == 0 and search_type == "Latest":
-                    logger.warning(f"RapidX: Latest boş, '{keyword}' için Top'a geçiliyor.")
+                    logger.warning(f"RapidX: Latest boş, '{q[:80]}' için Top'a geçiliyor.")
                     search_type = "Top"
                     await asyncio.sleep(self.API_DELAY)
                     continue
@@ -875,33 +904,29 @@ class RapidXProvider(XProvider):
                     logger.info(f"RapidX: Sayfa {pages_fetched + 1}'de veri kalmadı (ardışık boş: {empty_pages_streak}).")
                     if empty_pages_streak >= 2:
                         break
-                    # Cursor olsa bile veri yoksa devam et, cursor değişebilir
                     if next_cursor and next_cursor != cursor:
                         cursor = next_cursor
                         await asyncio.sleep(self.API_DELAY)
                         continue
                     break
 
-                # Boş sayfa sayacını sıfırla
                 empty_pages_streak = 0
 
                 new_in_page = 0
                 for tweet in raw_tweets:
-                    parsed = self._parse_tweet(tweet, keyword=keyword, target_type="twitter_trend")
+                    parsed = self._parse_tweet(tweet, keyword=q, target_type="twitter_trend")
                     if not parsed:
                         continue
-                    if not self._parsed_tweet_passes_turkish_filter(parsed):
+                    if not deep_research and not self._parsed_tweet_passes_turkish_filter(parsed):
                         continue
 
-                    # Duplicate kontrolü
                     if parsed["external_id"] in seen_ids:
                         continue
                     seen_ids.add(parsed["external_id"])
 
-                    # Tarih filtresi
                     try:
                         pub_date = datetime.fromisoformat(parsed["published_at"]).replace(tzinfo=None)
-                        if pub_date >= thirty_days_ago:
+                        if pub_date >= horizon:
                             all_posts.append(parsed)
                             new_in_page += 1
                     except Exception:
@@ -915,13 +940,11 @@ class RapidXProvider(XProvider):
                     f"toplam {len(all_posts)}/{limit}"
                 )
 
-                # Cursor kontrolü: Yeni cursor yoksa veya aynıysa dur
                 if not next_cursor or next_cursor == cursor:
                     logger.info(f"RapidX: Cursor yok veya değişmedi, sayfalama bitiyor.")
                     break
                 cursor = next_cursor
 
-                # ↓↓↓ SAYFALAR ARASI RATE-LIMIT BEKLEMESİ ↓↓↓
                 await asyncio.sleep(self.API_DELAY)
 
             except Exception as e:
@@ -931,10 +954,10 @@ class RapidXProvider(XProvider):
         all_posts.sort(key=self._engagement_score, reverse=True)
         if not all_posts:
             logger.warning(
-                f"X_Provider: '{keyword}' için API'ye gidildi ancak tweet bulunamadı veya dönen format tanınmadı."
+                f"X_Provider: '{q[:120]}' için API'ye gidildi ancak tweet bulunamadı veya dönen format tanınmadı."
             )
         logger.info(
-            f"✅ RapidX '{keyword}' DEEP-SCAN TAMAMLANDI: "
-            f"{len(all_posts)} tweet ({pages_fetched} sayfa tarandı, {len(seen_ids)} benzersiz ID)"
+            f"✅ RapidX '{q[:80]}' tarama bitti: "
+            f"{len(all_posts)} tweet ({pages_fetched} sayfa, {len(seen_ids)} benzersiz ID)"
         )
         return all_posts[:limit]
