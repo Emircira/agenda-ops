@@ -1,27 +1,24 @@
 import os
+import re
 import asyncio
 import random
 import httpx
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from loguru import logger
 
-
-def _x_agency_allowlist_screen_names() -> Optional[Set[str]]:
-    """
-    Opsiyonel: virgülle ayrılmış @handle veya handle listesi.
-    Boşsa tüm ajans kanallarına izin verilir.
-    """
-    raw = (os.getenv("X_AGENCY_FETCH_ALLOWLIST") or "").strip()
-    if not raw:
-        return None
-    out: Set[str] = set()
-    for part in raw.split(","):
-        sn = part.strip().replace("@", "").strip().lower()
-        if sn:
-            out.add(sn)
-    return out
+# X API dil kodu — yanıt süzgecinde açıkça Türkçe dışı kabul edilenler
+_X_REPLY_NON_TR_LANGS = frozenset({
+    "en", "es", "fr", "de", "it", "pt", "nl", "pl", "sv", "da", "no", "fi",
+    "ro", "cs", "sk", "hu", "el", "ru", "uk", "bg", "sr", "hr", "sl",
+    "ar", "fa", "he", "ur", "hi", "bn", "ta", "te", "ml", "id", "ms", "tl",
+    "vi", "th", "ja", "ko", "zh", "in", "iw",
+})
+_TR_REPLY_VERB_SUFFIX = re.compile(
+    r"(ıyor|iyor|uyor|üyor|mış|miş|muş|müş|yorum|yorsun|yordu|ecek|acak|ıldı|ildi|uldu|üldü|mıştır|miştir)(\b|[\s\.,:;!?\"')]|$)",
+    re.IGNORECASE,
+)
 
 
 class XProvider(ABC):
@@ -94,8 +91,111 @@ class RapidXProvider(XProvider):
         self.api_key = os.getenv("RAPIDAPI_KEY") or os.getenv("RAPID_API_KEY")
         self.api_host = os.getenv("RAPIDAPI_HOST") or os.getenv("RAPID_API_HOST", "twitter-api45.p.rapidapi.com")
         if not self.api_key:
+            logger.error(
+                "X_Provider: RAPIDAPI_KEY / RAPID_API_KEY ortam değişkeni tanımlı değil — "
+                "RapidAPI çağrıları yapılamaz."
+            )
             raise RuntimeError("RAPIDAPI_KEY/RAPID_API_KEY zorunludur; X verisi için mock fallback yoktur.")
+        key_hint = f"…{self.api_key[-4:]}" if len(self.api_key) > 4 else "(kısa anahtar)"
+        logger.warning(
+            f"X_Provider: RAPIDAPI_KEY yüklendi — host={self.api_host}, anahtar ucu={key_hint}. "
+            f"RapidAPI istekleri bu ana bilgilerle yapılacak."
+        )
         self.base_url = f"https://{self.api_host}"
+
+    @staticmethod
+    def _extract_api_lang(tweet_data: dict) -> Optional[str]:
+        if not isinstance(tweet_data, dict):
+            return None
+        for key in ("lang", "language", "locale"):
+            v = tweet_data.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip().lower()
+        legacy = tweet_data.get("legacy")
+        if isinstance(legacy, dict):
+            v = legacy.get("lang")
+            if isinstance(v, str) and v.strip():
+                return v.strip().lower()
+        return None
+
+    @staticmethod
+    def _turkish_locale_filter_active() -> bool:
+        """
+        X_TWITTER_TURKISH_ONLY öncelikli (tüm gönderi + yorum); yoksa X_REPLY_TURKISH_ONLY (varsayılan açık).
+        Kapatmak için: X_TWITTER_TURKISH_ONLY=0 veya X_REPLY_TURKISH_ONLY=0
+        """
+        explicit = (os.getenv("X_TWITTER_TURKISH_ONLY") or "").strip()
+        if explicit:
+            v = explicit.lower()
+            return v not in ("0", "false", "no", "off")
+        legacy = (os.getenv("X_REPLY_TURKISH_ONLY") or "1").strip().lower()
+        return legacy not in ("0", "false", "no", "off")
+
+    @staticmethod
+    def _tweet_text_passes_turkish_filter(text: str, api_lang: Optional[str]) -> bool:
+        """
+        Tweet/yorum metninde yabancı gürültüyü azaltır (API lang + heuristik).
+        X_TWITTER_TURKISH_ONLY veya X_REPLY_TURKISH_ONLY ile kapatılabilir (_turkish_locale_filter_active).
+        """
+        if not RapidXProvider._turkish_locale_filter_active():
+            return True
+        raw = (text or "").strip()
+        if not raw:
+            return False
+        lang = (api_lang or "").strip().lower()
+        if lang == "tr":
+            return True
+        if lang in _X_REPLY_NON_TR_LANGS:
+            return False
+        if re.search(r"[\u0400-\u04FF\u0600-\u06FF\u4e00-\u9fff\u0590-\u05FF\u0E00-\u0E7F]", raw):
+            return False
+        if re.search(r"[ğüşıöçĞÜŞİÖÇ]", raw):
+            return True
+        if _TR_REPLY_VERB_SUFFIX.search(raw):
+            return True
+        tl = f" {raw.lower()} "
+        tr_markers = (
+            " ve ", " bir ", " için ", " gibi ", " ama ", " daha ", " çok ", " son ",
+            " şu ", " bu ", " da ", " de ", " mi ", " mı ", " mü ", " mu ",
+            "dır", "dir ", "yor", "olan", " ki ", " hep ", " artık", "artik ",
+            " yahu", " ya ", " abi ", " hala ", " böyle", "boyle ", " şey ",
+            "icin ", " degil ", " değil ", " tamam", " evet", " hayır", "hayir ",
+            " yok ", " var ", " hem ", " bence", " sanki", " doğru", "dogru ",
+            " haklı", "hakli ", " yalan", " gerçek", "gercek ", " ulan ",
+        )
+        en_markers = (
+            " the ", " and ", " you ", " your ", " this ", " that ", " with ",
+            " have ", " what ", " just ", " like ", " from ", " about ", " when ",
+            " don't ", " cant ", "can't ", " does", " really ", " good ", " bad ",
+            " people ", " think ", " know ", " want ", " need ", " please ",
+        )
+        tr_n = sum(1 for m in tr_markers if m in tl)
+        en_n = sum(1 for m in en_markers if m in tl)
+        if en_n >= 2 and tr_n == 0:
+            return False
+        if tr_n >= 1:
+            return True
+        if re.match(r"^(lol|lmao|ok\.?|okay|thanks?|thx|ty|wow|nice|cool|yes|no|rip)\b", raw, re.I):
+            return False
+        return False
+
+    @staticmethod
+    def _parsed_tweet_passes_turkish_filter(parsed: Dict[str, Any]) -> bool:
+        """Ana gönderi veya yanıt dict'i için metin + dil süzgeci."""
+        if not RapidXProvider._turkish_locale_filter_active():
+            return True
+        text = (parsed.get("text") or "").strip()
+        if parsed.get("target_type") == "twitter_reply":
+            text = (parsed.get("_reply_plain_text") or text).strip()
+        if text.startswith("[ANA PAYLAŞIM") and "GELEN TEPKİ" in text:
+            marker = "[GELEN TEPKİ/YORUM:"
+            idx = text.find(marker)
+            if idx != -1:
+                inner = text[idx + len(marker) :].strip()
+                if inner.endswith("]"):
+                    inner = inner[:-1].strip()
+                text = inner
+        return RapidXProvider._tweet_text_passes_turkish_filter(text, parsed.get("_api_lang"))
 
     @staticmethod
     def _normalize_screen_name(target: str) -> str:
@@ -285,6 +385,8 @@ class RapidXProvider(XProvider):
             try: retweets = int(retweets)
             except: retweets = 0
 
+        api_lang = self._extract_api_lang(tweet_data)
+
         return {
             "external_id": str(tweet_id),
             "text": text,
@@ -296,6 +398,7 @@ class RapidXProvider(XProvider):
             "_retweets": int(retweets) if retweets else 0,
             "_replies": int(replies_count) if replies_count else 0,
             "_account_metrics": account_metrics,
+            "_api_lang": api_lang,
         }
 
     # ------------------------------------------------------------------ #
@@ -488,6 +591,8 @@ class RapidXProvider(XProvider):
                     parsed = self._parse_tweet(tweet, keyword=kw, target_type="twitter_trend")
                     if not parsed:
                         continue
+                    if not self._parsed_tweet_passes_turkish_filter(parsed):
+                        continue
                     if not self._passes_trend_viral_bar(parsed):
                         continue
                     eid = parsed.get("external_id")
@@ -537,11 +642,15 @@ class RapidXProvider(XProvider):
             replies.sort(key=lambda x: x.get("_likes", 0) + x.get("_retweets", 0), reverse=True)
 
             min_re = max(0, int(os.getenv("X_REPLY_MIN_ENGAGEMENT", "1")))
-            filtered = []
-            for x in replies[: self.MAX_REPLY_COMMENTS * 3]:
+            filtered: List[Dict[str, Any]] = []
+            scan_cap = min(len(replies), max(self.MAX_REPLY_COMMENTS * 10, 50))
+            for x in replies[:scan_cap]:
                 eng = int(x.get("_likes", 0)) + int(x.get("_retweets", 0))
-                if eng >= min_re:
-                    filtered.append(x)
+                if eng < min_re:
+                    continue
+                if not self._tweet_text_passes_turkish_filter(x.get("text") or "", x.get("_api_lang")):
+                    continue
+                filtered.append(x)
                 if len(filtered) >= self.MAX_REPLY_COMMENTS:
                     break
             return filtered[: self.MAX_REPLY_COMMENTS]
@@ -556,18 +665,14 @@ class RapidXProvider(XProvider):
             logger.warning(f"RapidX fetch_from_channel: boş kanal: {channel!r}")
             return []
 
-        allow = _x_agency_allowlist_screen_names()
-        if allow is not None and screen_name.lower() not in allow:
-            logger.warning(f"RapidX ajans kanalı izin listesinde değil, atlanıyor: @{screen_name}")
-            return []
-
+        # X_AGENCY_FETCH_ALLOWLIST: UI'dan eklenen tüm kanallar çekilsin diye allowlist kontrolü devre dışı.
         logger.info(f"📰 RapidX ajans/kanal: @{screen_name} (hit odaklı timeline)...")
         return await self._fetch_timeline_hit_focused(screen_name, parent_target_type="twitter_agency")
 
     async def fetch_city_complaints_posts(self, city: str, limit: int = 15) -> List[Dict[str, Any]]:
         """
         Şehir Radarı Son Dakika Haberleri - tek sorgu.
-        min_faves:20 barajı ile önemli gelişmeleri süzer.
+        Düşük min_faves ile daha fazla sonuç; beğeni sonrası filtresi yok.
         """
         city_clean = (city or "").strip()
         if not city_clean:
@@ -575,7 +680,7 @@ class RapidXProvider(XProvider):
 
         q = (
             f'{city_clean} ("son dakika" OR "flaş" OR "önemli gelişme" OR "haber") '
-            f"min_faves:20"
+            f"min_faves:2"
         )
         cap = max(1, min(int(limit), 20))
         logger.info(f"📡 RapidX Şehir Radarı: {q[:110]}...")
@@ -593,7 +698,7 @@ class RapidXProvider(XProvider):
                 parsed = self._parse_tweet(tweet, keyword=city_clean, target_type="twitter_trend")
                 if not parsed:
                     continue
-                if int(parsed.get("_likes", 0) or 0) < 10:
+                if not self._parsed_tweet_passes_turkish_filter(parsed):
                     continue
                 eid = parsed.get("external_id")
                 if not eid or eid in seen:
@@ -606,6 +711,10 @@ class RapidXProvider(XProvider):
                 break
 
         out.sort(key=self._engagement_score, reverse=True)
+        if not out:
+            logger.warning(
+                f"X_Provider: '{city_clean}' için API'ye gidildi ancak tweet bulunamadı veya dönen format tanınmadı."
+            )
         logger.info(f"✅ RapidX şikâyet kombosu: {len(out)} tweet")
         return out[:cap]
 
@@ -631,6 +740,9 @@ class RapidXProvider(XProvider):
             logger.info(f"RapidX @{screen_name}: Timeline'da {len(raw_tweets)} ham tweet bulundu.")
 
             if not raw_tweets:
+                logger.warning(
+                    f"X_Provider: '@{screen_name}' için API'ye gidildi ancak tweet bulunamadı veya dönen format tanınmadı."
+                )
                 return []
 
             seven_days_ago = datetime.utcnow() - timedelta(days=7)
@@ -643,11 +755,9 @@ class RapidXProvider(XProvider):
                 )
                 if not parsed:
                     continue
-                    
-                # SNIPER STRATEGY: Enforce minimum 20 likes to prevent processing low quality tweets
-                if int(parsed.get("_likes", 0)) < 20:
+                if not self._parsed_tweet_passes_turkish_filter(parsed):
                     continue
-                    
+
                 if parsed["external_id"] in seen_ids:
                     continue
                 seen_ids.add(parsed["external_id"])
@@ -658,6 +768,11 @@ class RapidXProvider(XProvider):
                 except Exception:
                     pass
                 parents.append(parsed)
+
+            if raw_tweets and not parents:
+                logger.warning(
+                    f"X_Provider: '@{screen_name}' için API'ye gidildi ancak tweet bulunamadı veya dönen format tanınmadı."
+                )
 
             parents.sort(key=self._engagement_score, reverse=True)
             parents = parents[: self._TIMELINE_PARENT_KEEP]
@@ -724,7 +839,7 @@ class RapidXProvider(XProvider):
         • Her sayfa arasında rate-limit bekleme süresi
         """
         if "min_faves:" not in keyword:
-            keyword = f"{keyword} min_faves:20"
+            keyword = f"{keyword} min_faves:3"
 
         logger.info(f"🔎 RapidX: '{keyword}' DERİN araması başlatılıyor (hedef: {limit})...")
 
@@ -775,6 +890,8 @@ class RapidXProvider(XProvider):
                     parsed = self._parse_tweet(tweet, keyword=keyword, target_type="twitter_trend")
                     if not parsed:
                         continue
+                    if not self._parsed_tweet_passes_turkish_filter(parsed):
+                        continue
 
                     # Duplicate kontrolü
                     if parsed["external_id"] in seen_ids:
@@ -812,6 +929,10 @@ class RapidXProvider(XProvider):
                 raise
 
         all_posts.sort(key=self._engagement_score, reverse=True)
+        if not all_posts:
+            logger.warning(
+                f"X_Provider: '{keyword}' için API'ye gidildi ancak tweet bulunamadı veya dönen format tanınmadı."
+            )
         logger.info(
             f"✅ RapidX '{keyword}' DEEP-SCAN TAMAMLANDI: "
             f"{len(all_posts)} tweet ({pages_fetched} sayfa tarandı, {len(seen_ids)} benzersiz ID)"
