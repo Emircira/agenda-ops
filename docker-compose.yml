@@ -46,6 +46,7 @@ services:
       redis:
         condition: service_healthy
 
+  # Periyodik X/RSS/YouTube çekimi için worker ile birlikte celery-beat gerekir (tam yığın: docker compose up).
   worker:
     build: .
     restart: always
@@ -68,11 +69,11 @@ services:
   celery-beat:
     build: .
     restart: always
-    command: >
-      celery -A app.core.celery_app beat
-      --loglevel=info
-      --pidfile=/tmp/celerybeat.pid
-      --schedule=/tmp/celerybeat-schedule
+    # --pidfile kaldırıldı: restart ile aynı katmanda stale pid dosyası Beat'i sürekli code 73 ile düşürüyordu.
+    command:
+      - sh
+      - -c
+      - rm -f /tmp/celerybeat.pid && exec celery -A app.core.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
     volumes:
       - .:/app
     env_file:

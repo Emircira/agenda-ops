@@ -248,6 +248,28 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"❌ Redis: BAĞLANTI HATASI (Sistem devam ediyor): {e}")
 
+    logger.info(
+        "Otomatik veri çekimi Celery Beat ile yapılır: "
+        "`docker compose up` ile api + worker + celery-beat birlikte çalışmalı; "
+        ".env içinde REDIS_URL konteynerde `redis://redis:6379/0` olmalı. "
+        "Tek seferlik X ingest için: CELERY_TRIGGER_X_ON_STARTUP=1 (API açılışında kuyruğa ekler)."
+    )
+    if os.getenv("CELERY_TRIGGER_X_ON_STARTUP", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        try:
+            from app.workers.ingest_tasks import ingest_x_all_sources
+
+            ingest_x_all_sources.delay()
+            logger.info("📤 ingest_x_all_sources Celery kuyruğuna alındı (CELERY_TRIGGER_X_ON_STARTUP).")
+        except Exception as e:
+            logger.warning(
+                f"Celery X ingest tetiklenemedi (worker/REDIS_URL çalışmıyor olabilir): {e}"
+            )
+
     # 3. AI (GEMINI) KONTROLÜ
     try:
         logger.info("📡 [4/4] Yapay Zeka (Gemini) yapılandırması kontrol ediliyor...")
