@@ -1,6 +1,6 @@
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from app.models.core import Content, ContentLabel, Opportunity
 
 class ScoringService:
@@ -106,6 +106,8 @@ class ScoringService:
 
     async def generate_opportunities(self, db, window_hours=24):
         """Etiketlenmiş içerikleri gruplar ve her grup için fırsat skoru hesaplayıp kaydeder."""
+        await db.execute(delete(Opportunity))
+        await db.flush()
         time_threshold = datetime.utcnow() - timedelta(hours=window_hours)
         
         # Etiketlenmiş içerikleri ve etiketlerini çek
