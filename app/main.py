@@ -15,18 +15,27 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, inspect, func
 from pydantic import BaseModel, Field
 from typing import Optional, List
 import google.generativeai as genai
 from app.services.gemini_service import GeminiAIClient
-from app.services.gemini_model import create_gemini_model
+from app.services.gemini_model import (
+    GEMINI_BLOCKED_PLAIN_MESSAGE,
+    create_gemini_model,
+    extract_gemini_response_text,
+    gemini_safety_settings_block_none,
+)
 from app.services.karargah_llm_directive import with_karargah_osint_directive
 
 # KARARGAH ANA MİMARİ İMPORTLARI
 from app.db.session import get_db, engine
 from app.models.core import Base, Opportunity, Content, Source
 from app.api.routers import router
+from app.repositories.content_repository import ContentRepository
+from app.repositories.target_repository import TargetRepository
+from app.repositories.opportunity_repository import OpportunityRepository
+from app.repositories.election_repository import ElectionRepository
+from app.repositories.entity_repository import EntityRepository
 
 # ÖZEL SEÇİM/DEMOGRAFİ MODELLERİN
 from app.models.core import (
@@ -309,8 +318,10 @@ app.add_middleware(
 app.include_router(router, prefix="/api/v1")
 
 from app.api.v1.endpoints import contents as contents_api
+from app.api.v1.endpoints import osint as osint_api
 
 app.include_router(contents_api.router, prefix="/api/v1/contents", tags=["İçerikler"])
+app.include_router(osint_api.router, prefix="/api/v1/osint", tags=["OSINT"])
 templates = Jinja2Templates(directory="app/templates")
 
 def get_gemini_model():
@@ -327,8 +338,15 @@ async def gemini_generate_content(prompt: str):
     model = get_gemini_model()
     if not model:
         raise RuntimeError("Gemini API Key eksik; sahte analiz metni üretilemez.")
-    response = await model.generate_content_async(with_karargah_osint_directive(prompt))
-    return response.text
+    safety = gemini_safety_settings_block_none()
+    response = await model.generate_content_async(
+        with_karargah_osint_directive(prompt),
+        safety_settings=safety,
+    )
+    text = extract_gemini_response_text(response)
+    if text is None:
+        return GEMINI_BLOCKED_PLAIN_MESSAGE
+    return text
 
 # =======================================================
 # TEMEL ROTALAR VE DASHBOARD
@@ -350,9 +368,11 @@ async def zorla_tablo_olustur():
         ElectionRegionTrend,
         ElectionRegionArchive,
         ComplaintsRadarCache,
+        ContentEmbedding,
     )
 
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(ElectionResult.metadata.create_all)
         await conn.run_sync(RegionAnalysis.metadata.create_all)
@@ -407,19 +427,15 @@ async def dashboard(request: Request, window: int = 6, db: AsyncSession = Depend
     try:
         time_threshold = datetime.utcnow() - timedelta(hours=window)
         
-        # Veritabanı sorguları
-        c_res = await db.execute(select(Content).where(Content.published_at >= time_threshold).order_by(desc(Content.published_at)).limit(100))
-        o_res = await db.execute(
-            select(Opportunity).order_by(
-                desc(Opportunity.created_at),
-                desc(Opportunity.score),
-            ).limit(10)
-        )
-        s_res = await db.execute(select(Source).order_by(desc(Source.id)))
+        content_repo = ContentRepository(db)
+        opp_repo = OpportunityRepository(db)
+        target_repo = TargetRepository(db)
+
+        contents = await content_repo.list_published_since_order_desc(time_threshold, 100)
+        opportunities = await opp_repo.list_ordered_by_recency(10)
+        sources = await target_repo.list_all_order_desc_id()
         
-        poll_query = select(Content).where(Content.platform == 'poll').order_by(desc(Content.published_at)).limit(1)
-        poll_result = await db.execute(poll_query)
-        latest_poll = poll_result.scalar_one_or_none()
+        latest_poll = await content_repo.get_latest_poll_content()
         
         poll_json = "null"
         if latest_poll and latest_poll.raw_json:
@@ -436,8 +452,8 @@ async def dashboard(request: Request, window: int = 6, db: AsyncSession = Depend
             poll_json = json.dumps(poll_data)
 
         return templates.TemplateResponse("dashboard.html", {
-            "request": request, "contents": c_res.scalars().all(),
-            "opportunities": o_res.scalars().all(), "sources": s_res.scalars().all(), "poll_json": poll_json,
+            "request": request, "contents": contents,
+            "opportunities": opportunities, "sources": sources, "poll_json": poll_json,
             "tr_provinces": TR_PROVINCES_81,
         })
     except Exception as e:
@@ -490,9 +506,8 @@ async def create_source_direct(req: SourceCreateRequest, db: AsyncSession = Depe
             source_category=cat,
             active=True,
         )
-        db.add(new_source)
-        await db.commit()
-        await db.refresh(new_source)
+        target_repo = TargetRepository(db)
+        await target_repo.add_and_refresh(new_source)
         return {"success": True, "id": new_source.id, "message": f"'{req.name}' kaynağı başarıyla eklendi."}
     except Exception as e:
         await db.rollback()
@@ -502,18 +517,14 @@ async def create_source_direct(req: SourceCreateRequest, db: AsyncSession = Depe
 @app.delete("/api/sources/{source_id}", tags=["Kaynak Yönetimi"])
 async def delete_source_direct(source_id: int, db: AsyncSession = Depends(get_db)):
     """Kaynağı siler ve ilişkili içerikleri temizler."""
-    from sqlalchemy import delete
     try:
-        res = await db.execute(select(Source).where(Source.id == source_id))
-        source = res.scalar_one_or_none()
+        target_repo = TargetRepository(db)
+        source = await target_repo.get_by_id(source_id)
         if not source:
             return {"success": False, "error": "Kaynak bulunamadı."}
         
-        # Foreign Key kısıtlamasını aşmak için önce bu kaynağa ait içerikleri siliyoruz
-        await db.execute(delete(Content).where(Content.source_id == source_id))
-        
-        await db.delete(source)
-        await db.commit()
+        await target_repo.delete_source_cascade(source)
+        await target_repo.commit()
         return {"success": True, "message": "Kaynak ve ilişkili veriler silindi."}
     except Exception as e:
         await db.rollback()
@@ -526,15 +537,11 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
     try:
         if worker_name == 'rss':
             from app.providers.rss_provider import RSSProvider
-            from sqlalchemy.dialects.postgresql import insert as pg_insert
             
             provider = RSSProvider()
-            # Veritabanındaki aktif RSS kaynaklarını al
-            res = await db.execute(
-                select(Source.id, Source.name, Source.url, Source.domain)
-                .where(Source.type == 'rss', Source.active == True)
-            )
-            sources = [dict(row) for row in res.mappings().all()]
+            target_repo = TargetRepository(db)
+            content_repo = ContentRepository(db)
+            sources = await target_repo.list_active_rss_maps()
             
             # Gömülü (Default) Kaynaklar + DB Kaynakları
             all_sources = [{"name": "Google Haberler", "url": "https://news.google.com/rss?hl=tr&gl=TR&ceid=TR:tr", "id": None, "domain": "general"}]
@@ -553,10 +560,8 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                         article['source_id'] = s_info['id']
                         article['is_analyzed'] = True
                         try:
-                            stmt = pg_insert(Content).values(**article)
-                            stmt = stmt.on_conflict_do_nothing(index_elements=['external_id'])
-                            result = await db.execute(stmt)
-                            if result.rowcount > 0:
+                            rc = await content_repo.insert_one_ignore_conflict(article)
+                            if rc > 0:
                                 total_added += 1
                             else:
                                 total_skipped += 1
@@ -567,7 +572,7 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                     errors.append(f"{s_info['name']}: {str(src_err)}")
                     logger.error(f"RSS çekim hatası [{s_info['name']}]: {src_err}")
             
-            await db.commit()
+            await content_repo.commit()
             from app.workers.ingest_tasks import _trigger_analysis_chain
             _trigger_analysis_chain("RSS")
             msg = f"✅ {len(sources)} kaynak tarandı. {total_added} yeni içerik eklendi, {total_skipped} zaten mevcuttu."
@@ -578,14 +583,11 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
         
         elif worker_name == 'youtube':
             from app.providers.youtube_provider import YouTubeProvider, YouTubeQuotaExceeded
-            from sqlalchemy.dialects.postgresql import insert as pg_insert
             
             provider = YouTubeProvider()
-            res = await db.execute(
-                select(Source.id, Source.name, Source.url, Source.domain)
-                .where(Source.type == 'youtube', Source.active == True)
-            )
-            sources = [dict(row) for row in res.mappings().all()]
+            target_repo = TargetRepository(db)
+            content_repo = ContentRepository(db)
+            sources = await target_repo.list_active_youtube_maps()
             
             if not sources: return {"success": False, "error": "Hiç YouTube kaynağı tanımlı değil."}
             
@@ -613,33 +615,27 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
 
                         for article in articles:
                             article['is_analyzed'] = True
-                            stmt = pg_insert(Content).values(**article).on_conflict_do_nothing(index_elements=['external_id'])
-                            result = await db.execute(stmt)
-                            if result.rowcount > 0: total_added += 1
+                            rc = await content_repo.insert_one_ignore_conflict(article)
+                            if rc > 0: total_added += 1
                             else: total_skipped += 1
                 except Exception as e:
                     if isinstance(e, YouTubeQuotaExceeded):
                         logger.error(f"YouTube kotası doldu [{source_name}], diğer kaynaklara geçiliyor: {e}")
                         continue
                     logger.error(f"YouTube hatası [{source_name}]: {e}")
-            await db.commit()
+            await content_repo.commit()
             from app.workers.ingest_tasks import _trigger_analysis_chain
             _trigger_analysis_chain("YouTube")
             return {"success": True, "message": f"✅ {len(sources)} YouTube kaynağı tarandı. {total_added} içerik eklendi.", "added": total_added, "skipped": total_skipped}
         
         elif worker_name == 'twitter':
             from app.workers.ingest_tasks import get_x_provider, _post_to_article
-            from sqlalchemy.dialects.postgresql import insert as pg_insert
             import asyncio as _asyncio
             
             provider = get_x_provider()
-            res = await db.execute(
-                select(Source.id, Source.type, Source.name, Source.url, Source.domain).where(
-                    Source.type.in_(['twitter_self', 'twitter_competitor', 'twitter_trend', 'twitter_agency', 'x']),
-                    Source.active == True
-                )
-            )
-            sources = [dict(row) for row in res.mappings().all()]
+            target_repo = TargetRepository(db)
+            content_repo = ContentRepository(db)
+            sources = await target_repo.list_active_x_maps()
             
             total_added, total_skipped = 0, 0
             errors = []
@@ -667,9 +663,8 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                                 source_id=source_id, 
                                 domain=source_domain
                             )
-                            stmt = pg_insert(Content).values(**article).on_conflict_do_nothing(index_elements=['external_id'])
-                            result = await db.execute(stmt)
-                            if result.rowcount > 0: total_added += 1
+                            rc = await content_repo.insert_one_ignore_conflict(article)
+                            if rc > 0: total_added += 1
                             else: total_skipped += 1
                         except Exception as e:
                             total_skipped += 1
@@ -707,15 +702,14 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                     for post in all_posts:
                         try:
                             article = _post_to_article(post, source_id=None, domain="general")
-                            stmt = pg_insert(Content).values(**article).on_conflict_do_nothing(index_elements=['external_id'])
-                            result = await db.execute(stmt)
-                            if result.rowcount > 0: total_added += 1
+                            rc = await content_repo.insert_one_ignore_conflict(article)
+                            if rc > 0: total_added += 1
                         except Exception:
                             pass
                 except Exception as e:
                     logger.error(f"Gündem taraması hatası: {e}")
             
-            await db.commit()
+            await content_repo.commit()
             from app.workers.ingest_tasks import _trigger_analysis_chain
             _trigger_analysis_chain("Twitter")
             src_count = len(sources) if sources else 1
@@ -760,8 +754,9 @@ async def create_poll(req: PollCreateRequest, db: AsyncSession = Depends(get_db)
                 "dem": req.dem, "iyi": req.iyi, "yrp": req.yrp
             }
         )
-        db.add(poll_content)
-        await db.commit()
+        content_repo = ContentRepository(db)
+        await content_repo.add_content(poll_content)
+        await content_repo.commit()
         return {"success": True, "message": "Anket verisi kaydedildi."}
     except Exception as e:
         await db.rollback()
@@ -773,8 +768,8 @@ async def extract_polls_from_news(db: AsyncSession = Depends(get_db)):
     try:
         # Son 48 saatteki haberleri çek
         time_limit = datetime.utcnow() - timedelta(hours=48)
-        res = await db.execute(select(Content).where(Content.published_at >= time_limit, Content.platform == 'rss'))
-        contents = res.scalars().all()
+        content_repo = ContentRepository(db)
+        contents = await content_repo.list_rss_since(time_limit)
         
         if not contents:
             return {"success": False, "error": "Son 48 saatte haber bulunamadı."}
@@ -793,8 +788,13 @@ async def extract_polls_from_news(db: AsyncSession = Depends(get_db)):
         # JSON temizleme
         if "```json" in ai_response:
             ai_response = ai_response.split("```json")[1].split("```")[0].strip()
-            
-        data = json.loads(ai_response)
+
+        try:
+            data = json.loads(ai_response)
+        except json.JSONDecodeError:
+            if GEMINI_BLOCKED_PLAIN_MESSAGE in (ai_response or ""):
+                return {"success": True, "data": {"found": False}}
+            raise
         return {"success": True, "data": data}
     except Exception as e:
         logger.error(f"Poll extraction error: {e}")
@@ -818,25 +818,15 @@ async def twitter_bulk_analyze(req: BulkAnalysisRequest, db: AsyncSession = Depe
     X panelindeki «4'lü Rapor»: VIP / rakip / trend özeti + eylem planı (senkron Gemini).
     Celery etiketleme ile karıştırılmamalı — UI doğrudan JSON `analysis` bekler.
     """
-    from app.models.core import Content, Source
+    from app.models.core import Content
 
     raw_llm = ""
     try:
         window_h = max(1, min(int(req.window), 168))
         time_threshold = datetime.utcnow() - timedelta(hours=window_h)
 
-        query = (
-            select(Content, Source.type, Source.source_category)
-            .outerjoin(Source, Content.source_id == Source.id)
-            .where(
-                Content.platform.in_(["x", "twitter"]),
-                Content.published_at >= time_threshold,
-            )
-            .order_by(Content.published_at.desc())
-            .limit(500)
-        )
-        res = await db.execute(query)
-        rows = res.all()
+        content_repo = ContentRepository(db)
+        rows = await content_repo.fetch_x_contents_for_bulk_report(time_threshold, 500)
 
         cat_tr = {
             "competitor": "Rakip",
@@ -911,7 +901,18 @@ GÖREV: Türkçe «4'lü rapor» üret. Yanıt YALNIZCA tek bir geçerli JSON ne
         if i0 != -1 and i1 > i0:
             cleaned = cleaned[i0 : i1 + 1]
 
-        analysis_obj = json.loads(cleaned)
+        try:
+            analysis_obj = json.loads(cleaned)
+        except json.JSONDecodeError:
+            if GEMINI_BLOCKED_PLAIN_MESSAGE in (raw_llm or ""):
+                out = {
+                    "vip_summary": GEMINI_BLOCKED_PLAIN_MESSAGE,
+                    "competitor_summary": GEMINI_BLOCKED_PLAIN_MESSAGE,
+                    "trend_summary": GEMINI_BLOCKED_PLAIN_MESSAGE,
+                    "action_plan": GEMINI_BLOCKED_PLAIN_MESSAGE,
+                }
+                return {"success": True, "analysis": out}
+            raise
         out = {
             "vip_summary": "",
             "competitor_summary": "",
@@ -927,6 +928,14 @@ GÖREV: Türkçe «4'lü rapor» üret. Yanıt YALNIZCA tek bir geçerli JSON ne
     except json.JSONDecodeError as e:
         logger.error(f"twitter-bulk-analyze JSON çözümleme: {e}")
         preview = (raw_llm or "")[:900]
+        if GEMINI_BLOCKED_PLAIN_MESSAGE in (raw_llm or ""):
+            out = {
+                "vip_summary": GEMINI_BLOCKED_PLAIN_MESSAGE,
+                "competitor_summary": GEMINI_BLOCKED_PLAIN_MESSAGE,
+                "trend_summary": GEMINI_BLOCKED_PLAIN_MESSAGE,
+                "action_plan": GEMINI_BLOCKED_PLAIN_MESSAGE,
+            }
+            return {"success": True, "analysis": out}
         return {
             "success": False,
             "error": "Yapay zeka yanıtı JSON olarak çözümlenemedi; tekrar deneyin.",
@@ -1018,13 +1027,8 @@ async def get_dashboard_hot_topics(refresh: bool = False, db: AsyncSession = Dep
 
     try:
         time_threshold = now - timedelta(hours=24)
-        res = await db.execute(
-            select(Content)
-            .where(Content.published_at >= time_threshold)
-            .order_by(desc(Content.published_at), desc(Content.fetched_at))
-            .limit(50)
-        )
-        contents = res.scalars().all()
+        content_repo = ContentRepository(db)
+        contents = await content_repo.list_hot_topics_candidates(time_threshold, 50)
         
         if not contents:
             return {"status": "success", "topics": [], "alerts": ["Son 24 saatte veri bulunamadı."]}
@@ -1057,8 +1061,21 @@ async def get_dashboard_hot_topics(refresh: bool = False, db: AsyncSession = Dep
         ai_response = await gemini_generate_content(prompt)
         if "```json" in ai_response:
             ai_response = ai_response.split("```json")[1].split("```")[0].strip()
-        
-        data = json.loads(ai_response)
+
+        try:
+            data = json.loads(ai_response)
+        except json.JSONDecodeError:
+            if GEMINI_BLOCKED_PLAIN_MESSAGE in (ai_response or ""):
+                data = {
+                    "topics": [],
+                    "competitor_sentiment": {
+                        "leader": {"positive": 0, "negative": 0},
+                        "competitor": {"positive": 0, "negative": 0},
+                    },
+                    "alerts": [GEMINI_BLOCKED_PLAIN_MESSAGE],
+                }
+            else:
+                raise
         _hot_topics_cache = {"data": data, "timestamp": now}
         return {**data, "cached": False}
     except Exception as e:
@@ -1074,18 +1091,9 @@ async def get_dashboard_hot_topics(refresh: bool = False, db: AsyncSession = Dep
 async def triple_compare_analysis(db: AsyncSession = Depends(get_db)):
     """X (Twitter) için Kendi Hesabımız, Rakip ve Gündem karşılaştırmalı analizi yapar."""
     try:
-        from app.models.core import Content, Source
-        # Son 24 saatteki X içeriklerini kaynak tiplerine göre çek
         time_threshold = datetime.utcnow() - timedelta(hours=24)
-        
-        query = select(Content, Source.type, Source.source_category).join(
-            Source, Content.source_id == Source.id
-        ).where(
-            Content.platform.in_(["x", "twitter"]),
-            Content.published_at >= time_threshold,
-        )
-        res = await db.execute(query)
-        rows = res.all()
+        content_repo = ContentRepository(db)
+        rows = await content_repo.fetch_triple_compare_rows(time_threshold)
 
         cat_tr = {
             "competitor": "Rakip",
@@ -1155,8 +1163,8 @@ async def discourse_analyze(db: AsyncSession = Depends(get_db)):
     """Demografik ve ideolojik söylem analizi (UI: secular / conservative / genz yapısı)."""
     try:
         time_threshold = datetime.utcnow() - timedelta(hours=48)
-        res = await db.execute(select(Content).where(Content.published_at >= time_threshold).limit(100))
-        contents = res.scalars().all()
+        content_repo = ContentRepository(db)
+        contents = await content_repo.list_published_since_limit(time_threshold, 100)
 
         if not contents:
             return {
@@ -1191,7 +1199,17 @@ Yanıtı YALNIZCA geçerli JSON olarak ver (başka metin, markdown code fence yo
         brace = re.search(r"\{[\s\S]*\}", cleaned)
         if brace:
             cleaned = brace.group(0)
-        analysis_obj = json.loads(cleaned)
+        try:
+            analysis_obj = json.loads(cleaned)
+        except json.JSONDecodeError:
+            if GEMINI_BLOCKED_PLAIN_MESSAGE in (raw or ""):
+                analysis_obj = {
+                    "secular": {"emotion": "Bilinmiyor", "summary": GEMINI_BLOCKED_PLAIN_MESSAGE},
+                    "conservative": {"emotion": "Bilinmiyor", "summary": GEMINI_BLOCKED_PLAIN_MESSAGE},
+                    "genz": {"emotion": "Bilinmiyor", "summary": GEMINI_BLOCKED_PLAIN_MESSAGE},
+                }
+            else:
+                raise
         for key in ("secular", "conservative", "genz"):
             if key not in analysis_obj or not isinstance(analysis_obj[key], dict):
                 raise ValueError(f"Eksik alan: {key}")
@@ -1199,7 +1217,7 @@ Yanıtı YALNIZCA geçerli JSON olarak ver (başka metin, markdown code fence yo
             analysis_obj[key].setdefault("summary", "")
         return {"success": True, "analysis": analysis_obj}
     except json.JSONDecodeError as e:
-        snippet = (locals().get("raw") or "")[:500]
+        snippet = (raw or "")[:500]
         logger.error(f"discourse_analyze JSON: {e}; raw snippet: {snippet}")
         return {"success": False, "error": "Yapay zeka yanıtı işlenemedi; lütfen tekrar deneyin."}
     except Exception as e:
@@ -1219,13 +1237,8 @@ async def platform_analyze(req: PlatformAnalyzeRequest, db: AsyncSession = Depen
         if not kw:
             return {"success": False, "error": "Anahtar kelime zorunludur."}
 
-        res = await db.execute(
-            select(Content).where(
-                Content.platform == req.platform_name,
-                Content.text.ilike(f"%{kw}%"),
-            ).limit(50)
-        )
-        contents = res.scalars().all()
+        content_repo = ContentRepository(db)
+        contents = await content_repo.search_platform_text_ilike(req.platform_name, f"%{kw}%", 50)
         fetched_rss = False
 
         if not contents and req.platform_name == "rss":
@@ -1275,16 +1288,9 @@ async def leader_comparison(db: AsyncSession = Depends(get_db)):
 @app.get("/api/volume-stats", tags=["Dashboard Verileri"])
 async def volume_stats(db: AsyncSession = Depends(get_db)):
     try:
-        from sqlalchemy import func, cast, Integer, extract
         time_threshold = datetime.utcnow() - timedelta(hours=24)
-        res = await db.execute(
-            select(
-                Content.platform,
-                func.count(Content.id).label("cnt")
-            ).where(Content.published_at >= time_threshold)
-            .group_by(Content.platform)
-        )
-        rows = res.all()
+        content_repo = ContentRepository(db)
+        rows = await content_repo.count_by_platform_since(time_threshold)
         
         platform_counts = {}
         for row in rows:
@@ -1304,12 +1310,8 @@ async def volume_stats(db: AsyncSession = Depends(get_db)):
             slot_start = now - timedelta(hours=(i + 1) * 4)
             slot_labels.insert(0, slot_start.strftime("%H:%M"))
             
-            slot_res = await db.execute(
-                select(Content.platform, func.count(Content.id))
-                .where(Content.published_at >= slot_start, Content.published_at < slot_end)
-                .group_by(Content.platform)
-            )
-            slot_data = {r[0]: r[1] for r in slot_res.all()}
+            slot_res = await content_repo.count_by_platform_in_slot(slot_start, slot_end)
+            slot_data = {r[0]: r[1] for r in slot_res}
             hourly["twitter"].insert(0, slot_data.get("twitter", 0))
             hourly["youtube"].insert(0, slot_data.get("youtube", 0) + slot_data.get("youtube_comment", 0))
             hourly["rss"].insert(0, slot_data.get("rss", 0))
@@ -1355,14 +1357,10 @@ async def recent_content_stream(limit: int = 30, db: AsyncSession = Depends(get_
         ("youtube", ["youtube", "youtube_comment"]),
         ("rss", ["rss"]),
     ]
+    content_repo = ContentRepository(db)
     for key, plats in buckets:
-        res = await db.execute(
-            select(Content)
-            .where(Content.platform.in_(plats))
-            .order_by(desc(Content.fetched_at), desc(Content.published_at))
-            .limit(safe_limit)
-        )
-        grouped[key] = [row_payload(item) for item in res.scalars().all()]
+        items = await content_repo.list_by_platforms_order_fetched(plats, safe_limit)
+        grouped[key] = [row_payload(item) for item in items]
 
     return {"success": True, "streams": grouped}
 
@@ -1421,7 +1419,6 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
         return {"success": False, "error": "Anahtar kelime zorunludur."}
 
     from urllib.parse import quote_plus
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
     from app.providers.rss_provider import RSSProvider
     from app.providers.youtube_provider import YouTubeProvider, YouTubeQuotaExceeded
     from app.workers.ingest_tasks import get_x_provider, _post_to_article
@@ -1432,18 +1429,18 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
     errors = []
     samples: dict[str, list[str]] = {"rss": [], "youtube": [], "twitter": []}
 
+    content_repo = ContentRepository(db)
+
     async def insert_article(article: dict, bucket: str):
         article["is_analyzed"] = False
         try:
-            stmt = pg_insert(Content).values(**article).on_conflict_do_nothing(index_elements=["external_id"])
-            res = await db.execute(stmt)
-            await db.commit()
-            if res.rowcount > 0:
+            rc = await content_repo.insert_one_ignore_conflict_commit(article)
+            if rc > 0:
                 added[bucket] += 1
             else:
                 skipped[bucket] += 1
         except Exception as e:
-            await db.rollback()
+            await content_repo.rollback()
             skipped[bucket] += 1
             logger.warning(f"Deep Research kayıt hatası [{bucket}]: {e}")
 
@@ -1477,8 +1474,7 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
         },
     ]
     try:
-        res = await db.execute(select(Source).where(Source.type == "rss", Source.active == True))
-        for source in res.scalars().all():
+        for source in await content_repo.list_active_rss_sources():
             rss_sources.append({
                 "name": source.name,
                 "url": source.url,
@@ -1487,7 +1483,7 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
                 "filter": True,
             })
     except Exception as e:
-        await db.rollback()
+        await content_repo.rollback()
         errors.append(f"RSS kaynak listesi: {e}")
 
     for source in rss_sources:
@@ -1563,9 +1559,9 @@ async def deep_research(req: DeepResearchRequest, db: AsyncSession = Depends(get
         errors.append(f"X/Twitter: {e}")
 
     try:
-        await db.commit()
+        await content_repo.commit()
     except Exception as e:
-        await db.rollback()
+        await content_repo.rollback()
         errors.append(f"DB commit: {e}")
 
     try:
@@ -1684,18 +1680,14 @@ async def get_districts(province: str, db: AsyncSession = Depends(get_db)):
         if districts:
             return {"districts": sorted(list(set(districts)))}
 
-        res = await db.execute(
-            select(DistrictDemographics).where(
-                DistrictDemographics.province == province
-            )
-        )
-        db_districts = res.scalars().all()
+        election_repo = ElectionRepository(db)
+        db_districts = await election_repo.list_districts_by_province(province)
         fallback = [d.district for d in db_districts if hasattr(d, "district") and d.district]
         if not fallback:
-            res2 = await db.execute(select(DistrictDemographics))
+            all_dd = await election_repo.list_all_district_demographics()
             fallback = [
                 d.district
-                for d in res2.scalars().all()
+                for d in all_dd
                 if d.district and normalize_tr(d.province) == pn
             ]
         return {"districts": sorted(list(set(fallback)))}
@@ -1730,6 +1722,7 @@ async def analyze_election(province: str, election_type: str, district: str = ""
         dist_key = (district or "").strip()
         demo_ctx = load_city_district_json_context(province, dist_key)
         wiki_ref: Optional[str] = None
+        election_repo = ElectionRepository(db)
 
         def collect_election_rows(all_rows: list) -> list:
             """İl geneli: önce district 'siz il satırı; yoksa tüm ilçeler (il toplamı). İlçe: eşleşen ilçe, yoksa il geneli."""
@@ -1761,8 +1754,7 @@ async def analyze_election(province: str, election_type: str, district: str = ""
             # YSK çoğunlukla ilçe bazlı: il geneli için tüm ilçeleri birlikte kullan
             return [r for r in all_rows if normalize_tr(r.province) == pn]
 
-        res = await db.execute(select(ElectionResult).where(ElectionResult.election_type == category))
-        all_of_type = res.scalars().all()
+        all_of_type = await election_repo.list_election_results_by_type(category)
         election_rows = _drop_winner_placeholder_rows(collect_election_rows(all_of_type), province)
 
         try_wiki = not election_rows or _needs_party_vote_distribution(election_rows)
@@ -1772,33 +1764,27 @@ async def analyze_election(province: str, election_type: str, district: str = ""
             )
             if wiki_rows and wiki_year:
                 wy = int(wiki_year)
-                ex = await db.execute(
-                    select(ElectionResult).where(
-                        ElectionResult.election_type == category,
-                        ElectionResult.election_year == wy,
-                        ElectionResult.source_json_file.ilike("wikipedia%"),
-                    )
-                )
-                existing_wiki = ex.scalars().all()
+                existing_wiki = await election_repo.list_wikipedia_fallback_results(category, wy)
                 prov_norm = normalize_tr(province)
                 have_wiki_here = any(normalize_tr(x.province) == prov_norm for x in existing_wiki)
                 if not have_wiki_here:
                     wiki_ref = wiki_src
-                    for wr in wiki_rows:
-                        db.add(
-                            ElectionResult(
-                                election_year=wy,
-                                election_type=category,
-                                election_detail="wikipedia_fallback",
-                                province=province.strip(),
-                                district=None,
-                                party=wr["party"],
-                                vote_count=int(wr["vote_count"]),
-                                raw_data={"wikipedia_fallback": True},
-                                source_json_file=wiki_src,
-                            )
+                    wiki_batch = [
+                        ElectionResult(
+                            election_year=wy,
+                            election_type=category,
+                            election_detail="wikipedia_fallback",
+                            province=province.strip(),
+                            district=None,
+                            party=wr["party"],
+                            vote_count=int(wr["vote_count"]),
+                            raw_data={"wikipedia_fallback": True},
+                            source_json_file=wiki_src,
                         )
-                    await db.commit()
+                        for wr in wiki_rows
+                    ]
+                    await election_repo.add_election_results(wiki_batch)
+                    await election_repo.commit()
                 else:
                     wiki_ref = next(
                         (
@@ -1808,8 +1794,7 @@ async def analyze_election(province: str, election_type: str, district: str = ""
                         ),
                         wiki_src,
                     )
-                res = await db.execute(select(ElectionResult).where(ElectionResult.election_type == category))
-                all_of_type = res.scalars().all()
+                all_of_type = await election_repo.list_election_results_by_type(category)
                 election_rows = _drop_winner_placeholder_rows(collect_election_rows(all_of_type), province)
 
         if not election_rows:
@@ -1832,10 +1817,7 @@ async def analyze_election(province: str, election_type: str, district: str = ""
         max_year = max(r.election_year for r in election_rows)
         rows_latest = [r for r in election_rows if r.election_year == max_year]
 
-        demo_stats_res = await db.execute(
-            select(ElectionDemographicStat).where(ElectionDemographicStat.election_type == category)
-        )
-        demo_stats_all = demo_stats_res.scalars().all()
+        demo_stats_all = await election_repo.list_demographic_stats_by_type(category)
         pnorm = normalize_tr(province)
         demo_for_prompt = []
         for d in demo_stats_all:
@@ -1873,20 +1855,9 @@ async def analyze_election(province: str, election_type: str, district: str = ""
         footer = build_election_validation_footer(data_sources, demo_ctx, dist_key, wiki_ref)
         cache_neighborhood = election_type
 
-        cache_query = select(RegionAnalysis).where(
-            RegionAnalysis.province == province,
-            RegionAnalysis.election_year == max_year,
-            RegionAnalysis.neighborhood == cache_neighborhood,
+        cached_data = await election_repo.get_latest_region_analysis_cache(
+            province, max_year, cache_neighborhood, dist_key or None
         )
-        if dist_key:
-            cache_query = cache_query.where(RegionAnalysis.district == dist_key)
-        else:
-            cache_query = cache_query.where(
-                (RegionAnalysis.district == None) | (RegionAnalysis.district == "")
-            )
-
-        cache_result = await db.execute(cache_query.order_by(desc(RegionAnalysis.last_analyzed_at)).limit(1))
-        cached_data = cache_result.scalar_one_or_none()
 
         if not force_refresh and cached_data and cached_data.ai_summary:
             body = cached_data.ai_summary
@@ -1945,7 +1916,7 @@ async def analyze_election(province: str, election_type: str, district: str = ""
             cached_data.last_analyzed_at = datetime.utcnow()
             cached_data.neighborhood = cache_neighborhood
         else:
-            db.add(
+            await election_repo.add_region_analysis(
                 RegionAnalysis(
                     province=province,
                     district=dist_key or None,
@@ -1956,7 +1927,7 @@ async def analyze_election(province: str, election_type: str, district: str = ""
                 )
             )
 
-        await db.commit()
+        await election_repo.commit()
         return {
             "success": True,
             "analysis": analysis_response,
@@ -2060,29 +2031,15 @@ async def scrape_latest_poll():
 async def get_osint_intelligence(window: int = 48, db: AsyncSession = Depends(get_db)):
     """AI etiketleri ve Twitter hesap metriklerinden OSINT göstergeleri üretir."""
     try:
-        from app.models.core import ContentLabel, Content
-        
         time_threshold = datetime.utcnow() - timedelta(hours=window)
         
-        query = select(
-            func.avg(ContentLabel.sentiment_score).label("avg_sentiment"),
-            func.avg(ContentLabel.manipulation_prob).label("avg_manipulation"),
-            func.avg(ContentLabel.bot_likelihood).label("avg_bot"),
-            func.count(ContentLabel.content_id).label("total_labeled")
-        ).join(Content, Content.id == ContentLabel.content_id).where(Content.published_at >= time_threshold)
+        content_repo = ContentRepository(db)
+        stats = await content_repo.osint_label_aggregates_since(time_threshold)
         
-        res = await db.execute(query)
-        stats = res.one()
-        
-        sarcasm_query = select(func.count(ContentLabel.content_id)).where(ContentLabel.sarcasm_detected == True).join(Content, Content.id == ContentLabel.content_id).where(Content.published_at >= time_threshold)
-        sarcasm_count = (await db.execute(sarcasm_query)).scalar() or 0
+        sarcasm_count = await content_repo.osint_sarcasm_count_since(time_threshold)
 
-        twitter_res = await db.execute(
-            select(Content.raw_json)
-            .where(Content.platform == "twitter", Content.published_at >= time_threshold)
-            .limit(1000)
-        )
-        twitter_raw_items = [row[0] for row in twitter_res.all() if isinstance(row[0], dict)]
+        twitter_rows = await content_repo.fetch_twitter_raw_json_since(time_threshold, 1000)
+        twitter_raw_items = [row[0] for row in twitter_rows if isinstance(row[0], dict)]
         bot_signals = [
             twitter_bot_signal_summary(raw)
             for raw in twitter_raw_items
@@ -2118,13 +2075,9 @@ async def get_osint_intelligence(window: int = 48, db: AsyncSession = Depends(ge
 async def get_entity_graph(db: AsyncSession = Depends(get_db)):
     """Varlık (Entity) ilişkilerini Mermaid formatında döner."""
     try:
-        from app.models.core import Entity, EntityRelation
-        
-        entities_res = await db.execute(select(Entity).limit(20))
-        entities = entities_res.scalars().all()
-        
-        relations_res = await db.execute(select(EntityRelation).limit(50))
-        relations = relations_res.scalars().all()
+        entity_repo = EntityRepository(db)
+        entities = await entity_repo.list_entities_limit(20)
+        relations = await entity_repo.list_relations_limit(50)
         
         if not entities or not relations:
             raise HTTPException(status_code=404, detail="Digital Footprint için gerçek entity/relation verisi bulunamadı.")
@@ -2149,21 +2102,22 @@ async def get_entity_graph(db: AsyncSession = Depends(get_db)):
 @app.get("/api/system/stats", tags=["Sistem"])
 async def get_system_stats(db: AsyncSession = Depends(get_db)):
     try:
-        from sqlalchemy import func
-        total_content = await db.scalar(select(func.count(Content.id)))
-        active_sources = await db.scalar(select(func.count(Source.id)).where(Source.active == True))
+        content_repo = ContentRepository(db)
+        target_repo = TargetRepository(db)
+        total_content = await content_repo.count_all()
+        active_sources = await target_repo.count_active_sources()
         
         last_24h = datetime.utcnow() - timedelta(hours=24)
-        daily_content = await db.scalar(select(func.count(Content.id)).where(Content.published_at >= last_24h))
+        daily_content = await content_repo.count_published_since(last_24h)
         
         # Platform bazlı dağılım
-        p_res = await db.execute(select(Content.platform, func.count(Content.id)).group_by(Content.platform))
-        platform_stats = {p: count for p, count in p_res.all()}
+        p_res = await content_repo.group_count_by_platform()
+        platform_stats = {p: count for p, count in p_res}
         
         # Son loglar (Son 10 içerik)
-        log_res = await db.execute(select(Content).order_by(desc(Content.fetched_at)).limit(10))
+        recent_c = await content_repo.list_recent_by_fetched_limit(10)
         recent_logs = []
-        for c in log_res.scalars().all():
+        for c in recent_c:
             recent_logs.append({
                 "id": str(c.id),
                 "platform": c.platform,

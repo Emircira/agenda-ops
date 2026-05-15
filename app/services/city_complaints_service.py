@@ -6,15 +6,12 @@ from datetime import datetime
 from typing import Any
 
 from loguru import logger
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.exc import ProgrammingError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.data.tr_provinces import TR_PROVINCES_81
-from app.models.core import ComplaintsRadarCache
 from app.providers.rss_provider import RSSProvider
+from app.repositories.complaint_cache_repository import ComplaintCacheRepository
 from app.services.gemini_service import GeminiAIClient
+from app.models.core import ComplaintsRadarCache
 
 COMPLAINTS_RADAR_CACHE_TTL_HOURS = 1
 
@@ -63,50 +60,9 @@ def _resolve_city_label(path_city: str) -> str:
     return ""
 
 
-async def _fetch_cache_row(db: AsyncSession, province_key: str):
-    try:
-        res = await db.execute(
-            select(ComplaintsRadarCache).where(ComplaintsRadarCache.province_key == province_key)
-        )
-        return res.scalar_one_or_none(), None
-    except ProgrammingError as e:
-        await db.rollback()
-        low = str(getattr(e, "orig", e)).lower()
-        if "complaints_radar_cache" in low and ("does not exist" in low or "undefinedtable" in low):
-            return None, (
-                "Bu modül için veri katmanı henüz hazır değil. Sistem yöneticisi yapılandırmasını tamamlamalıdır."
-            )
-        raise
-
-
-async def _persist_cache(
-    db: AsyncSession,
-    province_key: str,
-    province_label: str,
-    payload: dict[str, Any],
-) -> None:
-    stmt = (
-        pg_insert(ComplaintsRadarCache)
-        .values(
-            province_key=province_key,
-            province_label=province_label,
-            cached_at=datetime.utcnow(),
-            payload_json=payload,
-        )
-        .on_conflict_do_update(
-            index_elements=["province_key"],
-            set_={
-                "province_label": province_label,
-                "cached_at": datetime.utcnow(),
-                "payload_json": payload,
-            },
-        )
-    )
-    await db.execute(stmt)
-    await db.commit()
-
-
-async def run_city_complaints_pipeline(city_path: str, db: AsyncSession) -> dict[str, Any]:
+async def run_city_complaints_pipeline(
+    city_path: str, cache_repo: ComplaintCacheRepository
+) -> dict[str, Any]:
     """
     GET /api/v1/contents/city-complaints/{city} için tam akış.
     """
@@ -120,7 +76,7 @@ async def run_city_complaints_pipeline(city_path: str, db: AsyncSession) -> dict
         )
 
     province_key = _normalize_key(label)
-    row, schema_err = await _fetch_cache_row(db, province_key)
+    row, schema_err = await cache_repo.get_by_province_key(province_key)
     if schema_err:
         return {"success": False, "error": schema_err}
 
@@ -143,6 +99,7 @@ async def run_city_complaints_pipeline(city_path: str, db: AsyncSession) -> dict
     x_data: list = []
     try:
         from app.workers.ingest_tasks import get_x_provider
+
         xp = get_x_provider()
         x_data = await asyncio.wait_for(
             xp.fetch_city_complaints_posts(query_city, limit=20),
@@ -166,7 +123,7 @@ async def run_city_complaints_pipeline(city_path: str, db: AsyncSession) -> dict
         "x_samples": [(p.get("text") or "")[:400] for p in x_data[:15]],
     }
 
-    await _persist_cache(db, province_key, label, payload_out)
+    await cache_repo.upsert_payload(province_key, label, payload_out)
 
     return {
         "success": True,

@@ -1,16 +1,14 @@
 import asyncio
 import os
-import time
 from loguru import logger
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
 from datetime import datetime
 
 from celery import chain
 
 from app.core.celery_app import celery_app
 from app.db.session import AsyncSessionLocal
-from app.models.core import Source, Content, SourceType, ContentType
+from app.models.core import Content, ContentEmbedding, ContentType
 from app.providers.rss_provider import RSSProvider
 from app.providers.youtube_provider import YouTubeProvider, YouTubeQuotaExceeded
 from app.providers.x_provider import RapidXProvider
@@ -23,6 +21,10 @@ from app.core.utils import (
     twitter_bot_signal_summary,
     select_ai_triage_candidates,
 )
+from app.repositories.content_repository import ContentRepository
+from app.repositories.target_repository import TargetRepository
+from app.repositories.vector_repository import VectorRepository
+from app.services.embedding_service import generate_embedding
 
 
 def run_async(coro):
@@ -45,6 +47,35 @@ def _safe_parse_date(raw_date_str: str) -> datetime:
         return datetime.fromisoformat(raw_date_str.replace('Z', '+00:00')).replace(tzinfo=None)
     except Exception:
         return datetime.utcnow()
+
+
+async def _try_save_content_embedding(db, external_id: str, text: str) -> None:
+    """
+    Yeni kaydedilen içerik için document embedding üretir ve vector tablosuna yazar.
+    API/DB hatalarında loglar; ingest akışını düşürmez.
+    Eğer satırda zaten embedding varsa API çağrısı yapmaz.
+    """
+    eid = (external_id or "").strip()
+    if not eid:
+        return
+    body = (text or "").strip()
+    if len(body) < 8:
+        return
+    try:
+        cid_row = await db.execute(select(Content.id).where(Content.external_id == eid).limit(1))
+        cid = cid_row.scalar_one_or_none()
+        if cid is None:
+            return
+        exists = await db.execute(
+            select(ContentEmbedding.id).where(ContentEmbedding.content_id == cid).limit(1)
+        )
+        if exists.scalar_one_or_none() is not None:
+            return
+        vec = generate_embedding(body, task_type="retrieval_document")
+        vr = VectorRepository(db)
+        await vr.save_embedding(cid, vec, commit=False)
+    except Exception as exc:
+        logger.warning(f"Vektör üretimi atlandı (external_id={eid!r}): {exc}")
 
 
 def _post_to_article(post: dict, source_id=None, domain="general") -> dict:
@@ -117,11 +148,9 @@ def ingest_rss_all_sources(self):
         provider = RSSProvider()
 
         async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(Source.id, Source.name, Source.url, Source.domain)
-                .where(Source.type == 'rss', Source.active == True)
-            )
-            sources = [dict(row) for row in result.mappings().all()]
+            target_repo = TargetRepository(db)
+            content_repo = ContentRepository(db)
+            sources = await target_repo.list_active_rss_maps()
 
             all_source_infos = [
                 {"name": "Google Haberler", "url": "https://news.google.com/rss?hl=tr&gl=TR&ceid=TR:tr", "id": None}
@@ -142,14 +171,20 @@ def ingest_rss_all_sources(self):
                         batch = articles[i:i+100]
                         if not batch:
                             continue
-                        stmt = insert(Content).values(batch).on_conflict_do_nothing(index_elements=['external_id'])
-                        res = await db.execute(stmt)
-                        total_added += res.rowcount
+                        n = await content_repo.insert_many_ignore_conflict(batch)
+                        total_added += n
+                        if n > 0:
+                            for art in batch:
+                                await _try_save_content_embedding(
+                                    db,
+                                    str(art.get("external_id") or ""),
+                                    str(art.get("text") or ""),
+                                )
 
                 except Exception as e:
                     logger.error(f"RSS hata [{s_info['name']}]: {e}")
 
-            await db.commit()
+            await content_repo.commit()
             logger.info(f"✅ RSS Ingestion Tamamlandı. {total_added} yeni içerik eklendi.")
             return f"RSS: {total_added} yeni içerik"
 
@@ -179,11 +214,9 @@ def ingest_youtube_all_sources(self):
         provider = YouTubeProvider()
 
         async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(Source.id, Source.name, Source.url, Source.domain)
-                .where(Source.type == 'youtube', Source.active == True)
-            )
-            sources = [dict(row) for row in result.mappings().all()]
+            target_repo = TargetRepository(db)
+            content_repo = ContentRepository(db)
+            sources = await target_repo.list_active_youtube_maps()
 
             total_added = 0
             for source in sources:
@@ -209,9 +242,15 @@ def ingest_youtube_all_sources(self):
                             batch = articles[i:i+100]
                             if not batch:
                                 continue
-                            stmt = insert(Content).values(batch).on_conflict_do_nothing(index_elements=['external_id'])
-                            res = await db.execute(stmt)
-                            total_added += res.rowcount
+                            n = await content_repo.insert_many_ignore_conflict(batch)
+                            total_added += n
+                            if n > 0:
+                                for art in batch:
+                                    await _try_save_content_embedding(
+                                        db,
+                                        str(art.get("external_id") or ""),
+                                        str(art.get("text") or ""),
+                                    )
 
                 except Exception as e:
                     if isinstance(e, YouTubeQuotaExceeded):
@@ -219,7 +258,7 @@ def ingest_youtube_all_sources(self):
                         continue
                     logger.error(f"YouTube hatası [{source_name}]: {e}")
 
-            await db.commit()
+            await content_repo.commit()
             logger.info(f"✅ YouTube Ingestion Tamamlandı. {total_added} yeni içerik eklendi.")
             return f"YouTube: {total_added} yeni içerik"
 
@@ -260,15 +299,9 @@ def ingest_x_all_sources(self):
         provider = get_x_provider()
 
         async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(Source.id, Source.type, Source.name, Source.url, Source.domain).where(
-                    Source.type.in_(
-                        ['twitter_self', 'twitter_competitor', 'twitter_trend', 'twitter_agency', 'x']
-                    ),
-                    Source.active == True
-                )
-            )
-            sources = [dict(row) for row in result.mappings().all()]
+            target_repo = TargetRepository(db)
+            content_repo = ContentRepository(db)
+            sources = await target_repo.list_active_x_maps()
 
             if not sources:
                 logger.warning("⚠️ Hiç aktif Twitter kaynağı bulunamadı!")
@@ -304,31 +337,33 @@ def ingest_x_all_sources(self):
                     for post in posts:
                         try:
                             article = _post_to_article(post, source_id=source_id, domain=source_domain)
-                            stmt = insert(Content).values(**article).on_conflict_do_nothing(
-                                index_elements=['external_id']
-                            )
-                            res = await db.execute(stmt)
-                            await db.commit()
-                            if res.rowcount > 0:
+                            rc = await content_repo.insert_one_ignore_conflict(article)
+                            await content_repo.commit()
+                            if rc > 0:
                                 source_added += 1
+                                await _try_save_content_embedding(
+                                    db,
+                                    str(article.get("external_id") or ""),
+                                    str(article.get("text") or ""),
+                                )
                             else:
                                 source_skipped += 1
                         except Exception as e:
-                            await db.rollback()
+                            await content_repo.rollback()
                             logger.warning(
                                 "  ⚠️ Tweet kayıt hatası (atlandı) "
                                 f"external_id={post.get('external_id')} text={post.get('text', '')[:120]!r}: {e}"
                             )
                             source_skipped += 1
 
-                    await db.commit()
+                    await content_repo.commit()
                     grand_total_added += source_added
                     grand_total_skipped += source_skipped
                     source_results.append(f"✅ {source_name}: +{source_added} yeni, {source_skipped} mevcut")
                     logger.info(f"  ✅ {source_name}: {source_added} yeni, {source_skipped} mevcut.")
 
                 except Exception as e:
-                    await db.rollback()
+                    await content_repo.rollback()
                     source_results.append(f"❌ {source_name}: HATA — {str(e)[:80]}")
                     logger.error(f"  ❌ {source_name} HATA (atlanıyor): {e}")
 
@@ -411,18 +446,23 @@ def ingest_x_daily_trends(self):
             await asyncio.sleep(provider.API_DELAY)
 
         async with AsyncSessionLocal() as db:
+            content_repo = ContentRepository(db)
             total_added = 0
             for post in all_posts:
                 try:
                     article = _post_to_article(post, source_id=None, domain="general")
-                    stmt = insert(Content).values(**article).on_conflict_do_nothing(index_elements=['external_id'])
-                    res = await db.execute(stmt)
-                    if res.rowcount > 0:
+                    rc = await content_repo.insert_one_ignore_conflict(article)
+                    if rc > 0:
                         total_added += 1
+                        await _try_save_content_embedding(
+                            db,
+                            str(article.get("external_id") or ""),
+                            str(article.get("text") or ""),
+                        )
                 except Exception as e:
                     logger.warning(f"Gündem kayıt hatası: {e}")
 
-            await db.commit()
+            await content_repo.commit()
             logger.info(
                 f"✅ X Gündem (hafif): {len(seen_names)} trend başlığı tarandı, "
                 f"{total_added} yeni tweet (toplam {len(all_posts)} aday)."
@@ -460,18 +500,23 @@ def ingest_x_person_mention_posts(self, target_person: str = "Siyasi Lider"):
             posts = []
 
         async with AsyncSessionLocal() as db:
+            content_repo = ContentRepository(db)
             total_added = 0
             for post in posts:
                 try:
                     article = _post_to_article(post, source_id=None, domain="politics")
-                    stmt = insert(Content).values(**article).on_conflict_do_nothing(index_elements=['external_id'])
-                    res = await db.execute(stmt)
-                    if res.rowcount > 0:
+                    rc = await content_repo.insert_one_ignore_conflict(article)
+                    if rc > 0:
                         total_added += 1
+                        await _try_save_content_embedding(
+                            db,
+                            str(article.get("external_id") or ""),
+                            str(article.get("text") or ""),
+                        )
                 except Exception as e:
                     logger.warning(f"Kişi takibi kayıt hatası: {e}")
 
-            await db.commit()
+            await content_repo.commit()
             logger.info(f"✅ Kişi Takibi Tamamlandı. {total_added} içerik.")
             return f"Kişi Takibi: {total_added} yeni içerik"
 
@@ -488,17 +533,15 @@ def cleanup_old_content(days: int = 30):
     async def _task():
         logger.info(f"🧹 Temizlik Botu (Son {days} günden eskiler)")
         from datetime import timedelta
-        from sqlalchemy import delete, not_
 
         cutoff_date = datetime.utcnow() - timedelta(days=days)
         async with AsyncSessionLocal() as db:
-            stmt = delete(Content).where(
-                Content.published_at < cutoff_date,
-                not_(Content.external_id.ilike("deep_%"))
+            content_repo = ContentRepository(db)
+            deleted = await content_repo.delete_published_before_with_external_guard(
+                cutoff_date, "deep_%"
             )
-            res = await db.execute(stmt)
-            await db.commit()
-            logger.info(f"✅ Temizlik Tamamlandı. {res.rowcount} eski içerik silindi.")
+            await content_repo.commit()
+            logger.info(f"✅ Temizlik Tamamlandı. {deleted} eski içerik silindi.")
 
     return run_async(_task())
 
@@ -517,21 +560,12 @@ def clean_and_triage_recent_content(self, source_name: str = "GENEL", limit: int
     try:
         async def _task():
             from datetime import timedelta
-            from app.models.core import ContentLabel
 
             eff_hours = 24 if source_name == "Manual Trigger" else window_hours
             cutoff = datetime.utcnow() - timedelta(hours=eff_hours)
             async with AsyncSessionLocal() as db:
-                stmt = (
-                    select(Content)
-                    .outerjoin(ContentLabel, Content.id == ContentLabel.content_id)
-                    .where(
-                        ContentLabel.content_id.is_(None),
-                        Content.fetched_at >= cutoff,
-                    )
-                )
-                res = await db.execute(stmt)
-                contents = res.scalars().all()
+                content_repo = ContentRepository(db)
+                contents = await content_repo.fetch_unlabeled_by_fetched_since(cutoff)
 
                 for content in contents:
                     content.is_analyzed = True
@@ -552,7 +586,7 @@ def clean_and_triage_recent_content(self, source_name: str = "GENEL", limit: int
                     if content.id in selected_ids:
                         content.is_analyzed = False
 
-                await db.commit()
+                await content_repo.commit()
                 logger.info(
                     f"🧹 TRIAGE [{source_name}]: {len(contents)} kayıt tarandı, "
                     f"{len(selected)} kayıt AI analizine seçildi (pencere={eff_hours}h)."

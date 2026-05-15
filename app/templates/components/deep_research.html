@@ -1,50 +1,50 @@
-<div id="view-deepresearch" class="view-section flex-1 flex flex-col w-full min-h-0 overflow-y-auto p-6 z-10 relative scroll-smooth bg-dark">
-    <div class="bg-panel rounded-xl border border-slate-800 shadow-2xl p-8 max-w-4xl mx-auto w-full relative overflow-x-hidden">
-        <div class="absolute top-0 right-0 p-4 opacity-10"><svg class="w-32 h-32 text-primary" fill="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg></div>
+<div id="view-deepresearch" class="view-section flex-1 flex flex-col w-full min-h-0 overflow-y-auto p-6 z-10 relative scroll-smooth bg-[#f8f9fa]">
+    <div class="bg-panel rounded-xl border border-slate-800 shadow-lg p-8 max-w-4xl mx-auto w-full relative overflow-x-hidden">
+        <div class="absolute top-0 right-0 p-4 opacity-[0.06]"><svg class="w-32 h-32 text-primary" fill="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg></div>
         
         <div class="relative z-10 min-h-0 flex flex-col">
-            <h3 class="text-2xl font-bold text-white mb-2 flex items-center gap-3">
-                <span class="bg-primary/20 p-2 rounded-lg"><svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg></span>
+            <h3 class="text-2xl font-bold text-[#202124] mb-2 flex items-center gap-3">
+                <span class="bg-[#e8f0fe] p-2 rounded-lg border border-[#dadce0]"><svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg></span>
                 Derin Araştırma Harekâtı
             </h3>
-            <p class="text-slate-400 mb-8">Gireceğiniz anahtar kelimeyi YouTube, Twitter ve Medya ağlarında eş zamanlı olarak araştırır ve tüm verileri Karargah veritabanına işler.</p>
+            <p class="text-[#5f6368] mb-8">Gireceğiniz anahtar kelimeyi YouTube, Twitter ve Medya ağlarında eş zamanlı olarak araştırır ve tüm verileri Karargah veritabanına işler.</p>
             
-            <div class="flex gap-4 mb-10 shrink-0">
-                <input type="text" id="deepKeyword" placeholder="Araştırılacak kritik konu (Örn: Erken Seçim, Ekonomi Politikaları)..." class="flex-1 bg-dark border border-slate-700 text-white rounded-xl px-6 py-4 text-lg focus:border-primary outline-none shadow-inner">
-                <button id="btnDeepResearch" onclick="window.AgendaOps.runDeepResearch()" class="bg-primary hover:bg-blue-600 text-white font-bold px-8 py-4 rounded-xl transition-all shadow-[0_0_20px_rgba(59,130,246,0.3)] flex items-center gap-2">
+            <div class="flex gap-4 mb-10 shrink-0 flex-wrap">
+                <input type="text" id="deepKeyword" placeholder="Araştırılacak kritik konu (Örn: Erken Seçim, Ekonomi Politikaları)..." class="flex-1 min-w-[200px] bg-white border border-[#dadce0] text-[#202124] rounded-xl px-6 py-4 text-lg focus:border-primary focus:ring-1 focus:ring-primary/30 outline-none shadow-sm">
+                <button id="btnDeepResearch" onclick="window.AgendaOps.runDeepResearch()" class="bg-primary hover:bg-[#1557b0] text-white font-bold px-8 py-4 rounded-xl transition-all shadow-sm flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                     Harekâtı Başlat
                 </button>
             </div>
 
-            <div id="deep-loader" class="hidden flex flex-col items-center justify-center py-12 border-2 border-dashed border-slate-800 rounded-2xl bg-slate-900/30 shrink-0">
+            <div id="deep-loader" class="hidden flex flex-col items-center justify-center py-12 border-2 border-dashed border-[#dadce0] rounded-xl bg-[#f8f9fa] shrink-0">
                 <div class="relative w-20 h-20 mb-6">
-                    <div class="absolute inset-0 border-4 border-primary/20 rounded-full"></div>
+                    <div class="absolute inset-0 border-4 border-[#e8f0fe] rounded-full"></div>
                     <div class="absolute inset-0 border-4 border-primary rounded-full border-t-transparent animate-spin"></div>
                     <div class="absolute inset-0 flex items-center justify-center"><svg class="w-8 h-8 text-primary animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg></div>
                 </div>
                 <p class="text-primary font-bold text-lg mb-2">5x Derin Tarama Çalışıyor...</p>
-                <p class="text-slate-500 text-sm animate-pulse">YouTube yorumları, X reply threadleri ve RSS arşivleri genişletilmiş limitlerle taranıyor...</p>
+                <p class="text-[#5f6368] text-sm animate-pulse">YouTube yorumları, X reply threadleri ve RSS arşivleri genişletilmiş limitlerle taranıyor...</p>
             </div>
 
-            <div id="deep-results" class="hidden flex flex-col min-h-0 max-h-[70vh] overflow-y-auto bg-slate-900/50 border border-primary/20 rounded-2xl relative">
-                <button type="button" onclick="document.getElementById('deep-results').classList.add('hidden')" class="absolute top-3 right-3 text-slate-500 hover:text-white transition-colors z-30 bg-slate-900/80 rounded p-1" aria-label="Kapat"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
-                <div id="deep-results-scroll" class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar p-6 pr-5 pb-8 pt-12 rounded-2xl">
-                    <div class="flex items-center gap-4 mb-4 shrink-0">
-                        <div class="w-10 h-10 bg-success/20 rounded-full flex items-center justify-center text-success"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></div>
-                        <h4 class="text-white font-bold text-lg">Araştırma Sonuçları</h4>
-                        <button type="button" onclick="window.AgendaOps.downloadPDF('deep-results-scroll', 'Derin_Arastirma_Raporu')" class="ml-auto bg-ai/20 hover:bg-ai/30 text-ai border border-ai/30 px-4 py-2 rounded text-xs font-bold transition-colors">📄 PDF İndir</button>
+            <div id="deep-results" class="hidden flex flex-col min-h-0 max-h-[70vh] overflow-y-auto bg-white border border-[#dadce0] rounded-xl relative shadow-sm">
+                <button type="button" onclick="document.getElementById('deep-results').classList.add('hidden')" class="absolute top-3 right-3 text-[#5f6368] hover:text-[#202124] transition-colors z-30 bg-white/95 border border-[#dadce0] rounded p-1 shadow-sm" aria-label="Kapat"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                <div id="deep-results-scroll" class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar p-6 pr-5 pb-8 pt-12 rounded-xl">
+                    <div class="flex items-center gap-4 mb-4 shrink-0 flex-wrap">
+                        <div class="w-10 h-10 bg-[#e6f4ea] rounded-full flex items-center justify-center text-[#137333] border border-[#ceead6]"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></div>
+                        <h4 class="text-[#202124] font-bold text-lg">Araştırma Sonuçları</h4>
+                        <button type="button" onclick="window.AgendaOps.downloadPDF('deep-results-scroll', 'Derin_Arastirma_Raporu')" class="ml-auto bg-[#e8f0fe] hover:bg-[#d2e3fc] text-[#1967d2] border border-[#dadce0] px-4 py-2 rounded-lg text-xs font-bold transition-colors">📄 PDF İndir</button>
                     </div>
-                    <p id="deep-msg" class="text-slate-300 leading-relaxed mb-6 font-medium text-success"></p>
+                    <p id="deep-msg" class="text-[#137333] leading-relaxed mb-6 font-medium"></p>
                     <div class="grid grid-cols-3 gap-4 mb-6 shrink-0">
-                        <div class="bg-dark/50 p-4 rounded-xl border border-slate-800 text-center"><p class="text-[10px] text-slate-500 uppercase font-bold mb-1">YouTube</p><p id="stat-yt" class="text-xl font-bold text-white">0</p></div>
-                        <div class="bg-dark/50 p-4 rounded-xl border border-slate-800 text-center"><p class="text-[10px] text-slate-500 uppercase font-bold mb-1">Medya/RSS</p><p id="stat-rss" class="text-xl font-bold text-white">0</p></div>
-                        <div class="bg-dark/50 p-4 rounded-xl border border-slate-800 text-center"><p class="text-[10px] text-slate-500 uppercase font-bold mb-1">X (Twitter)</p><p id="stat-tw" class="text-xl font-bold text-white">0</p></div>
+                        <div class="bg-[#f8f9fa] p-4 rounded-lg border border-[#dadce0] text-center"><p class="text-[10px] text-[#5f6368] uppercase font-bold mb-1">YouTube</p><p id="stat-yt" class="text-xl font-bold text-[#202124]">0</p></div>
+                        <div class="bg-[#f8f9fa] p-4 rounded-lg border border-[#dadce0] text-center"><p class="text-[10px] text-[#5f6368] uppercase font-bold mb-1">Medya/RSS</p><p id="stat-rss" class="text-xl font-bold text-[#202124]">0</p></div>
+                        <div class="bg-[#f8f9fa] p-4 rounded-lg border border-[#dadce0] text-center"><p class="text-[10px] text-[#5f6368] uppercase font-bold mb-1">X (Twitter)</p><p id="stat-tw" class="text-xl font-bold text-[#202124]">0</p></div>
                     </div>
 
-                    <div class="border-t border-primary/10 pt-6">
+                    <div class="border-t border-[#e8eaed] pt-6">
                         <h5 class="text-primary font-bold text-sm mb-3 flex items-center gap-2">🧠 YAPAY ZEKA STRATEJİK ANALİZİ</h5>
-                        <div id="deep-analysis" class="text-sm text-slate-300 leading-relaxed space-y-2"></div>
+                        <div id="deep-analysis" class="text-sm text-[#3c4043] leading-relaxed space-y-2"></div>
                     </div>
                 </div>
             </div>

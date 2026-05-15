@@ -1,11 +1,11 @@
-<div id="view-targets" class="view-section flex-1 flex flex-col w-full overflow-y-auto p-6 z-10 relative scroll-smooth">
+<div id="view-targets" class="view-section flex-1 flex flex-col w-full overflow-y-auto p-6 z-10 relative scroll-smooth bg-[#f8f9fa]">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
         <div class="bg-panel rounded-xl border border-slate-800 shadow-lg p-6">
-            <h3 class="text-xl font-bold text-white mb-6 flex items-center gap-2">Yeni Hedef / Kaynak Ekle</h3>
+            <h3 class="text-xl font-bold text-[#202124] mb-6 flex items-center gap-2">Yeni Hedef / Kaynak Ekle</h3>
             <form onsubmit="event.preventDefault(); window.AgendaOps.addSource();" class="space-y-5">
                 <div>
-                    <label class="block text-sm font-medium text-slate-400 mb-2">Platform / Hedef Tipi</label>
-                    <select id="sourceType" onchange="window.AgendaOps.updateSourceFields(this.value)" class="w-full bg-dark border border-slate-700 text-white rounded-lg px-4 py-3 focus:border-primary outline-none">
+                    <label class="block text-sm font-medium text-[#5f6368] mb-2">Platform / Hedef Tipi</label>
+                    <select id="sourceType" onchange="window.AgendaOps.updateSourceFields(this.value)" class="w-full bg-white border border-[#dadce0] text-[#202124] rounded-lg px-4 py-3 focus:border-primary focus:ring-1 focus:ring-primary/25 outline-none">
                         <option value="twitter_self">X (Twitter) - VIP Hesap</option>
                         <option value="twitter_competitor">X (Twitter) - Rakip Hesap</option>
                         <option value="twitter_agency">X (Twitter) - Haber Ajansı / Kanal</option>
@@ -15,79 +15,79 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-slate-400 mb-2">🎯 Domain (Kategori) — Bağlam İzolasyonu</label>
-                    <select id="sourceDomain" class="w-full bg-dark border border-slate-700 text-white rounded-lg px-4 py-3 focus:border-warning outline-none">
+                    <label class="block text-sm font-medium text-[#5f6368] mb-2">🎯 Domain (Kategori) — Bağlam İzolasyonu</label>
+                    <select id="sourceDomain" class="w-full bg-white border border-[#dadce0] text-[#202124] rounded-lg px-4 py-3 focus:border-[#b06000] focus:ring-1 focus:ring-amber-200 outline-none">
                         <option value="politics">🏛️ Siyaset</option>
                         <option value="sports">⚽ Spor</option>
                         <option value="economy">💰 Ekonomi</option>
                         <option value="general" selected>🌐 Genel</option>
                     </select>
-                    <p class="text-[10px] text-slate-500 mt-1">Verinin hangi kategoriye ait olduğunu belirler. Yapay zeka analizi sırasında kategori karışmasını engeller.</p>
+                    <p class="text-[10px] text-[#5f6368] mt-1">Verinin hangi kategoriye ait olduğunu belirler. Yapay zeka analizi sırasında kategori karışmasını engeller.</p>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-slate-400 mb-2">Kaynak Tipi (AI bağlamı)</label>
-                    <select id="sourceCategory" class="w-full bg-dark border border-slate-700 text-white rounded-lg px-4 py-3 focus:border-ai outline-none">
+                    <label class="block text-sm font-medium text-[#5f6368] mb-2">Kaynak Tipi (AI bağlamı)</label>
+                    <select id="sourceCategory" class="w-full bg-white border border-[#dadce0] text-[#202124] rounded-lg px-4 py-3 focus:border-primary outline-none">
                         <option value="competitor">Rakip</option>
                         <option value="news_agency">Haber Ajansı</option>
                         <option value="person_or_target">Şahıs / Hedef</option>
                         <option value="general_agenda" selected>Genel Gündem</option>
                     </select>
-                    <p class="text-[10px] text-slate-500 mt-1">Yapay zeka bu kaynağı rakip kampanyası mı, haber dili mi diye ayırır.</p>
+                    <p class="text-[10px] text-[#5f6368] mt-1">Yapay zeka bu kaynağı rakip kampanyası mı, haber dili mi diye ayırır.</p>
                 </div>
                 <div>
-                    <label id="labelSourceName" class="block text-sm font-medium text-slate-400 mb-2">Hedef Adı (Tanımlayıcı)</label>
-                    <input type="text" id="sourceName" placeholder="Örn: Fatih Altaylı, Erken Seçim..." class="w-full bg-dark border border-slate-700 text-white rounded-lg px-4 py-3 focus:border-primary outline-none" required>
+                    <label id="labelSourceName" class="block text-sm font-medium text-[#5f6368] mb-2">Hedef Adı (Tanımlayıcı)</label>
+                    <input type="text" id="sourceName" placeholder="Örn: Fatih Altaylı, Erken Seçim..." class="w-full bg-white border border-[#dadce0] text-[#202124] rounded-lg px-4 py-3 focus:border-primary outline-none" required>
                 </div>
                 <div>
-                    <label id="labelSourceUrl" class="block text-sm font-medium text-slate-400 mb-2">URL / ID / Kelime</label>
-                    <input type="text" id="sourceUrl" placeholder="Örn: @fatihaltayli, UCkwvO..." class="w-full bg-dark border border-slate-700 text-white rounded-lg px-4 py-3 focus:border-primary outline-none" required>
+                    <label id="labelSourceUrl" class="block text-sm font-medium text-[#5f6368] mb-2">URL / ID / Kelime</label>
+                    <input type="text" id="sourceUrl" placeholder="Örn: @fatihaltayli, UCkwvO..." class="w-full bg-white border border-[#dadce0] text-[#202124] rounded-lg px-4 py-3 focus:border-primary outline-none" required>
                 </div>
-                <button type="submit" class="w-full bg-success hover:bg-emerald-600 text-white font-bold py-3 px-4 rounded-lg transition-colors mt-4">Sisteme Kaydet</button>
+                <button type="submit" class="w-full bg-[#137333] hover:bg-[#0d6528] text-white font-bold py-3 px-4 rounded-lg transition-colors mt-4">Sisteme Kaydet</button>
             </form>
         </div>
 
         <div class="bg-panel rounded-xl border border-slate-800 shadow-lg flex flex-col overflow-hidden">
-            <div class="p-4 border-b border-slate-800 bg-slate-900/40">
-                <h3 class="text-white font-medium">Aktif Taranan Kaynaklar</h3>
+            <div class="p-4 border-b border-[#dadce0] bg-[#f8f9fa]">
+                <h3 class="text-[#202124] font-medium text-sm">Aktif Taranan Kaynaklar</h3>
             </div>
-            <div class="flex-1 overflow-y-auto p-4 space-y-3 bg-dark/20" id="sourceListContainer">
+            <div class="flex-1 overflow-y-auto p-4 space-y-3 bg-[#f8f9fa]" id="sourceListContainer">
                 {% for src in sources %}
-                <div class="p-3 bg-panel border border-slate-700 rounded-lg flex justify-between items-center group hover:border-slate-500 transition-colors">
+                <div class="p-3 bg-white border border-[#dadce0] rounded-lg flex justify-between items-center group hover:border-[#bdc1c6] transition-colors shadow-sm">
                     <div class="flex items-center flex-wrap gap-1">
                         {% if 'twitter' in src.type %}
-                        <span class="bg-[#1DA1F2]/20 text-[#1DA1F2] text-[10px] px-2 py-0.5 rounded">X HEDEFİ</span>
+                        <span class="k-badge text-[10px]" style="background:#e8f0fe;color:#1967d2;border-color:#d2e3fc;">X HEDEFİ</span>
                         {% elif 'youtube' in src.type %}
-                        <span class="bg-[#FF0000]/20 text-[#FF0000] text-[10px] px-2 py-0.5 rounded">YOUTUBE</span>
+                        <span class="k-badge text-[10px]" style="background:#fce8e6;color:#c5221f;border-color:#fad2cf;">YOUTUBE</span>
                         {% else %}
-                        <span class="bg-slate-500/20 text-slate-400 text-[10px] px-2 py-0.5 rounded">RSS</span>
+                        <span class="k-badge k-badge--info text-[10px]">RSS</span>
                         {% endif %}
                         
                         {% if src.domain == 'politics' %}
-                        <span class="bg-blue-500/20 text-blue-400 text-[10px] px-1.5 py-0.5 rounded">🏛️ SYS</span>
+                        <span class="k-badge k-badge--info text-[10px] px-1.5 py-0.5">🏛️ SYS</span>
                         {% elif src.domain == 'sports' %}
-                        <span class="bg-green-500/20 text-green-400 text-[10px] px-1.5 py-0.5 rounded">⚽ SPR</span>
+                        <span class="k-badge k-badge--success text-[10px] px-1.5 py-0.5">⚽ SPR</span>
                         {% elif src.domain == 'economy' %}
-                        <span class="bg-amber-500/20 text-amber-400 text-[10px] px-1.5 py-0.5 rounded">💰 EKO</span>
+                        <span class="k-badge k-badge--warn text-[10px] px-1.5 py-0.5">💰 EKO</span>
                         {% else %}
-                        <span class="bg-slate-600/20 text-slate-400 text-[10px] px-1.5 py-0.5 rounded">🌐 GNL</span>
+                        <span class="k-badge text-[10px]" style="background:#f1f3f4;color:#5f6368;border-color:#dadce0;">🌐 GNL</span>
                         {% endif %}
 
                         {% set scat = src.source_category|default('general_agenda') %}
                         {% if scat == 'competitor' %}
-                        <span class="bg-rose-500/20 text-rose-300 text-[10px] px-1.5 py-0.5 rounded font-bold">RAKİP</span>
+                        <span class="k-badge k-badge--danger text-[10px] px-1.5 py-0.5 font-bold">RAKİP</span>
                         {% elif scat == 'news_agency' %}
-                        <span class="bg-sky-500/20 text-sky-300 text-[10px] px-1.5 py-0.5 rounded font-bold">HABER</span>
+                        <span class="k-badge k-badge--info text-[10px] px-1.5 py-0.5 font-bold">HABER</span>
                         {% elif scat == 'person_or_target' %}
-                        <span class="bg-violet-500/20 text-violet-300 text-[10px] px-1.5 py-0.5 rounded font-bold">HEDEF</span>
+                        <span class="k-badge text-[10px] font-bold" style="background:#f3e8fd;color:#7b1fa2;border-color:#e1bee7;">HEDEF</span>
                         {% else %}
-                        <span class="bg-slate-500/20 text-slate-300 text-[10px] px-1.5 py-0.5 rounded font-bold">GÜNDEM</span>
+                        <span class="k-badge text-[10px] font-bold" style="background:#f1f3f4;color:#3c4043;border-color:#dadce0;">GÜNDEM</span>
                         {% endif %}
                         
-                        <span class="text-white text-sm font-medium ml-1">{{ src.name }}</span>
+                        <span class="text-[#202124] text-sm font-medium ml-1">{{ src.name }}</span>
                     </div>
-                    <div class="flex items-center gap-4">
-                        <span class="text-success text-xs font-bold">AKTİF</span>
-                        <button onclick="window.AgendaOps.deleteSource({{ src.id }}, this)" class="bg-danger/10 text-danger hover:bg-danger hover:text-white px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1">
+                    <div class="flex items-center gap-4 shrink-0">
+                        <span class="text-[#137333] text-xs font-bold">AKTİF</span>
+                        <button onclick="window.AgendaOps.deleteSource({{ src.id }}, this)" class="bg-[#fce8e6] text-[#c5221f] hover:bg-[#fad2cf] px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1 border border-[#fad2cf]">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                             Sil
                         </button>

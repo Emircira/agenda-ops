@@ -17,7 +17,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
+from pgvector.sqlalchemy import VECTOR
+
 from app.models.base_class import Base
+
+# Gemini models/embedding-001 çıktı boyutu (RAG / anlamsal arama)
+EMBEDDING_DIMENSION = 768
 
 class SourceType(str, enum.Enum):
     rss = "rss"
@@ -75,12 +80,35 @@ class Content(Base):
         back_populates="content",
         uselist=False,
     )
-    
+    embedding_row = relationship(
+        "ContentEmbedding",
+        back_populates="content",
+        uselist=False,
+    )
+
     # OSINT: Devasa veri sorguları için optimizasyon
     __table_args__ = (
         Index('ix_contents_platform_published', 'platform', 'published_at'),
         Index('ix_contents_domain', 'domain'),
     )
+
+
+class ContentEmbedding(Base):
+    """İçerik metni için Gemini embedding-001 vektörü (pgvector)."""
+
+    __tablename__ = "content_embeddings"
+    __table_args__ = (UniqueConstraint("content_id", name="uq_content_embeddings_content_id"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    content_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("contents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    embedding = Column(VECTOR(EMBEDDING_DIMENSION), nullable=False)
+
+    content = relationship("Content", back_populates="embedding_row")
+
 
 class ContentMetric(Base):
     __tablename__ = "content_metrics"

@@ -1,7 +1,12 @@
 import os
 import json
 from loguru import logger
-from app.services.gemini_model import create_gemini_model
+from app.services.gemini_model import (
+    GEMINI_BLOCKED_PLAIN_MESSAGE,
+    create_gemini_model,
+    extract_gemini_response_text,
+    gemini_safety_settings_block_none,
+)
 from app.services.karargah_llm_directive import with_karargah_osint_directive
 
 class LabelingService:
@@ -60,8 +65,23 @@ Yalnız ana gönderi (ajans/kanal) ise stratejik/kamu önemini (güvenlik, ekono
             "sarcasm_detected": true veya false (alaycı/iğneleyici dil tespiti)
         }}
         """)
-        response = self.model.generate_content(prompt)
-        
-        # Olası format hatalarını temizleme (Markdown tagleri vb.)
-        raw_json = response.text.replace("```json", "").replace("```", "").strip()
+        safety = gemini_safety_settings_block_none()
+        response = self.model.generate_content(prompt, safety_settings=safety)
+        response_text = extract_gemini_response_text(response)
+        if response_text is None:
+            return {
+                "topic": "Genel",
+                "frame": "Haber",
+                "stance": "neutral",
+                "target": "Genel",
+                "risk_level": "low",
+                "confidence": 0.0,
+                "summary": GEMINI_BLOCKED_PLAIN_MESSAGE,
+                "sentiment_score": 0.0,
+                "manipulation_prob": 0.0,
+                "bot_likelihood": 0.0,
+                "sarcasm_detected": False,
+            }
+
+        raw_json = response_text.replace("```json", "").replace("```", "").strip()
         return json.loads(raw_json)

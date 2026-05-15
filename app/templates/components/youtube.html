@@ -1,18 +1,18 @@
-<div id="view-youtube" class="view-section flex-1 flex flex-col w-full overflow-y-auto p-6 z-10 relative scroll-smooth">
+<div id="view-youtube" class="view-section flex-1 flex flex-col w-full overflow-y-auto p-6 z-10 relative scroll-smooth bg-[#f8f9fa]">
     <div class="bg-panel rounded-xl border border-slate-800 shadow-lg p-5 mb-4">
-        <h3 class="text-white font-medium mb-3 flex items-center gap-2"><span class="text-[#FF0000]">▶</span> YouTube Konu Analizi</h3>
-        <div class="flex gap-3 mb-3">
-            <input type="text" id="ytKeyword" placeholder="Konu veya kelime girin (Örn: ekonomi, mülteci)..." class="flex-1 bg-dark border border-slate-700 text-white rounded-lg px-4 py-2.5 text-sm focus:border-[#FF0000]/50 outline-none">
-            <button onclick="window.AgendaOps.runPlatformAnalyze('youtube', 'ytKeyword', 'yt-analyze-result', this)" class="bg-[#FF0000]/20 text-[#FF0000] border border-[#FF0000]/30 hover:bg-[#FF0000]/40 text-xs px-5 py-2.5 rounded-lg font-bold transition-colors">🧠 Analiz Et</button>
-            <button onclick="window.AgendaOps.runWorkerAction('youtube', this)" class="bg-slate-700 hover:bg-slate-600 text-white text-xs px-4 py-2.5 rounded-lg font-bold transition-colors">🔄 Veri Çek</button>
+        <h3 class="text-[#202124] font-medium mb-3 flex items-center gap-2"><span class="text-[#FF0000]">▶</span> YouTube Konu Analizi</h3>
+        <div class="flex gap-3 mb-3 flex-wrap">
+            <input type="text" id="ytKeyword" placeholder="Konu veya kelime girin (Örn: ekonomi, mülteci)..." class="flex-1 min-w-[200px] bg-white border border-[#dadce0] text-[#202124] rounded-lg px-4 py-2.5 text-sm focus:border-[#FF0000]/60 focus:ring-1 focus:ring-red-200 outline-none">
+            <button onclick="window.AgendaOps.runPlatformAnalyze('youtube', 'ytKeyword', 'yt-analyze-result', this)" class="bg-[#fce8e6] text-[#c5221f] border border-[#fad2cf] hover:bg-[#fad2cf] text-xs px-5 py-2.5 rounded-lg font-bold transition-colors">🧠 Analiz Et</button>
+            <button onclick="window.AgendaOps.runWorkerAction('youtube', this)" class="bg-[#f1f3f4] hover:bg-[#e8eaed] text-[#202124] text-xs px-4 py-2.5 rounded-lg font-bold transition-colors border border-[#dadce0]">🔄 Veri Çek</button>
         </div>
-        <div id="yt-analyze-result" class="hidden bg-dark/50 border border-slate-700 p-5 rounded-lg text-slate-300 text-sm leading-relaxed max-h-[500px] overflow-y-auto custom-scrollbar"></div>
+        <div id="yt-analyze-result" class="hidden bg-[#f8f9fa] border border-[#dadce0] p-5 rounded-lg text-[#3c4043] text-sm leading-relaxed max-h-[500px] overflow-y-auto custom-scrollbar"></div>
     </div>
-    <div class="bg-panel rounded-xl border border-slate-800 shadow-lg flex flex-col flex-1 min-h-[300px]">
-        <div class="p-4 border-b border-slate-800 bg-slate-900/40"><h3 class="text-white font-medium">YouTube Ham Veri Akışı</h3></div>
-        <div id="stream-youtube" class="flex-1 overflow-y-auto p-4 space-y-3 bg-dark/20 custom-scrollbar max-h-[min(500px,calc(100vh-14rem))]">
+    <div class="bg-panel rounded-xl border border-slate-800 shadow-lg flex flex-col flex-1 min-h-[300px] overflow-hidden">
+        <div class="p-4 border-b border-[#dadce0] bg-[#f8f9fa]"><h3 class="text-[#202124] font-medium text-sm">YouTube Ham Veri Akışı</h3></div>
+        <div id="stream-youtube" class="flex-1 overflow-y-auto p-4 space-y-2 k-stream-well custom-scrollbar max-h-[min(500px,calc(100vh-14rem))]">
             {% for item in contents if item.platform == 'youtube' or item.platform == 'youtube_comment' %}
-            <div class="p-4 bg-panel/80 rounded-lg border border-slate-700/60"><span class="text-white text-sm font-semibold mb-2 block">{{ item.author_name }}</span><p class="text-sm text-slate-300">{{ item.text }}</p></div>
+            <div class="k-list-row"><span class="text-[#202124] text-sm font-semibold mb-2 block">{{ item.author_name }}</span><p class="text-sm text-[#3c4043] leading-relaxed">{{ item.text }}</p></div>
             {% endfor %}
         </div>
     </div>
