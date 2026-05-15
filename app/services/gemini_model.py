@@ -1,12 +1,18 @@
 import os
 from functools import lru_cache
-from typing import Iterable
+from typing import Any, Iterable, List, Optional
 
 import google.generativeai as genai
 from loguru import logger
 
 
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+
+# Google prompt_feedback / boş candidate durumunda zinciri beslemek için ortak metin
+GEMINI_BLOCKED_PLAIN_MESSAGE = (
+    "İçerik Google güvenlik politikaları (PROHIBITED) nedeniyle analiz edilemedi."
+)
+
 PREFERRED_GEMINI_MODELS = (
     DEFAULT_GEMINI_MODEL,
     "gemini-2.5-flash-lite",
@@ -14,6 +20,68 @@ PREFERRED_GEMINI_MODELS = (
     "gemini-2.0-flash",
     "gemini-1.5-flash",
 )
+
+
+def gemini_safety_settings_block_none() -> List[dict[str, Any]]:
+    """
+    OSINT / ham sosyal veri analizi için tüm harm kategorilerinde engeli kaldırır.
+    """
+    from google.generativeai.types import HarmBlockThreshold, HarmCategory
+
+    return [
+        {
+            "category": HarmCategory.HARM_CATEGORY_HARASSMENT,
+            "threshold": HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+            "category": HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            "threshold": HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+            "category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            "threshold": HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+            "category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            "threshold": HarmBlockThreshold.BLOCK_NONE,
+        },
+    ]
+
+
+def extract_gemini_response_text(response: Any) -> Optional[str]:
+    """
+    response.text / parts okumadan önce blok ve boş candidate kontrolü.
+    Blok veya okunamayan yanıtta None döner; terminalde prompt_feedback loglanır.
+    """
+    if response is None:
+        return None
+
+    pf = getattr(response, "prompt_feedback", None)
+    block_reason = getattr(pf, "block_reason", None) if pf is not None else None
+    if block_reason:
+        logger.warning(f"GEMINI BLOCKED CONTENT: {pf}")
+        return None
+
+    candidates = getattr(response, "candidates", None) or []
+    if not candidates:
+        logger.warning(
+            f"GEMINI BLOCKED CONTENT: candidates boş; prompt_feedback={pf}"
+        )
+        return None
+
+    try:
+        text = response.text
+    except (ValueError, AttributeError) as e:
+        logger.warning(
+            f"GEMINI BLOCKED CONTENT veya metin çıkarılamadı: {e}; "
+            f"prompt_feedback={pf}"
+        )
+        return None
+
+    if text is None:
+        return None
+    text = str(text).strip()
+    return text if text else None
 
 
 def _normalize_model_name(model_name: str | None) -> str:

@@ -1,79 +1,79 @@
-<div id="view-systemstatus" class="view-section flex-1 flex flex-col w-full overflow-y-auto p-6 z-10 relative scroll-smooth">
+<div id="view-systemstatus" class="view-section flex-1 flex flex-col w-full overflow-y-auto p-6 z-10 relative scroll-smooth bg-[#f8f9fa]">
     <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <!-- TOP STATS -->
-        <div class="bg-panel p-6 rounded-2xl border border-slate-800 shadow-xl flex flex-col items-center justify-center text-center">
-            <p class="text-[10px] text-slate-500 font-bold uppercase mb-2 tracking-widest">Toplam İstihbarat Verisi</p>
-            <h4 id="stat-total-content" class="text-3xl font-bold text-white mb-1">0</h4>
-            <p class="text-[10px] text-success font-medium">Karargah Veritabanı</p>
+        <div class="bg-panel p-6 rounded-xl border border-slate-800 shadow-lg flex flex-col items-center justify-center text-center">
+            <p class="text-[10px] text-[#5f6368] font-bold uppercase mb-2 tracking-widest">Toplam İstihbarat Verisi</p>
+            <h4 id="stat-total-content" class="text-3xl font-bold text-[#202124] mb-1">0</h4>
+            <p class="text-[10px] text-[#137333] font-medium">Karargah Veritabanı</p>
         </div>
-        <div class="bg-panel p-6 rounded-2xl border border-slate-800 shadow-xl flex flex-col items-center justify-center text-center">
-            <p class="text-[10px] text-slate-500 font-bold uppercase mb-2 tracking-widest">Son 24 Saat (Yeni)</p>
+        <div class="bg-panel p-6 rounded-xl border border-slate-800 shadow-lg flex flex-col items-center justify-center text-center">
+            <p class="text-[10px] text-[#5f6368] font-bold uppercase mb-2 tracking-widest">Son 24 Saat (Yeni)</p>
             <h4 id="stat-daily-content" class="text-3xl font-bold text-primary mb-1">0</h4>
             <p class="text-[10px] text-primary font-medium">Aktif Akış</p>
         </div>
-        <div class="bg-panel p-6 rounded-2xl border border-slate-800 shadow-xl flex flex-col items-center justify-center text-center">
-            <p class="text-[10px] text-slate-500 font-bold uppercase mb-2 tracking-widest">Aktif Kaynaklar</p>
-            <h4 id="stat-active-sources" class="text-3xl font-bold text-warning mb-1">0</h4>
-            <p class="text-[10px] text-warning font-medium">Saha Ajanları</p>
+        <div class="bg-panel p-6 rounded-xl border border-slate-800 shadow-lg flex flex-col items-center justify-center text-center">
+            <p class="text-[10px] text-[#5f6368] font-bold uppercase mb-2 tracking-widest">Aktif Kaynaklar</p>
+            <h4 id="stat-active-sources" class="text-3xl font-bold text-[#b06000] mb-1">0</h4>
+            <p class="text-[10px] text-[#b06000] font-medium">Saha Ajanları</p>
         </div>
-        <div class="bg-panel p-6 rounded-2xl border border-slate-800 shadow-xl flex flex-col items-center justify-center text-center">
-            <p class="text-[10px] text-slate-500 font-bold uppercase mb-2 tracking-widest">Sistem Durumu</p>
+        <div class="bg-panel p-6 rounded-xl border border-slate-800 shadow-lg flex flex-col items-center justify-center text-center">
+            <p class="text-[10px] text-[#5f6368] font-bold uppercase mb-2 tracking-widest">Sistem Durumu</p>
             <div class="flex items-center gap-2 mb-1">
-                <span class="w-3 h-3 bg-success rounded-full animate-pulse"></span>
-                <h4 class="text-xl font-bold text-white uppercase">Çevrimiçi</h4>
+                <span class="w-3 h-3 bg-[#137333] rounded-full animate-pulse"></span>
+                <h4 class="text-xl font-bold text-[#202124] uppercase">Çevrimiçi</h4>
             </div>
-            <p class="text-[10px] text-slate-400 font-medium">Celery Beat Aktif</p>
+            <p class="text-[10px] text-[#5f6368] font-medium">Celery Beat Aktif</p>
         </div>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- PLATFORM BREAKDOWN -->
-        <div class="lg:col-span-1 bg-panel p-6 rounded-2xl border border-slate-800 shadow-xl">
-            <h3 class="text-white font-bold mb-6 flex items-center gap-2">
+        <div class="lg:col-span-1 bg-panel p-6 rounded-xl border border-slate-800 shadow-lg">
+            <h3 class="text-[#202124] font-bold mb-6 flex items-center gap-2">
                 <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path></svg>
                 Platform Dağılımı
             </h3>
             <div class="space-y-6">
                 <div>
-                    <div class="flex justify-between text-xs font-bold text-slate-400 uppercase mb-2">
+                    <div class="flex justify-between text-xs font-bold text-[#5f6368] uppercase mb-2">
                         <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-[#1DA1F2]"></span> X (Twitter)</span>
-                        <span id="pct-x" class="text-white">0%</span>
+                        <span id="pct-x" class="text-[#202124]">0%</span>
                     </div>
-                    <div class="w-full bg-dark rounded-full h-2 shadow-inner"><div id="bar-x" class="bg-[#1DA1F2] h-2 rounded-full transition-all duration-1000" style="width: 0%"></div></div>
+                    <div class="w-full bg-[#e8eaed] rounded-full h-2"><div id="bar-x" class="bg-[#1DA1F2] h-2 rounded-full transition-all duration-1000" style="width: 0%"></div></div>
                 </div>
                 <div>
-                    <div class="flex justify-between text-xs font-bold text-slate-400 uppercase mb-2">
+                    <div class="flex justify-between text-xs font-bold text-[#5f6368] uppercase mb-2">
                         <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-[#FF0000]"></span> YouTube</span>
-                        <span id="pct-yt" class="text-white">0%</span>
+                        <span id="pct-yt" class="text-[#202124]">0%</span>
                     </div>
-                    <div class="w-full bg-dark rounded-full h-2 shadow-inner"><div id="bar-yt" class="bg-[#FF0000] h-2 rounded-full transition-all duration-1000" style="width: 0%"></div></div>
+                    <div class="w-full bg-[#e8eaed] rounded-full h-2"><div id="bar-yt" class="bg-[#FF0000] h-2 rounded-full transition-all duration-1000" style="width: 0%"></div></div>
                 </div>
                 <div>
-                    <div class="flex justify-between text-xs font-bold text-slate-400 uppercase mb-2">
+                    <div class="flex justify-between text-xs font-bold text-[#5f6368] uppercase mb-2">
                         <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-[#F59E0B]"></span> RSS / Medya</span>
-                        <span id="pct-rss" class="text-white">0%</span>
+                        <span id="pct-rss" class="text-[#202124]">0%</span>
                     </div>
-                    <div class="w-full bg-dark rounded-full h-2 shadow-inner"><div id="bar-rss" class="bg-[#F59E0B] h-2 rounded-full transition-all duration-1000" style="width: 0%"></div></div>
+                    <div class="w-full bg-[#e8eaed] rounded-full h-2"><div id="bar-rss" class="bg-[#F59E0B] h-2 rounded-full transition-all duration-1000" style="width: 0%"></div></div>
                 </div>
             </div>
         </div>
 
         <!-- RECENT INGESTION LOG -->
-        <div class="lg:col-span-2 bg-panel p-6 rounded-2xl border border-slate-800 shadow-xl flex flex-col h-[400px]">
+        <div class="lg:col-span-2 bg-panel p-6 rounded-xl border border-slate-800 shadow-lg flex flex-col h-[400px]">
             <div class="flex justify-between items-center mb-6">
-                <h3 class="text-white font-bold flex items-center gap-2">
-                    <svg class="w-5 h-5 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <h3 class="text-[#202124] font-bold flex items-center gap-2">
+                    <svg class="w-5 h-5 text-[#b06000]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     Son Veri Girişleri
                 </h3>
-                <button onclick="window.AgendaOps.loadSystemStats()" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-400 px-3 py-1 rounded uppercase font-bold transition-all border border-slate-700">Yenile</button>
+                <button onclick="window.AgendaOps.loadSystemStats()" class="text-[10px] bg-white hover:bg-[#f1f3f4] text-[#5f6368] px-3 py-1 rounded uppercase font-bold transition-all border border-[#dadce0]">Yenile</button>
             </div>
             <div class="flex-1 overflow-y-auto custom-scrollbar space-y-3 min-h-0" id="system-log-container">
                 <!-- Log items will be injected here -->
             </div>
-            <div class="mt-4 pt-4 border-t border-slate-800 shrink-0">
-                <div id="pipeline-task-banner" class="hidden mb-3 px-3 py-2 rounded-lg border border-ai/30 bg-ai/10 text-[11px] text-slate-200 font-mono break-all"></div>
+            <div class="mt-4 pt-4 border-t border-[#dadce0] shrink-0">
+                <div id="pipeline-task-banner" class="hidden mb-3 px-3 py-2 rounded-lg border border-[#d2e3fc] bg-[#e8f0fe] text-[11px] text-[#3c4043] font-mono break-all"></div>
                 <div class="flex justify-end">
-                    <button onclick="window.AgendaOps.triggerPipeline(event, this)" class="bg-ai/20 hover:bg-ai/30 text-ai border border-ai/30 px-4 py-2 rounded-lg text-xs font-bold transition-all">
+                    <button onclick="window.AgendaOps.triggerPipeline(event, this)" class="bg-[#e8f0fe] hover:bg-[#d2e3fc] text-[#1967d2] border border-[#dadce0] px-4 py-2 rounded-lg text-xs font-bold transition-all">
                         🚀 Yapay Zeka Analiz Hattını Tetikle
                     </button>
                 </div>

@@ -3,7 +3,12 @@ import json
 import time
 from loguru import logger
 from typing import List, Dict, Any, Optional
-from app.services.gemini_model import create_gemini_model
+from app.services.gemini_model import (
+    GEMINI_BLOCKED_PLAIN_MESSAGE,
+    create_gemini_model,
+    extract_gemini_response_text,
+    gemini_safety_settings_block_none,
+)
 from app.services.karargah_llm_directive import with_karargah_osint_directive
 
 
@@ -147,10 +152,33 @@ KURALLAR:
         
         return data if isinstance(data, dict) else None
 
+    @staticmethod
+    def _blocked_batch_analysis_json_string() -> str:
+        """Google yanıt vermediğinde batch analiz şemasına uygun tek JSON nesnesi."""
+        return json.dumps(
+            {
+                "topic": "Genel",
+                "frame": "Haber",
+                "stance": "neutral",
+                "target": "Genel",
+                "risk_level": "low",
+                "confidence": 0.0,
+                "summary": GEMINI_BLOCKED_PLAIN_MESSAGE,
+                "sentiment": "Nötr",
+                "sentiment_score": 0.0,
+                "manipulation_prob": 0.0,
+                "bot_likelihood": 0.0,
+                "sarcasm_detected": False,
+                "crisis_score": 0,
+            },
+            ensure_ascii=False,
+        )
+
     def _safe_generate(self, prompt: str) -> Optional[str]:
         """
         Gemini API'yi güvenli çağırır — retry + backoff.
         """
+        safety = gemini_safety_settings_block_none()
         for attempt in range(self.MAX_RETRIES):
             try:
                 # Rate limit koruması
@@ -158,8 +186,14 @@ KURALLAR:
                     time.sleep(self.API_DELAY * (attempt + 1))
 
                 # prompt zaten with_karargah_osint_directive ile üretildiyse tekrar sarmalama
-                response = self.model.generate_content(prompt)
-                return response.text
+                response = self.model.generate_content(
+                    prompt,
+                    safety_settings=safety,
+                )
+                text = extract_gemini_response_text(response)
+                if text is None:
+                    return self._blocked_batch_analysis_json_string()
+                return text
 
             except Exception as e:
                 error_str = str(e).lower()
@@ -317,8 +351,15 @@ Kurallar: Türkçe, nötr istihbarat brifingi üslubu; kendini yapay zeka veya d
         try:
             if not self.model:
                 return "Hata: Gemini modeli başlatılamadı."
-            response = await self.model.generate_content_async(with_karargah_osint_directive(prompt))
-            return response.text
+            safety = gemini_safety_settings_block_none()
+            response = await self.model.generate_content_async(
+                with_karargah_osint_directive(prompt),
+                safety_settings=safety,
+            )
+            text = extract_gemini_response_text(response)
+            if text is None:
+                return GEMINI_BLOCKED_PLAIN_MESSAGE
+            return text
         except Exception as e:
             logger.error(f"Gemini Async Hata: {e}")
             return f"Hata: {str(e)}"

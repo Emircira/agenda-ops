@@ -4,7 +4,7 @@ from sqlalchemy.pool import NullPool  # <--- YENİ EKLENEN KISIM
 
 from app.core.config import settings
 from app.models.base_class import Base
-from app.models.core import Base, Source, Content, ContentMetric, ContentLabel, Opportunity
+from app.models.core import Base, Source, Content, ContentMetric, ContentLabel, Opportunity, ContentEmbedding
 
 
 # Engine oluştururken "poolclass=NullPool" ekliyoruz.

@@ -1,7 +1,8 @@
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
-from sqlalchemy import select, func, delete
-from app.models.core import Content, ContentLabel, Opportunity
+from app.models.core import Opportunity
+from app.repositories.content_repository import ContentRepository
+from app.repositories.opportunity_repository import OpportunityRepository
 
 class ScoringService:
     def __init__(self):
@@ -106,14 +107,13 @@ class ScoringService:
 
     async def generate_opportunities(self, db, window_hours=24):
         """Etiketlenmiş içerikleri gruplar ve her grup için fırsat skoru hesaplayıp kaydeder."""
-        await db.execute(delete(Opportunity))
-        await db.flush()
+        content_repo = ContentRepository(db)
+        opportunity_repo = OpportunityRepository(db)
+
+        await opportunity_repo.delete_all()
         time_threshold = datetime.utcnow() - timedelta(hours=window_hours)
         
-        # Etiketlenmiş içerikleri ve etiketlerini çek
-        query = select(Content, ContentLabel).join(ContentLabel, Content.id == ContentLabel.content_id).where(Content.published_at >= time_threshold)
-        res = await db.execute(query)
-        pairs = res.all()
+        pairs = await content_repo.list_labeled_content_pairs_since(time_threshold)
         
         if not pairs:
             return []
@@ -152,8 +152,7 @@ class ScoringService:
                 rationale=analysis["rationale"],
                 window_hours=window_hours
             )
-            db.add(opp)
             opportunities_created.append(opp)
         
-        await db.commit()
+        await opportunity_repo.persist_opportunities(opportunities_created)
         return opportunities_created

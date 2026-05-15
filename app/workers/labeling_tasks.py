@@ -2,13 +2,13 @@ import asyncio
 from typing import Any, Dict, List
 
 from loguru import logger
-from sqlalchemy import select, and_
 
 from app.core.celery_app import celery_app
 from app.db.session import AsyncSessionLocal
-from app.models.core import Content, ContentLabel, Source
+from app.models.core import Content, ContentLabel
 from app.services.gemini_service import GeminiAIClient
 from app.core.utils import calculate_twitter_bot_likelihood
+from app.repositories.content_repository import ContentRepository
 
 
 def run_async(coro):
@@ -68,16 +68,9 @@ def batch_analyze_contents(self) -> List[Dict[str, Any]]:
             max_iterations = 10
 
             async with AsyncSessionLocal() as db:
+                content_repo = ContentRepository(db)
                 for iteration in range(max_iterations):
-                    stmt = (
-                        select(Content, Source.source_category)
-                        .outerjoin(Source, Content.source_id == Source.id)
-                        .where(Content.is_analyzed == False)
-                        .order_by(Content.published_at.asc())
-                        .limit(DB_BATCH_SIZE)
-                    )
-                    res = await db.execute(stmt)
-                    rows = res.all()
+                    rows = await content_repo.fetch_unanalyzed_with_source_category(DB_BATCH_SIZE)
 
                     if not rows:
                         logger.info(f"📭 Analiz edilecek içerik kalmadı (iterasyon {iteration + 1}).")
@@ -106,7 +99,7 @@ def batch_analyze_contents(self) -> List[Dict[str, Any]]:
                         logger.error(f"❌ Gemini batch analiz hatası: {e}")
                         for c in contents:
                             c.is_analyzed = True
-                        await db.commit()
+                        await content_repo.commit()
                         total_skipped += len(contents)
                         continue
 
@@ -139,7 +132,7 @@ def batch_analyze_contents(self) -> List[Dict[str, Any]]:
                                     sentiment=match.get("sentiment", "Nötr"),
                                 )
 
-                                await db.merge(label)
+                                await content_repo.merge_label(label)
                                 content.is_analyzed = True
                                 total_analyzed += 1
 
@@ -153,10 +146,10 @@ def batch_analyze_contents(self) -> List[Dict[str, Any]]:
                             total_skipped += 1
 
                     try:
-                        await db.commit()
+                        await content_repo.commit()
                     except Exception as e:
                         logger.error(f"❌ DB commit hatası: {e}")
-                        await db.rollback()
+                        await content_repo.rollback()
                         total_failed += len(contents)
 
                     if iteration < max_iterations - 1:
@@ -220,21 +213,11 @@ def analyze_twitter_contents(self, fetch_result=None):
             total_analyzed = 0
 
             async with AsyncSessionLocal() as db:
+                content_repo = ContentRepository(db)
                 for _ in range(5):
-                    stmt = (
-                        select(Content, Source.source_category)
-                        .outerjoin(Source, Content.source_id == Source.id)
-                        .where(
-                            and_(
-                                Content.is_analyzed == False,
-                                Content.platform == "twitter"
-                            )
-                        )
-                        .order_by(Content.published_at.asc())
-                        .limit(DB_BATCH_SIZE)
+                    rows = await content_repo.fetch_unanalyzed_twitter_with_source_category(
+                        DB_BATCH_SIZE
                     )
-                    res = await db.execute(stmt)
-                    rows = res.all()
 
                     if not rows:
                         break
@@ -275,13 +258,13 @@ def analyze_twitter_contents(self, fetch_result=None):
                                     crisis_score=_safe_int(match.get("crisis_score"), 0),
                                     sentiment=match.get("sentiment", "Nötr"),
                                 )
-                                await db.merge(label)
+                                await content_repo.merge_label(label)
                                 total_analyzed += 1
                             except Exception as e:
                                 logger.warning(f"Label hatası: {e}")
                         content.is_analyzed = True
 
-                    await db.commit()
+                    await content_repo.commit()
                     await asyncio.sleep(3)
 
             result = f"Twitter AI Analiz: {total_analyzed} içerik analiz edildi."
@@ -325,21 +308,11 @@ def analyze_youtube_contents(self, fetch_result=None):
             total_analyzed = 0
 
             async with AsyncSessionLocal() as db:
+                content_repo = ContentRepository(db)
                 for _ in range(5):
-                    stmt = (
-                        select(Content, Source.source_category)
-                        .outerjoin(Source, Content.source_id == Source.id)
-                        .where(
-                            and_(
-                                Content.is_analyzed == False,
-                                Content.platform == "youtube_comment"
-                            )
-                        )
-                        .order_by(Content.published_at.asc())
-                        .limit(DB_BATCH_SIZE)
+                    rows = await content_repo.fetch_unanalyzed_youtube_comment_with_source_category(
+                        DB_BATCH_SIZE
                     )
-                    res = await db.execute(stmt)
-                    rows = res.all()
 
                     if not rows:
                         break
@@ -380,13 +353,13 @@ def analyze_youtube_contents(self, fetch_result=None):
                                     crisis_score=_safe_int(match.get("crisis_score"), 0),
                                     sentiment=match.get("sentiment", "Nötr"),
                                 )
-                                await db.merge(label)
+                                await content_repo.merge_label(label)
                                 total_analyzed += 1
                             except Exception as e:
                                 logger.warning(f"Label hatası: {e}")
                         content.is_analyzed = True
 
-                    await db.commit()
+                    await content_repo.commit()
                     await asyncio.sleep(3)
 
             result = f"YouTube AI Analiz: {total_analyzed} içerik analiz edildi."

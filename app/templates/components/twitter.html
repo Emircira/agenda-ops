@@ -1,38 +1,38 @@
-<div id="view-twitter" class="view-section flex-1 flex flex-col w-full overflow-y-auto p-6 z-10 relative scroll-smooth">
+<div id="view-twitter" class="view-section flex-1 flex flex-col w-full overflow-y-auto p-6 z-10 relative scroll-smooth bg-[#f8f9fa]">
     <div class="bg-panel rounded-xl border border-slate-800 shadow-lg p-5 mb-6">
-        <div class="flex justify-between items-center mb-5">
-            <h3 class="text-lg font-bold text-white flex items-center gap-2">X (Twitter) Veri Analizi</h3>
-            <div class="flex gap-2">
-                <button onclick="window.AgendaOps.runWorkerAction('twitter', this)" class="bg-slate-700 hover:bg-slate-600 text-white text-xs px-4 py-2 rounded font-bold transition-colors">🔄 Mevcut Kaynakları Çek</button>
-                <button id="btnTwitterAnalysis" onclick="window.AgendaOps.runTwitterAnalysis(this)" class="bg-[#1DA1F2] hover:bg-blue-600 text-white text-xs px-4 py-2 rounded font-bold transition-colors shadow-lg">🧠 4'lü Rapor Çıkar</button>
+        <div class="flex justify-between items-center mb-5 flex-wrap gap-3">
+            <h3 class="text-lg font-bold text-[#202124] flex items-center gap-2">X (Twitter) Veri Analizi</h3>
+            <div class="flex gap-2 flex-wrap">
+                <button onclick="window.AgendaOps.runWorkerAction('twitter', this)" class="bg-[#f1f3f4] hover:bg-[#e8eaed] text-[#202124] text-xs px-4 py-2 rounded-lg font-bold transition-colors border border-[#dadce0]">🔄 Mevcut Kaynakları Çek</button>
+                <button id="btnTwitterAnalysis" onclick="window.AgendaOps.runTwitterAnalysis(this)" class="bg-[#1DA1F2] hover:bg-[#1a8cd8] text-white text-xs px-4 py-2 rounded-lg font-bold transition-colors shadow-sm">🧠 4'lü Rapor Çıkar</button>
             </div>
         </div>
-        <div class="flex gap-3 mb-5">
-            <input type="text" id="twKeyword" placeholder="Spesifik bir konu/kelime ara (Örn: fenerbahçe)..." class="flex-1 bg-dark border border-slate-700 text-white rounded-lg px-4 py-2.5 text-sm focus:border-[#1DA1F2]/50 outline-none">
-            <button onclick="window.AgendaOps.runPlatformAnalyze('twitter', 'twKeyword', 'tw-analyze-result', this)" class="bg-[#1DA1F2]/20 text-[#1DA1F2] border border-[#1DA1F2]/30 hover:bg-[#1DA1F2]/40 text-xs px-5 py-2.5 rounded-lg font-bold transition-colors">🔍 Canlı Çek & Analiz Et</button>
+        <div class="flex gap-3 mb-5 flex-wrap">
+            <input type="text" id="twKeyword" placeholder="Spesifik bir konu/kelime ara (Örn: fenerbahçe)..." class="flex-1 bg-white border border-[#dadce0] text-[#202124] rounded-lg px-4 py-2.5 text-sm focus:border-[#1DA1F2] focus:ring-1 focus:ring-[#1DA1F2]/30 outline-none min-w-[200px]">
+            <button onclick="window.AgendaOps.runPlatformAnalyze('twitter', 'twKeyword', 'tw-analyze-result', this)" class="bg-[#e8f0fe] text-[#1967d2] border border-[#dadce0] hover:bg-[#d2e3fc] text-xs px-5 py-2.5 rounded-lg font-bold transition-colors">🔍 Canlı Çek & Analiz Et</button>
         </div>
-        <div id="tw-analyze-result" class="hidden bg-dark/50 border border-slate-700 p-5 rounded-lg text-slate-300 text-sm leading-relaxed mb-5 max-h-[500px] overflow-y-auto custom-scrollbar"></div>
+        <div id="tw-analyze-result" class="hidden bg-[#f8f9fa] border border-[#dadce0] p-5 rounded-lg text-[#3c4043] text-sm leading-relaxed mb-5 max-h-[500px] overflow-y-auto custom-scrollbar"></div>
         <div id="tw-loader" class="hidden flex flex-col items-center justify-center py-6 text-[#1DA1F2]"><div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#1DA1F2] mb-3"></div><p class="animate-pulse text-sm font-medium">X verileri analiz ediliyor...</p></div>
         <div id="tw-results" class="grid grid-cols-1 md:grid-cols-2 gap-4 hidden">
-            <div class="bg-dark/50 border border-slate-700 p-4 rounded-lg flex flex-col min-h-0 max-h-64"><h4 class="text-success font-bold text-sm mb-2 shrink-0">🎯 VIP Hedef (Bizim Hesap)</h4><p id="tw-vip" class="text-sm text-slate-300 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1"></p></div>
-            <div class="bg-dark/50 border border-slate-700 p-4 rounded-lg flex flex-col min-h-0 max-h-64"><h4 class="text-danger font-bold text-sm mb-2 shrink-0">⚔️ Rakip Hedef Analizi</h4><p id="tw-comp" class="text-sm text-slate-300 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1"></p></div>
-            <div class="bg-dark/50 border border-slate-700 p-4 rounded-lg flex flex-col min-h-0 max-h-64"><h4 class="text-warning font-bold text-sm mb-2 shrink-0">🔥 Trend ve Gündem</h4><p id="tw-trend" class="text-sm text-slate-300 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1"></p></div>
-            <div class="bg-primary/10 border border-primary/30 p-4 rounded-lg flex flex-col min-h-0 max-h-64"><h4 class="text-primary font-bold text-sm mb-2 shrink-0">⚡ Önerilen Eylem Planı</h4><p id="tw-action" class="text-sm text-white font-medium flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1"></p></div>
+            <div class="bg-white border border-[#dadce0] p-4 rounded-xl flex flex-col min-h-0 max-h-64 shadow-sm"><h4 class="text-[#137333] font-bold text-sm mb-2 shrink-0">🎯 VIP Hedef (Bizim Hesap)</h4><p id="tw-vip" class="text-sm text-[#3c4043] flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1"></p></div>
+            <div class="bg-white border border-[#dadce0] p-4 rounded-xl flex flex-col min-h-0 max-h-64 shadow-sm"><h4 class="text-[#c5221f] font-bold text-sm mb-2 shrink-0">⚔️ Rakip Hedef Analizi</h4><p id="tw-comp" class="text-sm text-[#3c4043] flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1"></p></div>
+            <div class="bg-white border border-[#dadce0] p-4 rounded-xl flex flex-col min-h-0 max-h-64 shadow-sm"><h4 class="text-[#b06000] font-bold text-sm mb-2 shrink-0">🔥 Trend ve Gündem</h4><p id="tw-trend" class="text-sm text-[#3c4043] flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1"></p></div>
+            <div class="bg-[#e8f0fe] border border-[#dadce0] p-4 rounded-xl flex flex-col min-h-0 max-h-64 shadow-sm"><h4 class="text-[#1967d2] font-bold text-sm mb-2 shrink-0">⚡ Önerilen Eylem Planı</h4><p id="tw-action" class="text-sm text-[#202124] font-medium flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1"></p></div>
         </div>
     </div>
-    <div class="bg-panel rounded-xl border border-slate-800 shadow-lg flex flex-col h-[500px]">
-        <div class="p-4 border-b border-slate-800 bg-slate-900/40"><h3 class="text-white font-medium">X (Twitter) Ham Veri Akışı</h3></div>
-        <div id="stream-twitter" class="flex-1 overflow-y-auto p-4 space-y-3 bg-dark/20 custom-scrollbar max-h-[min(500px,calc(100vh-14rem))]">
+    <div class="bg-panel rounded-xl border border-slate-800 shadow-lg flex flex-col h-[500px] overflow-hidden">
+        <div class="p-4 border-b border-[#dadce0] bg-[#f8f9fa]"><h3 class="text-[#202124] font-medium text-sm">X (Twitter) Ham Veri Akışı</h3></div>
+        <div id="stream-twitter" class="flex-1 overflow-y-auto p-4 space-y-2 k-stream-well custom-scrollbar max-h-[min(500px,calc(100vh-14rem))]">
             {% for item in contents if item.platform == 'twitter' %}
-            <div class="p-4 bg-panel/80 rounded-lg border border-slate-700/60">
+            <div class="k-list-row">
                 <div class="flex items-center gap-2 mb-2 flex-wrap">
                     {% if (item.content_type and item.content_type.value == 'reply') or (item.raw_json and item.raw_json.get('target_type') == 'twitter_reply') %}
-                    <span class="text-[10px] font-bold text-cyan-400 border border-cyan-500/40 px-1.5 py-0.5 rounded">Yanıt</span>
+                    <span class="k-badge k-badge--info text-[10px] py-0.5">Yanıt</span>
                     {% endif %}
-                    <span class="text-white text-sm font-semibold">{{ item.author_name }}</span>
-                    <span class="text-slate-500 text-xs ml-auto">{{ item.published_at.strftime('%H:%M') }}</span>
+                    <span class="text-[#202124] text-sm font-semibold">{{ item.author_name }}</span>
+                    <span class="text-[#5f6368] text-xs ml-auto">{{ item.published_at.strftime('%H:%M') }}</span>
                 </div>
-                <p class="text-sm text-slate-300">{{ item.text }}</p>
+                <p class="text-sm text-[#3c4043] leading-relaxed">{{ item.text }}</p>
             </div>
             {% endfor %}
         </div>

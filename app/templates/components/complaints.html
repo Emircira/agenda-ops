@@ -1,26 +1,26 @@
-<div id="view-complaints" class="view-section flex-1 flex flex-col w-full overflow-y-auto p-6 z-10 relative scroll-smooth">
+<div id="view-complaints" class="view-section flex-1 flex flex-col w-full overflow-y-auto p-6 z-10 relative scroll-smooth bg-[#f8f9fa]">
     <div class="bg-panel rounded-xl border border-slate-800 shadow-lg p-6 mb-6">
-        <div class="flex justify-between items-center mb-6">
+        <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
             <div>
-                <h3 class="text-xl font-bold text-white flex items-center gap-2">🚨 Rakip Zafiyetleri ve Saha Krizleri Panosu</h3>
-                <p class="text-slate-400 text-sm mt-1">Seçilen bölge için kamusal tartışma ve saha baskı sinyallerinin tek ekranda özetlenmiş görünümü.</p>
+                <h3 class="text-xl font-bold text-[#202124] flex items-center gap-2">🚨 Rakip Zafiyetleri ve Saha Krizleri Panosu</h3>
+                <p class="text-[#5f6368] text-sm mt-1">Seçilen bölge için kamusal tartışma ve saha baskı sinyallerinin tek ekranda özetlenmiş görünümü.</p>
             </div>
             <div class="flex gap-3 items-center flex-wrap justify-end">
                 <div class="relative">
-                    <select id="complaintCity" onchange="window.AgendaOps.onComplaintProvinceSelected(this)" class="appearance-none cursor-pointer bg-dark border border-slate-700 hover:border-slate-600 text-white rounded-xl pl-4 pr-10 py-3 text-sm shadow-inner focus:ring-2 focus:ring-danger/40 focus:border-danger outline-none min-w-[220px] max-w-[300px] transition-colors">
+                    <select id="complaintCity" onchange="window.AgendaOps.onComplaintProvinceSelected(this)" class="appearance-none cursor-pointer bg-white border border-[#dadce0] hover:border-[#bdc1c6] text-[#202124] rounded-lg pl-4 pr-10 py-3 text-sm shadow-sm focus:ring-2 focus:ring-[#c5221f]/20 focus:border-[#c5221f] outline-none min-w-[220px] max-w-[300px] transition-colors">
                     <option value="">Tüm Türkiye (Genel)</option>
                     {% for p in tr_provinces|default([], true) %}
                     <option value="{{ p }}">{{ p }}</option>
                     {% endfor %}
                 </select>
-                    <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs">▼</span>
+                    <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#5f6368] text-xs">▼</span>
                 </div>
-                <button id="btnComplaintsRadar" onclick="window.AgendaOps.runComplaintsRadar(this)" class="bg-danger/20 hover:bg-danger/30 text-danger border border-danger/30 px-5 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">🔍 Taramayı Başlat</button>
+                <button id="btnComplaintsRadar" onclick="window.AgendaOps.runComplaintsRadar(this)" class="bg-[#fce8e6] hover:bg-[#fad2cf] text-[#c5221f] border border-[#fad2cf] px-5 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">🔍 Taramayı Başlat</button>
             </div>
         </div>
-        <div id="complaints-loader" class="hidden flex flex-col items-center justify-center py-12 text-danger"><div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-danger mb-3"></div><p id="complaints-loader-msg" class="animate-pulse text-sm font-medium tracking-wide text-slate-300">Bölge Kriz Verileri Toplanıyor...</p></div>
+        <div id="complaints-loader" class="hidden flex flex-col items-center justify-center py-12 text-[#c5221f]"><div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-[#c5221f] mb-3"></div><p id="complaints-loader-msg" class="animate-pulse text-sm font-medium tracking-wide text-[#5f6368]">Bölge Kriz Verileri Toplanıyor...</p></div>
         <div id="complaints-results" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 hidden"></div>
-        <div id="complaints-empty" class="hidden text-center py-10 text-slate-500">
+        <div id="complaints-empty" class="hidden text-center py-10 text-[#5f6368]">
             <p class="text-lg mb-2">📭</p>
             <p class="text-sm">Henüz tarama yapılmadı. "Taramayı Başlat" butonuna tıklayın.</p>
         </div>
