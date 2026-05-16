@@ -88,6 +88,7 @@
             </button>
         </header>
 
+        <div id="main-scroll" class="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden scroll-smooth relative z-[5]">
         <section class="k-rag-strip shrink-0 px-6 pt-4 pb-2 z-10" aria-label="Vektörel RAG istihbarat">
             <div class="k-rag-bar">
                 <div class="k-rag-input-wrap">
@@ -98,11 +99,14 @@
                 <p id="rag-result-meta" class="k-rag-meta hidden"></p>
                 <div id="rag-result-loading" class="hidden k-rag-meta text-primary font-medium">Aranıyor…</div>
                 <div id="rag-result-error" class="hidden k-rag-meta text-[#c5221f] font-medium"></div>
-                <div id="rag-result-body" class="hidden k-rag-doc custom-scrollbar max-h-[55vh] overflow-y-auto"></div>
+                <div id="rag-result-toolbar" class="hidden max-w-[800px] mx-auto w-full flex justify-end items-center gap-2 pt-3 pb-0 px-1">
+                    <button type="button" id="rag-close-btn" class="k-rag-close-btn">Analizi kapat</button>
+                </div>
+                <div id="rag-result-body" class="hidden k-rag-doc custom-scrollbar max-h-[min(55vh,28rem)] overflow-y-auto"></div>
             </div>
         </section>
 
-        <div id="view-dashboard" class="view-section active flex-1 flex flex-col w-full overflow-y-auto p-6 z-10 relative scroll-smooth bg-dark min-h-0">
+        <div id="view-dashboard" class="view-section active flex-1 flex flex-col w-full p-6 z-10 relative scroll-smooth bg-dark min-h-0">
             <div class="radar-scan opacity-30"></div>
             
             <!-- OPPORTUNITY CARDS -->
@@ -118,20 +122,22 @@
                     {% set score = opp.score|float %}
                     {% if score >= 75 %}
                         {% set accent = 'rose' %}
+                        {% set tier = 'critical' %}
                         {% set importance = 'KRİTİK' %}
                         {% set reaction = 'Yüksek Tepki' %}
                     {% elif score >= 50 %}
                         {% set accent = 'indigo' %}
+                        {% set tier = 'high' %}
                         {% set importance = 'YÜKSEK' %}
                         {% set reaction = 'Yükselen İlgi' %}
                     {% else %}
                         {% set accent = 'emerald' %}
+                        {% set tier = 'watch' %}
                         {% set importance = 'İZLEMEDE' %}
                         {% set reaction = 'Fırsat Sinyali' %}
                     {% endif %}
-                    <div class="bg-white border border-{{ accent }}-200 p-5 rounded-xl hover:shadow-md transition-shadow group relative overflow-hidden shadow-sm flex flex-col max-h-[500px] min-h-0">
-                        <div class="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-{{ accent }}-300 via-primary to-blue-400 opacity-90"></div>
-                        <div class="absolute -right-12 -top-12 w-32 h-32 bg-{{ accent }}-100 rounded-full blur-3xl opacity-40 group-hover:opacity-60 transition-all"></div>
+                    <div class="k-opportunity-card k-opp-tier--{{ tier }} p-5 group relative overflow-hidden flex flex-col max-h-[500px] min-h-0 hover:border-primary/40 transition-colors">
+                        <div class="k-opp-accent-bar" aria-hidden="true"></div>
 
                         <div class="relative z-10 flex items-center justify-between mb-4">
                             <span class="text-[9px] font-black text-[#5f6368] uppercase tracking-[0.25em]">SaaS Intelligence</span>
@@ -140,54 +146,65 @@
 
                         <div class="flex justify-between items-start mb-3 relative z-10">
                             <div class="min-w-0 pr-3">
-                                <span class="text-[10px] font-bold text-{{ accent }}-700 uppercase tracking-widest mb-1 block">{{ opp.frame }}</span>
-                                <h4 class="text-[#202124] font-extrabold text-sm leading-tight group-hover:text-primary transition-colors line-clamp-2">{{ opp.topic }}</h4>
+                                <span class="text-[10px] font-bold text-{{ accent }}-300 uppercase tracking-widest mb-1 block">{{ opp.frame or 'KATEGORİ BELİRSİZ' }}</span>
+                                <h4 class="text-white font-bold text-[15px] leading-snug group-hover:text-{{ accent }}-200 transition-colors line-clamp-3">
+                                    {{ opp.topic if opp.topic else '⚠️ Konu başlığı tespit edilemedi' }}
+                                </h4>
                             </div>
                             <div class="flex flex-col items-end shrink-0">
-                                <div class="relative w-14 h-14 rounded-xl bg-[#f8f9fa] border border-{{ accent }}-200 flex items-center justify-center shadow-inner">
-                                    <div class="absolute inset-1 rounded-lg bg-{{ accent }}-50"></div>
+                                <div class="k-opp-score-box relative w-14 h-14 rounded-xl flex items-center justify-center">
                                     <span class="relative text-xl font-black text-[#202124] leading-none">{{ opp.score|round|int }}</span>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="mb-4 relative z-10 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
-                            <p class="text-[11px] text-[#5f6368] leading-relaxed">
-                                <span class="text-{{ accent }}-700 font-bold">AI Analizi:</span>
-                                {{ opp.rationale.insight if opp.rationale else 'Stratejik özet hazırlanıyor...' }}
-                            </p>
+                        <div class="mb-4 relative z-10 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 mt-2">
+                            <div class="bg-black/20 p-2.5 rounded-lg border border-white/5">
+                                <p class="text-[12px] text-slate-300 leading-relaxed">
+                                    <span class="text-{{ accent }}-300 font-bold block mb-1">AI DURUM ÖZETİ:</span>
+                                    {% if opp.rationale %}
+                                        {% if opp.rationale is mapping %}
+                                            {{ opp.rationale.get('insight', opp.rationale | string) }}
+                                        {% else %}
+                                            {{ opp.rationale }}
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="text-slate-500 italic">Detaylı istihbarat özeti henüz veritabanına işlenmedi...</span>
+                                    {% endif %}
+                                </p>
+                            </div>
                         </div>
 
                         <div class="grid grid-cols-1 gap-2 mb-4 relative z-10 shrink-0">
-                            <div class="flex items-center justify-between bg-[#f8f9fa] border border-[#dadce0] rounded-lg px-3 py-2">
+                            <div class="k-opp-metric-row">
                                 <span class="text-[10px] text-[#5f6368] uppercase font-bold">Stratejik Önem</span>
-                                <span class="text-[10px] text-{{ accent }}-700 font-black tracking-wider">{{ importance }}</span>
+                                <span class="text-[10px] k-opp-frame-label font-black tracking-wider">{{ importance }}</span>
                             </div>
-                            <div class="flex items-center justify-between bg-[#f8f9fa] border border-[#dadce0] rounded-lg px-3 py-2">
+                            <div class="k-opp-metric-row">
                                 <span class="text-[10px] text-[#5f6368] uppercase font-bold">Halkın Tepki Potansiyeli</span>
                                 <span class="text-[10px] text-[#202124] font-bold">{{ reaction }}</span>
                             </div>
-                            <div class="w-full bg-[#e8eaed] rounded-full h-1.5 overflow-hidden border border-[#dadce0]">
-                                <div class="bg-gradient-to-r from-{{ accent }}-400 to-primary h-full rounded-full" style="width: {{ opp.score }}%"></div>
+                            <div class="k-opp-progress-track">
+                                <div class="k-opp-progress-fill" style="width: {{ opp.score }}%"></div>
                             </div>
                             <div class="grid grid-cols-2 gap-2">
-                                <div class="bg-[#f8f9fa] p-3 rounded-lg border border-[#dadce0]">
+                                <div class="k-opp-stat-cell">
                                     <span class="text-[9px] text-[#5f6368] block mb-1 uppercase font-bold">Velocity</span>
                                     <span class="text-[#202124] text-sm font-black">%{{ opp.rationale.breakdown.velocity if opp.rationale else '0' }}</span>
                                 </div>
-                                <div class="bg-[#f8f9fa] p-3 rounded-lg border border-[#dadce0]">
+                                <div class="k-opp-stat-cell">
                                     <span class="text-[9px] text-[#5f6368] block mb-1 uppercase font-bold">Reach</span>
                                     <span class="text-[#202124] text-sm font-black">%{{ opp.rationale.breakdown.reach if opp.rationale else '0' }}</span>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="flex items-center justify-between mt-auto pt-3 border-t border-[#dadce0] relative z-10">
+                        <div class="flex items-center justify-between mt-auto pt-3 border-t border-slate-800 relative z-10">
                             <div class="flex items-center gap-1.5">
-                                <div class="w-2 h-2 bg-{{ accent }}-500 rounded-full animate-pulse"></div>
+                                <div class="k-opp-live-dot" aria-hidden="true"></div>
                                 <span class="text-[10px] text-[#5f6368] font-medium">{{ opp.created_at.strftime('%H:%M') if opp.created_at else '' }}</span>
                             </div>
-                            <span class="text-[9px] bg-[#e8f0fe] text-[#1967d2] px-2 py-0.5 rounded font-bold border border-[#dadce0]">AI PRIORITY</span>
+                            <span class="k-opp-priority-pill">AI PRIORITY</span>
                         </div>
                     </div>
                     {% endfor %}
@@ -334,6 +351,8 @@
         {% include 'components/deep_research.html' %}
         {% include 'components/targets.html' %}
         {% include 'components/system_status.html' %}
+
+        </div>
 
         <div id="aiModal" class="fixed inset-0 bg-[#202124]/40 backdrop-blur-sm z-[60] hidden flex items-center justify-center p-4 transition-opacity duration-300 opacity-0">
             <div class="bg-panel border border-slate-800 rounded-xl shadow-lg w-full max-w-4xl max-h-[85vh] flex flex-col transform transition-transform duration-300 scale-95" id="aiModalContent">
@@ -688,12 +707,35 @@
             initRagSearchUi() {
                 const inp = document.getElementById('rag-search-input');
                 const btn = document.getElementById('rag-search-btn');
+                const closeBtn = document.getElementById('rag-close-btn');
                 if (!inp || !btn) return;
                 const go = () => this.runRagSearch();
                 btn.addEventListener('click', go);
                 inp.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') { e.preventDefault(); go(); }
+                    if (e.key === 'Escape') { e.preventDefault(); this.closeRagResults(); }
                 });
+                if (closeBtn) closeBtn.addEventListener('click', () => this.closeRagResults());
+                document.addEventListener('keydown', (e) => {
+                    if (e.key !== 'Escape') return;
+                    const modal = document.getElementById('aiModal');
+                    if (modal && !modal.classList.contains('hidden')) return;
+                    const body = document.getElementById('rag-result-body');
+                    if (body && !body.classList.contains('hidden')) this.closeRagResults();
+                });
+            }
+
+            closeRagResults() {
+                const meta = document.getElementById('rag-result-meta');
+                const loading = document.getElementById('rag-result-loading');
+                const errEl = document.getElementById('rag-result-error');
+                const body = document.getElementById('rag-result-body');
+                const toolbar = document.getElementById('rag-result-toolbar');
+                if (toolbar) toolbar.classList.add('hidden');
+                if (meta) { meta.classList.add('hidden'); meta.textContent = ''; }
+                if (loading) loading.classList.add('hidden');
+                if (errEl) { errEl.classList.add('hidden'); errEl.textContent = ''; }
+                if (body) { body.classList.add('hidden'); body.innerHTML = ''; }
             }
 
             formatRagReportHtml(data) {
@@ -722,6 +764,7 @@
                 const loading = document.getElementById('rag-result-loading');
                 const errEl = document.getElementById('rag-result-error');
                 const body = document.getElementById('rag-result-body');
+                const toolbar = document.getElementById('rag-result-toolbar');
                 const q = inp && inp.value ? inp.value.trim() : '';
                 if (!q) { alert('Lütfen bir arama metni girin.'); return; }
                 errEl.classList.add('hidden');
@@ -729,6 +772,7 @@
                 body.classList.add('hidden');
                 body.innerHTML = '';
                 meta.classList.add('hidden');
+                if (toolbar) toolbar.classList.add('hidden');
                 loading.classList.remove('hidden');
                 const btn = document.getElementById('rag-search-btn');
                 if (btn) btn.disabled = true;
@@ -752,6 +796,7 @@
                         ? 'Sorgu: «' + this.escapeHtml(String(data.query || q)) + '» · ' + data.match_count + ' eşleşen içerik'
                         : 'Sorgu: «' + this.escapeHtml(String(data.query || q)) + '»';
                     meta.classList.remove('hidden');
+                    if (toolbar) toolbar.classList.remove('hidden');
                     if (data.message && !data.report) {
                         body.innerHTML = '<p>' + this.escapeHtml(String(data.message)) + '</p>';
                         body.classList.remove('hidden');
@@ -1484,22 +1529,71 @@
                     rows.forEach((opp) => {
                         const score = Number(opp.score) || 0;
                         const insight = (opp.rationale && opp.rationale.insight) ? String(opp.rationale.insight) : 'Stratejik özet hazırlanıyor...';
+                        let tier = 'watch';
+                        let badgeClass = 'k-badge--success';
+                        if (score >= 75) { tier = 'critical'; badgeClass = 'k-badge--danger'; }
+                        else if (score >= 50) { tier = 'high'; badgeClass = 'k-badge--info'; }
+                        const importance = score >= 75 ? 'KRİTİK' : (score >= 50 ? 'YÜKSEK' : 'İZLEMEDE');
+                        const reaction = score >= 75 ? 'Yüksek Tepki' : (score >= 50 ? 'Yükselen İlgi' : 'Fırsat Sinyali');
+                        const bd = (opp.rationale && opp.rationale.breakdown) ? opp.rationale.breakdown : {};
+                        const velocity = bd.velocity != null ? String(bd.velocity) : '0';
+                        const reach = bd.reach != null ? String(bd.reach) : '0';
+                        let timeShort = '';
+                        if (opp.created_at) {
+                            const s = String(opp.created_at);
+                            const m = s.match(/T(\d{2}:\d{2})/);
+                            timeShort = m ? m[1] : s.slice(11, 16);
+                        }
                         const card = document.createElement('div');
-                        card.className = 'bg-panel border border-[#dadce0] p-5 rounded-xl flex flex-col max-h-[500px] min-h-0 shadow-sm';
+                        card.className = `k-opportunity-card k-opp-tier--${tier} p-5 group relative overflow-hidden flex flex-col max-h-[500px] min-h-0 hover:border-primary/40 transition-colors`;
                         card.innerHTML = `
-                            <div class="flex justify-between items-start mb-3">
+                            <div class="k-opp-accent-bar" aria-hidden="true"></div>
+                            <div class="relative z-10 flex items-center justify-between mb-4">
+                                <span class="text-[9px] font-black text-[#5f6368] uppercase tracking-[0.25em]">SaaS Intelligence</span>
+                                <span class="text-[9px] k-badge ${badgeClass}">CANLI SKOR</span>
+                            </div>
+                            <div class="flex justify-between items-start mb-3 relative z-10">
                                 <div class="min-w-0 pr-3">
-                                    <span class="text-[10px] font-bold text-[#1967d2] uppercase tracking-widest mb-1 block">${this.escapeHtml(opp.frame || '')}</span>
-                                    <h4 class="text-[#202124] font-bold text-sm leading-tight line-clamp-2">${this.escapeHtml(opp.topic || '')}</h4>
+                                    <span class="k-opp-frame-label text-[10px] font-bold uppercase tracking-widest mb-1 block">${this.escapeHtml(opp.frame || '')}</span>
+                                    <h4 class="text-[#202124] font-extrabold text-sm leading-tight line-clamp-2">${this.escapeHtml(opp.topic || '')}</h4>
                                 </div>
-                                <div class="w-14 h-14 rounded-lg bg-[#e8f0fe] border border-[#dadce0] flex items-center justify-center shrink-0">
-                                    <span class="text-xl font-bold text-[#1967d2] leading-none">${Math.round(score)}</span>
+                                <div class="k-opp-score-box relative w-14 h-14 rounded-xl flex items-center justify-center shrink-0">
+                                    <span class="relative text-xl font-black text-[#202124] leading-none">${Math.round(score)}</span>
                                 </div>
                             </div>
-                            <div class="mb-4 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
-                                <p class="text-[11px] text-[#5f6368] leading-relaxed"><span class="text-[#1967d2] font-bold">Özet:</span> ${this.escapeHtml(insight)}</p>
+                            <div class="mb-4 relative z-10 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
+                                <p class="text-[11px] text-[#5f6368] leading-relaxed"><span class="k-opp-frame-label font-bold">AI Analizi:</span> ${this.escapeHtml(insight)}</p>
                             </div>
-                            <div class="mt-auto pt-3 border-t border-[#dadce0] text-[10px] text-[#5f6368]">${opp.created_at ? this.escapeHtml(String(opp.created_at).slice(0, 16)) : ''}</div>`;
+                            <div class="grid grid-cols-1 gap-2 mb-4 relative z-10 shrink-0">
+                                <div class="k-opp-metric-row">
+                                    <span class="text-[10px] text-[#5f6368] uppercase font-bold">Stratejik Önem</span>
+                                    <span class="text-[10px] k-opp-frame-label font-black tracking-wider">${importance}</span>
+                                </div>
+                                <div class="k-opp-metric-row">
+                                    <span class="text-[10px] text-[#5f6368] uppercase font-bold">Halkın Tepki Potansiyeli</span>
+                                    <span class="text-[10px] text-[#202124] font-bold">${reaction}</span>
+                                </div>
+                                <div class="k-opp-progress-track">
+                                    <div class="k-opp-progress-fill" style="width: ${Math.min(100, score)}%"></div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div class="k-opp-stat-cell">
+                                        <span class="text-[9px] text-[#5f6368] block mb-1 uppercase font-bold">Velocity</span>
+                                        <span class="text-[#202124] text-sm font-black">%${this.escapeHtml(velocity)}</span>
+                                    </div>
+                                    <div class="k-opp-stat-cell">
+                                        <span class="text-[9px] text-[#5f6368] block mb-1 uppercase font-bold">Reach</span>
+                                        <span class="text-[#202124] text-sm font-black">%${this.escapeHtml(reach)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between mt-auto pt-3 border-t border-slate-800 relative z-10">
+                                <div class="flex items-center gap-1.5">
+                                    <div class="k-opp-live-dot" aria-hidden="true"></div>
+                                    <span class="text-[10px] text-[#5f6368] font-medium">${this.escapeHtml(timeShort)}</span>
+                                </div>
+                                <span class="k-opp-priority-pill">AI PRIORITY</span>
+                            </div>`;
                         grid.appendChild(card);
                     });
                 } catch (_) {}
