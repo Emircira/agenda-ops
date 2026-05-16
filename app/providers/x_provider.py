@@ -71,7 +71,8 @@ class RapidXProvider(XProvider):
     • Her API çağrısı arasında 3sn bekleme (rate-limit koruması)
     • Cursor tabanlı sayfalama (pagination) — güçlendirilmiş
     • Reklam/Promoted filtreleme
-    • Hit (en çok etkileşim) yorumlarını önceliklendirme
+    • Yanıtlar: API havuzunda beğeniye göre ilk N; filtreyle N dolmazsa kalan kota API havuzundan rastgele tamamlanır (X_REPLY_PAD_SKIP_LOCALE)
+    • Yanıt API bütçesi: timeline ingest başına en fazla Y üst tweet (X_TIMELINE_REPLY_FETCH_BUDGET, varsayılan 8)
     • seen_ids ile duplicate engellemesi
     """
 
@@ -83,11 +84,9 @@ class RapidXProvider(XProvider):
     REQUEST_TIMEOUT = 45.0
     # Maksimum deneme (5xx geçici RapidAPI/upstream kesintileri için birkaç tur)
     MAX_RETRIES = 5
-    # API maliyeti: tek tweet başına en fazla bu kadar yanıt saklanır
-    MAX_REPLY_COMMENTS = 5
+    # Timeline'dan kaç ham tweet taranır / kaç üst gönderi reply adayı olarak tutulur
     _TIMELINE_PARSE_CAP = 20
     _TIMELINE_PARENT_KEEP = 20
-    _TIMELINE_REPLY_FETCH_BUDGET = 1
 
     # Gündem / yüzeysel arama: düşük etkileşimli tweetleri ele (env ile sıkılaştırılabilir)
     _TREND_MIN_LIKES = int(os.getenv("X_TREND_MIN_LIKES", "25"))
@@ -110,6 +109,10 @@ class RapidXProvider(XProvider):
             f"RapidAPI istekleri bu ana bilgilerle yapılacak."
         )
         self.base_url = f"https://{self.api_host}"
+        # tweet_thread yanıtları: beğeni sırasıyla üst N (tüm yanıtlar değil — performans)
+        self.max_reply_comments = max(1, min(int(os.getenv("X_MAX_REPLY_COMMENTS", "10")), 20))
+        # Bir ingest koşusunda kaç üst tweet için yorum API'si çağrılacak (0 = yanıt yok)
+        self.timeline_reply_fetch_budget = max(0, int(os.getenv("X_TIMELINE_REPLY_FETCH_BUDGET", "8")))
 
     @staticmethod
     def _extract_api_lang(tweet_data: dict) -> Optional[str]:
@@ -634,7 +637,14 @@ class RapidXProvider(XProvider):
         apply_locale_filter: bool = True,
         max_return: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        """Bir tweet'in altındaki en etkili yorumları çeker."""
+        """
+        Bir tweet yanıtlarını çeker.
+
+        - API'nin döndürdüğü tüm yanıtlar beğeniye (eşitlikte retweet) göre sıralanır; hedef kota N içinde
+          önce süzgeçleri (min etkileşim + isteğe bağlı Türkçe) geçenlerden bu sırayla seçilir.
+        - Kota dolmazsa, N'ye kadar rastgele tampon: henüz seçilmemiş yanıtlar arasından (varsayılan olarak
+          tampon adımında Türkçe süzgeci atlanır — X_REPLY_PAD_SKIP_LOCALE=0 ile kapatılır).
+        """
         try:
             data = await self._api_request("tweet_thread.php", {"id": str(tweet_id)})
 
@@ -646,39 +656,92 @@ class RapidXProvider(XProvider):
                 if not isinstance(raw_items, list):
                     raw_items = []
 
-            replies = []
+            dedup: Dict[str, Dict[str, Any]] = {}
             for item in raw_items:
                 parsed = self._parse_tweet(item, keyword=str(tweet_id), target_type="twitter_reply")
-                if parsed and parsed["external_id"] != str(tweet_id):
-                    replies.append(parsed)
+                if not parsed or parsed["external_id"] == str(tweet_id):
+                    continue
+                eid = str(parsed["external_id"])
+                prev = dedup.get(eid)
+                if prev is None:
+                    dedup[eid] = parsed
+                else:
+                    s_new = (int(parsed.get("_likes", 0)), int(parsed.get("_retweets", 0)))
+                    s_old = (int(prev.get("_likes", 0)), int(prev.get("_retweets", 0)))
+                    if s_new > s_old:
+                        dedup[eid] = parsed
 
-            # Hit sıralaması: Beğeni + Retweet'e göre
-            replies.sort(key=lambda x: x.get("_likes", 0) + x.get("_retweets", 0), reverse=True)
+            replies = list(dedup.values())
+            replies.sort(
+                key=lambda x: (int(x.get("_likes", 0)), int(x.get("_retweets", 0))),
+                reverse=True,
+            )
 
             min_re = max(0, int(os.getenv("X_REPLY_MIN_ENGAGEMENT", "1")))
-            take_cap = max_return if max_return is not None else self.MAX_REPLY_COMMENTS
+            take_cap = max_return if max_return is not None else self.max_reply_comments
             take_cap = max(1, min(int(take_cap), 20))
-            filtered: List[Dict[str, Any]] = []
-            scan_cap = min(len(replies), max(take_cap * 12, self.MAX_REPLY_COMMENTS * 10, 50))
-            for x in replies[:scan_cap]:
-                eng = int(x.get("_likes", 0)) + int(x.get("_retweets", 0))
-                if eng < min_re:
-                    continue
-                if apply_locale_filter:
-                    if not self._tweet_text_passes_turkish_filter(
-                        x.get("text") or "", x.get("_api_lang")
-                    ):
-                        continue
-                filtered.append(x)
-                if len(filtered) >= take_cap:
+            pad_skip_locale = (os.getenv("X_REPLY_PAD_SKIP_LOCALE", "1") or "1").strip().lower() not in (
+                "0",
+                "false",
+                "no",
+                "off",
+            )
+
+            def _engagement_sum(r: Dict[str, Any]) -> int:
+                return int(r.get("_likes", 0)) + int(r.get("_retweets", 0))
+
+            def _passes_eng(r: Dict[str, Any]) -> bool:
+                return _engagement_sum(r) >= min_re
+
+            def _passes_locale(r: Dict[str, Any]) -> bool:
+                if not apply_locale_filter:
+                    return True
+                return bool(
+                    self._tweet_text_passes_turkish_filter(
+                        r.get("text") or "", r.get("_api_lang")
+                    )
+                )
+
+            selected: List[Dict[str, Any]] = []
+            chosen_ids: Set[str] = set()
+
+            for r in replies:
+                if len(selected) >= take_cap:
                     break
-            return filtered[:take_cap]
+                eid = str(r.get("external_id") or "")
+                if not eid or eid in chosen_ids:
+                    continue
+                if not _passes_eng(r):
+                    continue
+                if not _passes_locale(r):
+                    continue
+                selected.append(r)
+                chosen_ids.add(eid)
+
+            if len(selected) < take_cap:
+                pool = [r for r in replies if str(r.get("external_id") or "") not in chosen_ids]
+                random.shuffle(pool)
+                for r in pool:
+                    if len(selected) >= take_cap:
+                        break
+                    eid = str(r.get("external_id") or "")
+                    if not eid or eid in chosen_ids:
+                        continue
+                    if not _passes_eng(r):
+                        continue
+                    if apply_locale_filter and not pad_skip_locale:
+                        if not _passes_locale(r):
+                            continue
+                    selected.append(r)
+                    chosen_ids.add(eid)
+
+            return selected[:take_cap]
         except Exception as e:
             logger.error(f"RapidX fetch_tweet_replies hatası (tweet {tweet_id}): {e}")
             raise
 
     async def fetch_from_channel(self, channel: str) -> List[Dict[str, Any]]:
-        """Ajans/Kanal URL veya @handle — timeline.php + hit odaklı üst tweetler ve en fazla 10 yanıt/tweet."""
+        """Ajans/Kanal URL veya @handle — timeline.php + hit odaklı üst tweetler; tweet başına en çok beğenilen sınırlı yanıt."""
         screen_name = self._normalize_screen_name(channel)
         if not screen_name:
             logger.warning(f"RapidX fetch_from_channel: boş kanal: {channel!r}")
@@ -738,7 +801,7 @@ class RapidXProvider(XProvider):
         return out[:cap]
 
     async def fetch_mentions(self, target: str) -> List[Dict[str, Any]]:
-        """VIP/rakip hesap timeline + hit odaklı yanıtlar (tweet başına en fazla 10 yorum)."""
+        """VIP/rakip hesap timeline + üst tweetler için beğeni sıralı en çok N yanıt (N=X_MAX_REPLY_COMMENTS)."""
         screen_name = self._normalize_screen_name(target)
         if not screen_name:
             logger.warning(f"RapidX: Boş kullanıcı adı, atlanıyor: {target}")
@@ -805,7 +868,7 @@ class RapidXProvider(XProvider):
 
                 if parsed.get("_replies", 0) <= 0:
                     continue
-                if reply_requests_sent >= self._TIMELINE_REPLY_FETCH_BUDGET:
+                if reply_requests_sent >= self.timeline_reply_fetch_budget:
                     logger.debug("RapidX: Yanıt API bütçesi doldu, kalan üst tweetler yanıtsız bırakıldı.")
                     break
 
@@ -830,7 +893,7 @@ class RapidXProvider(XProvider):
                             all_posts.append(r)
                             seen_ids.add(r["external_id"])
                         logger.info(
-                            f"  └── Tweet {parsed['external_id'][:12]}... → {len(replies)} yorum (bağlam birleştirildi, max {self.MAX_REPLY_COMMENTS})"
+                            f"  └── Tweet {parsed['external_id'][:12]}... → {len(replies)} yorum (bağlam birleştirildi, max {self.max_reply_comments})"
                         )
                 except Exception as e:
                     logger.warning(f"  └── Tweet {parsed['external_id'][:12]}... yorum hatası: {e}")
