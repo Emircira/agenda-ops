@@ -4,10 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AgendaOps | Sistem Hatası</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     {% include 'includes/karargah_material_shell.html' %}
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="karargah-ui bg-[#f8f9fa] text-[#202124] min-h-screen flex items-center justify-center p-4">
+<body class="karargah-ui k-app-shell min-h-screen flex items-center justify-center p-4 relative">
+    <button type="button" data-karargah-theme-toggle class="k-theme-toggle fixed top-4 right-4 z-10" title="Gündüz / Gece modu" aria-label="Gündüz veya gece temasına geç">
+        <span data-theme-icon="sun" class="hidden" aria-hidden="true">☀️</span>
+        <span data-theme-icon="moon" aria-hidden="true">🌙</span>
+    </button>
     <div class="max-w-md w-full p-8 bg-white rounded-xl border border-[#dadce0] shadow-sm text-center">
         <div class="w-20 h-20 bg-[#fce8e6] rounded-full flex items-center justify-center mx-auto mb-6 border border-[#fad2cf]">
             <span class="text-4xl">⚠️</span>
