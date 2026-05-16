@@ -3,32 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <title>Seçim Radarı | AgendaOps</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     {% include 'includes/karargah_material_shell.html' %}
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
-        body { background-color: #f8f9fa; color: #202124; font-family: 'Inter', 'Segoe UI', sans-serif; }
-        .glass-panel { background: #ffffff; border: 1px solid #dadce0; box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3); border-radius: 8px; }
+        body { background-color: var(--k-bg-page); color: var(--k-text); font-family: 'Inter', 'Segoe UI', sans-serif; }
+        .glass-panel { background: var(--k-surface); border: 1px solid var(--k-border); box-shadow: var(--k-shadow); border-radius: 8px; }
         .leaflet-container { background: #e8eaed; font-family: inherit; }
         .leaflet-bar a { background-color: #ffffff !important; color: #202124 !important; border-color: #dadce0 !important;}
         .city-label { background: transparent; border: none; box-shadow: none; color: rgba(32, 33, 36, 0.45); font-size: 9px; font-weight: bold; text-shadow: none; pointer-events: none; }
         .leaflet-interactive:hover + .leaflet-tooltip.city-label { color: #1967d2; font-size: 10px; }
+        html.dark-mode .leaflet-container { background: #121214; }
+        html.dark-mode .leaflet-bar a { background-color: #1e1e24 !important; color: #e8eaed !important; border-color: #3c4043 !important; }
+        html.dark-mode .city-label { color: rgba(232, 234, 237, 0.45); }
+        html.dark-mode .leaflet-interactive:hover + .leaflet-tooltip.city-label { color: #8ab4f8; }
         ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #f1f3f4; }
-        ::-webkit-scrollbar-thumb { background: #dadce0; border-radius: 8px; }
-        ::-webkit-scrollbar-thumb:hover { background: #bdc1c6; }
+        ::-webkit-scrollbar-track { background: var(--k-elevated); }
+        ::-webkit-scrollbar-thumb { background: var(--k-border); border-radius: 8px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--k-text-secondary); }
     </style>
 </head>
-<body class="karargah-ui p-8 min-h-screen flex flex-col">
+<body class="karargah-ui k-app-shell p-8 min-h-screen flex flex-col">
     <div class="max-w-screen-2xl mx-auto w-full flex-1 flex flex-col">
         <div class="flex justify-between items-center mb-8 border-b border-[#dadce0] pb-4">
             <a href="/dashboard" class="group block w-fit cursor-pointer">
                 <h1 class="text-3xl font-bold text-[#202124] tracking-tight uppercase transition-colors">STRATEJİK SEÇİM RADARI</h1>
                 <p class="text-[#5f6368] text-xs mt-1.5 tracking-[0.15em] font-semibold group-hover:text-[#3c4043] transition-colors uppercase">Strateji Kontrol Paneli</p>
             </a>
-            <div class="flex items-center gap-4">
+            <div class="flex items-center gap-3 flex-wrap justify-end">
+                <button type="button" data-karargah-theme-toggle class="k-theme-toggle" title="Gündüz / Gece modu" aria-label="Gündüz veya gece temasına geç">
+                    <span data-theme-icon="sun" class="hidden" aria-hidden="true">☀️</span>
+                    <span data-theme-icon="moon" aria-hidden="true">🌙</span>
+                </button>
                 <a href="/dashboard" class="flex items-center gap-2 bg-white hover:bg-[#f8f9fa] border border-[#dadce0] text-[#202124] px-4 py-3 rounded-lg transition-all shadow-sm font-medium text-sm">
                     <span class="text-lg">🏛️</span> Ana Sayfaya Dön
                 </a>
@@ -152,24 +160,53 @@
         
         const turkeyBounds = L.latLngBounds([35.5, 25.5], [42.5, 45.0]);
         const map = L.map('map', { center: [39.2, 35.0], zoom: 6, minZoom: 6, maxBounds: turkeyBounds, maxBoundsViscosity: 1.0 });
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { bounds: turkeyBounds }).addTo(map);
+        function mapTileUrl(dark) {
+            return dark
+                ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+                : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+        }
+        function geoBaseStyle() {
+            const dark = document.documentElement.classList.contains('dark-mode');
+            return dark
+                ? { color: '#3c4043', weight: 1, fillColor: '#2a2a30', fillOpacity: 0.9 }
+                : { color: '#dadce0', weight: 1, fillColor: '#f1f3f4', fillOpacity: 0.85 };
+        }
+        let baseLayer = L.tileLayer(mapTileUrl(document.documentElement.classList.contains('dark-mode')), { bounds: turkeyBounds }).addTo(map);
 
         let geojsonLayer;
         fetch('https://raw.githubusercontent.com/alpers/Turkey-Maps-GeoJSON/master/tr-cities.json')
             .then(response => response.json())
             .then(data => {
                 geojsonLayer = L.geoJSON(data, {
-                    style: function (feature) { return { color: '#dadce0', weight: 1, fillColor: '#f1f3f4', fillOpacity: 0.85 }; },
+                    style: function () { return geoBaseStyle(); },
                     onEachFeature: function (feature, layer) {
                         layer.bindTooltip(feature.properties.name, { permanent: true, direction: 'center', className: 'city-label' });
                         layer.on('mouseover', function (e) {
-                            const l = e.target; l.setStyle({ fillColor: '#e8f0fe', fillOpacity: 0.95, weight: 2, color: '#1967d2' }); l.bringToFront();
+                            const dark = document.documentElement.classList.contains('dark-mode');
+                            const l = e.target;
+                            if (dark) {
+                                l.setStyle({ fillColor: '#303438', fillOpacity: 0.95, weight: 2, color: '#8ab4f8' });
+                            } else {
+                                l.setStyle({ fillColor: '#e8f0fe', fillOpacity: 0.95, weight: 2, color: '#1967d2' });
+                            }
+                            l.bringToFront();
                         });
                         layer.on('mouseout', function (e) { geojsonLayer.resetStyle(e.target); });
                         layer.on('click', function (e) { triggerAnalysis(feature.properties.name); });
                     }
                 }).addTo(map);
             });
+
+        window.addEventListener('karargah-themechange', function (ev) {
+            const d = !!(ev.detail && ev.detail.dark);
+            if (baseLayer && map) {
+                map.removeLayer(baseLayer);
+                baseLayer = L.tileLayer(mapTileUrl(d), { bounds: turkeyBounds }).addTo(map);
+            }
+            if (geojsonLayer) {
+                geojsonLayer.setStyle(function () { return geoBaseStyle(); });
+            }
+        });
 
         document.getElementById('searchInput').addEventListener('keypress', function (e) { if (e.key === 'Enter') searchRegion(); });
         function searchRegion() { const query = document.getElementById('searchInput').value.trim().toUpperCase(); if(query) triggerAnalysis(query); }
