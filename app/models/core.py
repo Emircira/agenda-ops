@@ -21,7 +21,7 @@ from pgvector.sqlalchemy import VECTOR
 
 from app.models.base_class import Base
 
-# Gemini models/embedding-001 çıktı boyutu (RAG / anlamsal arama)
+# Gemini gemini-embedding-001 output_dimensionality (RAG / pgvector)
 EMBEDDING_DIMENSION = 768
 
 class SourceType(str, enum.Enum):
