@@ -4,14 +4,12 @@ from uuid import UUID
 from datetime import datetime
 import pytz
 
-from app.models.core import Source, Opportunity
-from app.schemas.core import SourceCreate, SourceResponse, OpportunityResponse, ContentResponse
+from app.models.core import Opportunity
+from app.schemas.core import OpportunityResponse, ContentResponse
 from app.repositories.deps import (
-    get_target_repository,
     get_content_repository,
     get_opportunity_repository,
 )
-from app.repositories.target_repository import TargetRepository
 from app.repositories.content_repository import ContentRepository
 from app.repositories.opportunity_repository import OpportunityRepository
 
@@ -26,19 +24,6 @@ from app.workers.ingest_tasks import (
 # Swagger arayüzünde temiz görünmesi için tag ekledik
 router = APIRouter(tags=["Karargah Operasyonları"])
 
-@router.post("/sources", response_model=SourceResponse)
-async def create_source(
-    source: SourceCreate,
-    target_repo: TargetRepository = Depends(get_target_repository),
-):
-    """Yeni bir istihbarat kaynağı (RSS, YouTube, X) ekler."""
-    new_source = Source(**source.model_dump())
-    return await target_repo.create_and_refresh(new_source)
-
-@router.get("/sources", response_model=List[SourceResponse])
-async def get_sources(target_repo: TargetRepository = Depends(get_target_repository)):
-    """Aktif istihbarat kaynaklarını listeler."""
-    return await target_repo.list_all()
 
 @router.post("/ingest/run")
 async def run_ingestion():

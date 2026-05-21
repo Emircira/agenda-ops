@@ -1,0 +1,153 @@
+{# Zaman serisi — /api/v1/macro/historical-data #}
+<style>
+  .k-macro-trends {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    border-radius: 12px;
+    border: 1px solid var(--k-border, #dadce0);
+    background: var(--k-surface, #ffffff);
+    box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.28), 0 1px 3px 1px rgba(60, 64, 67, 0.12);
+    padding: 16px 18px;
+    margin-bottom: 24px;
+    position: relative;
+    z-index: 10;
+  }
+  .k-macro-trends__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--k-stroke-ring, #e8eaed);
+  }
+  .k-macro-trends__title {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--k-text, #202124);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .k-macro-trends__subtitle {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--k-text-secondary, #5f6368);
+    margin-top: 4px;
+    max-width: 36rem;
+    line-height: 1.4;
+  }
+  .k-macro-trends__filters {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 999px;
+    background: var(--k-bg-page, #f1f3f4);
+    border: 1px solid var(--k-border, #dadce0);
+  }
+  .k-macro-trends__chip {
+    border: none;
+    background: transparent;
+    color: var(--k-text-secondary, #5f6368);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 6px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .k-macro-trends__chip:hover {
+    color: var(--k-text, #202124);
+  }
+  .k-macro-trends__chip[aria-pressed="true"] {
+    background: var(--k-surface, #ffffff);
+    color: var(--k-text, #202124);
+    box-shadow: 0 1px 2px rgba(60, 64, 67, 0.18);
+  }
+  .k-macro-trends__grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  @media (min-width: 1024px) {
+    .k-macro-trends__grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  .k-macro-trends__card {
+    border-radius: 10px;
+    border: 1px solid var(--k-border, #dadce0);
+    background: var(--k-bg-page, #f8f9fa);
+    padding: 14px 16px 10px;
+    min-height: 260px;
+    display: flex;
+    flex-direction: column;
+  }
+  .k-macro-trends__card-title {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--k-text-secondary, #5f6368);
+    margin-bottom: 8px;
+  }
+  .k-macro-trends__canvas-wrap {
+    position: relative;
+    flex: 1;
+    min-height: 220px;
+  }
+  .k-macro-trends__empty {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    min-height: 220px;
+    padding: 16px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--k-text-secondary, #5f6368);
+    border-radius: 8px;
+    border: 1px dashed var(--k-border, #dadce0);
+    background: var(--k-surface, #ffffff);
+  }
+  .k-macro-trends__empty.is-visible {
+    display: flex;
+  }
+  .k-macro-trends__canvas-wrap.is-hidden canvas {
+    display: none;
+  }
+</style>
+
+<section class="k-macro-trends" id="k-macro-trends-root" aria-label="Zaman serisi trendleri">
+  <div class="k-macro-trends__head">
+    <div>
+      <div class="k-macro-trends__title">
+        <span class="k-macro-hud__title-dot" aria-hidden="true"></span>
+        Zaman Serisi Trendleri
+      </div>
+      <p class="k-macro-trends__subtitle">Makro göstergeler ile Karargah İçgörü şikâyet yoğunluğu; günlük hizalı seriler.</p>
+    </div>
+    <div class="k-macro-trends__filters" role="group" aria-label="Dönem filtresi">
+      <button type="button" class="k-macro-trends__chip" data-k-macro-trend-days="7" aria-pressed="false">Son 7 Gün</button>
+      <button type="button" class="k-macro-trends__chip" data-k-macro-trend-days="30" aria-pressed="true">Son 30 Gün</button>
+      <button type="button" class="k-macro-trends__chip" data-k-macro-trend-days="0" aria-pressed="false">Tümü</button>
+    </div>
+  </div>
+  <div class="k-macro-trends__grid">
+    <div class="k-macro-trends__card">
+      <div class="k-macro-trends__card-title">Makro trendler</div>
+      <div id="k-macro-trends-macro-empty" class="k-macro-trends__empty" role="status">Yeterli tarihsel veri yok</div>
+      <div id="k-macro-trends-macro-wrap" class="k-macro-trends__canvas-wrap">
+        <canvas id="k-macro-trends-chart-macro" aria-label="Enflasyon ve politika faizi çizgi grafiği"></canvas>
+      </div>
+    </div>
+    <div class="k-macro-trends__card">
+      <div class="k-macro-trends__card-title">Toplumsal şikâyet trendi</div>
+      <div id="k-macro-trends-griev-empty" class="k-macro-trends__empty" role="status">Yeterli tarihsel veri yok</div>
+      <div id="k-macro-trends-griev-wrap" class="k-macro-trends__canvas-wrap">
+        <canvas id="k-macro-trends-chart-griev" aria-label="Şikâyet ortalaması çizgi grafiği"></canvas>
+      </div>
+    </div>
+  </div>
+</section>

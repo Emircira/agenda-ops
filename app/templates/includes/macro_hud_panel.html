@@ -1,0 +1,245 @@
+{# Faz 4.2 — Stratejik gösterge paneli (Material / GA tarzı). Veri: /api/v1/macro/dashboard-data #}
+<style>
+  .k-macro-hud {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    border-radius: 12px;
+    border: 1px solid var(--k-border, #dadce0);
+    background: var(--k-surface, #ffffff);
+    box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.28), 0 1px 3px 1px rgba(60, 64, 67, 0.12);
+    padding: 16px 18px;
+  }
+  .k-macro-hud__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--k-stroke-ring, #e8eaed);
+  }
+  .k-macro-hud__title {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--k-text, #202124);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .k-macro-hud__title-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #1a73e8;
+  }
+  .k-macro-hud__grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  @media (min-width: 1024px) {
+    .k-macro-hud__grid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+      align-items: start;
+    }
+  }
+  .k-macro-hud__col-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--k-text-secondary, #5f6368);
+    margin-bottom: 10px;
+  }
+  .k-macro-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .k-macro-metric-card {
+    flex: 1 1 140px;
+    min-width: 132px;
+    max-width: 200px;
+    border-radius: 10px;
+    border: 1px solid var(--k-border, #dadce0);
+    background: var(--k-bg-page, #f8f9fa);
+    padding: 12px 14px;
+    box-shadow: 0 1px 1px rgba(60, 64, 67, 0.08);
+  }
+  .k-macro-metric-card__label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--k-text-secondary, #5f6368);
+    line-height: 1.3;
+    margin-bottom: 6px;
+  }
+  .k-macro-metric-card__value-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .k-macro-metric-card__value {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--k-text, #202124);
+    line-height: 1;
+  }
+  .k-macro-metric-card__trend {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 12px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .k-macro-metric-card__trend--up { color: #137333; }
+  .k-macro-metric-card__trend--down { color: #c5221f; }
+  .k-macro-metric-card__trend--flat { color: var(--k-text-secondary, #5f6368); }
+  .k-macro-metric-card__meta {
+    margin-top: 8px;
+    font-size: 10px;
+    color: var(--k-text-muted, #3c4043);
+  }
+  .k-macro-polls {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .k-macro-poll-card {
+    border-radius: 10px;
+    border: 1px solid var(--k-border, #dadce0);
+    background: var(--k-bg-page, #f8f9fa);
+    padding: 14px;
+    box-shadow: 0 1px 1px rgba(60, 64, 67, 0.06);
+  }
+  .k-macro-poll-card__company {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1967d2;
+    margin-bottom: 2px;
+  }
+  .k-macro-poll-card__topic {
+    font-size: 12px;
+    color: var(--k-text, #202124);
+    line-height: 1.4;
+    margin-bottom: 12px;
+  }
+  .k-poll-row {
+    display: grid;
+    grid-template-columns: minmax(72px, 28%) 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--k-stroke-ring, #e8eaed);
+    font-size: 12px;
+  }
+  .k-poll-row:last-child { border-bottom: none; }
+  .k-poll-label {
+    color: var(--k-text-secondary, #5f6368);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .k-poll-track {
+    height: 8px;
+    border-radius: 4px;
+    background: var(--k-elevated, #e8eaed);
+    overflow: hidden;
+  }
+  .k-poll-fill {
+    height: 100%;
+    border-radius: 4px;
+    min-width: 4px;
+    transition: width 0.35s ease;
+  }
+  .k-poll-fill--grievance {
+    background: linear-gradient(90deg, #c5221f 0%, #e8710a 100%);
+  }
+  .k-poll-fill--demand {
+    background: linear-gradient(90deg, #1967d2 0%, #137333 100%);
+  }
+  .k-macro-poll-section {
+    margin-bottom: 12px;
+  }
+  .k-macro-poll-section:last-child { margin-bottom: 0; }
+  .k-macro-poll-section__label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--k-text-secondary, #5f6368);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .k-macro-poll-section__label--grievance { color: #c5221f; }
+  .k-macro-poll-section__label--demand { color: #1967d2; }
+  .k-macro-poll-section__topic {
+    font-size: 11px;
+    color: var(--k-text-muted, #3c4043);
+    margin: -4px 0 8px;
+    line-height: 1.35;
+  }
+  .k-poll-val {
+    font-weight: 600;
+    color: var(--k-text, #202124);
+    min-width: 42px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .k-macro-skel {
+    border-radius: 10px;
+    background: linear-gradient(90deg, #e8eaed 0%, #f1f3f4 40%, #e8eaed 80%);
+    background-size: 200% 100%;
+    animation: k-macro-shimmer 1.2s ease-in-out infinite;
+  }
+  @keyframes k-macro-shimmer {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+  }
+  html.dark-mode .k-macro-skel {
+    background: linear-gradient(90deg, #3c4043 0%, #5f6368 40%, #3c4043 80%);
+    background-size: 200% 100%;
+  }
+  .k-macro-empty {
+    font-size: 13px;
+    color: var(--k-text-secondary, #5f6368);
+    padding: 16px;
+    text-align: center;
+    border: 1px dashed var(--k-border, #dadce0);
+    border-radius: 10px;
+    background: var(--k-bg-page, #f8f9fa);
+  }
+  .k-macro-empty--pulse {
+    animation: k-macro-pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes k-macro-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.65; }
+  }
+</style>
+
+<section id="k-macro-hud-root" class="k-macro-hud mb-6 relative z-10" aria-label="Makro göstergeler ve halkın şikâyet / talep özeti">
+  <div class="k-macro-hud__head">
+    <div class="k-macro-hud__title">
+      <span class="k-macro-hud__title-dot" aria-hidden="true"></span>
+      Stratejik gösterge paneli
+      <span style="font-weight:500;font-size:12px;color:var(--k-text-secondary,#5f6368);">Makro · Şikâyet &amp; talep</span>
+    </div>
+    <span id="k-macro-hud-status" class="text-[11px] font-medium text-[#5f6368]" aria-live="polite"></span>
+  </div>
+  <div class="k-macro-hud__grid">
+    <div>
+      <div class="k-macro-hud__col-title">Ekonomik göstergeler</div>
+      <div id="k-macro-hud-metrics" class="k-macro-metrics" data-state="loading"></div>
+    </div>
+    <div>
+      <div class="k-macro-hud__col-title">Halkın Ana Şikayetleri ve Talepleri</div>
+      <div id="k-macro-hud-polls" class="k-macro-polls" data-state="loading"></div>
+    </div>
+  </div>
+</section>

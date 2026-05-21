@@ -1,0 +1,359 @@
+<script>
+(function () {
+  'use strict';
+
+  var STORAGE_KEY = 'k_macro_hud_prev_values';
+  var API_URL = '/api/v1/macro/dashboard-data';
+
+  var LABELS = {
+    inflation_tuik: 'TÜİK enflasyon',
+    inflation_enag: 'ENAG enflasyon',
+    unemployment: 'İşsizlik',
+    policy_rate: 'Politika faizi',
+    interest_rate: 'Politika faizi',
+  };
+
+  var ORDER = ['inflation_tuik', 'inflation_enag', 'unemployment', 'interest_rate', 'policy_rate'];
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function formatIndicatorValue(type, value) {
+    if (value == null || value === '') return '—';
+    var n = Number(value);
+    if (isNaN(n)) return escapeHtml(String(value));
+    if (type === 'policy_rate' || type === 'interest_rate') return '%' + n.toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+    return '%' + n.toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+  }
+
+  function labelForType(t) {
+    return LABELS[t] || t.replace(/_/g, ' ');
+  }
+
+  function readPrev() {
+    try {
+      var raw = sessionStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function writePrev(obj) {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
+    } catch (e) {}
+  }
+
+  function trendFor(type, curr, prevVals) {
+    var p = prevVals[type];
+    if (p == null || curr == null || isNaN(Number(curr))) return 'flat';
+    var c = Number(curr);
+    var pv = Number(p);
+    if (isNaN(pv)) return 'flat';
+    if (c > pv) return 'up';
+    if (c < pv) return 'down';
+    return 'flat';
+  }
+
+  function trendMarkup(dir) {
+    if (dir === 'up') {
+      return '<span class="k-macro-metric-card__trend k-macro-metric-card__trend--up" title="Önceki oturuma göre yükseliş">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M12 5l-7 7M12 5l7 7"/></svg>' +
+        '</span>';
+    }
+    if (dir === 'down') {
+      return '<span class="k-macro-metric-card__trend k-macro-metric-card__trend--down" title="Önceki oturuma göre düşüş">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M12 19l7-7M12 19l-7-7"/></svg>' +
+        '</span>';
+    }
+    return '<span class="k-macro-metric-card__trend k-macro-metric-card__trend--flat" title="Değişim yok / ilk yükleme">±0</span>';
+  }
+
+  function sortIndicators(arr) {
+    var list = (arr || []).slice();
+    list.sort(function (a, b) {
+      var ia = ORDER.indexOf(a.indicator_type);
+      var ib = ORDER.indexOf(b.indicator_type);
+      if (ia === -1) ia = 999;
+      if (ib === -1) ib = 999;
+      if (ia !== ib) return ia - ib;
+      return String(a.indicator_type).localeCompare(String(b.indicator_type), 'tr');
+    });
+    return list;
+  }
+
+  function skeletonMetrics() {
+    var html = '';
+    for (var i = 0; i < 4; i++) {
+      html += '<div class="k-macro-metric-card" style="min-height:86px">';
+      html += '<div class="k-macro-skel" style="height:12px;width:70%;margin-bottom:10px;border-radius:6px"></div>';
+      html += '<div class="k-macro-skel" style="height:24px;width:50%;border-radius:6px"></div>';
+      html += '</div>';
+    }
+    return html;
+  }
+
+  function skeletonPolls() {
+    var html = '';
+    for (var p = 0; p < 2; p++) {
+      html += '<div class="k-macro-poll-card">';
+      html += '<div class="k-macro-skel" style="height:14px;width:45%;margin-bottom:10px"></div>';
+      html += '<div class="k-macro-skel" style="height:10px;width:30%;margin-bottom:8px"></div>';
+      for (var s = 0; s < 2; s++) {
+        html += '<div class="k-macro-skel" style="height:11px;width:55%;margin:10px 0 6px"></div>';
+        for (var r = 0; r < 3; r++) {
+          html += '<div class="k-macro-skel" style="height:10px;width:100%;margin-bottom:10px;border-radius:4px"></div>';
+        }
+      }
+      html += '</div>';
+    }
+    return html;
+  }
+
+  function emptyState(msg, pulse) {
+    var cls = 'k-macro-empty' + (pulse ? ' k-macro-empty--pulse' : '');
+    return '<div class="' + cls + '">' + escapeHtml(msg) + '</div>';
+  }
+
+  function extractPollRows(results) {
+    if (!results || typeof results !== 'object') return [];
+    var skip = { type: true, sample_size: true, margin_error: true, choices: true, scores: true };
+    if (results.choices && typeof results.choices === 'object') {
+      return Object.keys(results.choices).map(function (k) {
+        return { label: k, value: results.choices[k] };
+      });
+    }
+    if (results.scores && typeof results.scores === 'object') {
+      return Object.keys(results.scores).map(function (k) {
+        return { label: k, value: results.scores[k] };
+      });
+    }
+    return Object.keys(results).filter(function (k) {
+      if (skip[k]) return false;
+      var v = results[k];
+      if (typeof v === 'number' && !isNaN(v)) return true;
+      if (typeof v === 'string' && v !== '' && !isNaN(Number(v))) return true;
+      return false;
+    }).map(function (k) {
+      return { label: k, value: results[k] };
+    });
+  }
+
+  function rowNewer(a, b) {
+    if (!a) return b;
+    if (!b) return a;
+    var da = new Date(a.published_date || 0).getTime();
+    var db = new Date(b.published_date || 0).getTime();
+    if (db !== da) return db > da ? b : a;
+    return (Number(b.id) || 0) >= (Number(a.id) || 0) ? b : a;
+  }
+
+  function groupPollsByCompany(polls) {
+    var map = {};
+    (polls || []).forEach(function (p) {
+      var co = p.company || '—';
+      var typ = String(p.type || p.poll_type || 'grievances').toLowerCase();
+      if (typ !== 'grievances' && typ !== 'demands') typ = 'grievances';
+      if (!map[co]) map[co] = { grievances: null, demands: null };
+      map[co][typ] = rowNewer(map[co][typ], p);
+    });
+    return map;
+  }
+
+  function renderPollBars(rows, flavor) {
+    var fillMod = flavor === 'demands' ? 'demand' : 'grievance';
+    var out = '';
+    rows.forEach(function (r) {
+      var v = Number(r.value);
+      if (isNaN(v)) v = 0;
+      var w = Math.min(100, Math.max(0, v));
+      out += '<div class="k-poll-row">';
+      out += '<span class="k-poll-label" title="' + escapeHtml(r.label) + '">' + escapeHtml(r.label) + '</span>';
+      out += '<div class="k-poll-track"><div class="k-poll-fill k-poll-fill--' + fillMod + '" style="width:' + w + '%"></div></div>';
+      out += '<span class="k-poll-val">' + v.toLocaleString('tr-TR', { maximumFractionDigits: 1 }) + '%</span>';
+      out += '</div>';
+    });
+    return out;
+  }
+
+  function renderPollInsightCard(company, gRow, dRow) {
+    var html = '';
+    html += '<article class="k-macro-poll-card">';
+    html += '<div class="k-macro-poll-card__company">' + escapeHtml(company) + '</div>';
+
+    html += '<div class="k-macro-poll-section">';
+    html += '<div class="k-macro-poll-section__label k-macro-poll-section__label--grievance">En çok şikâyet edilenler <span style="font-weight:500;text-transform:none;letter-spacing:0">(Grievances)</span></div>';
+    if (gRow) {
+      html += '<div class="k-macro-poll-section__topic">' + escapeHtml(gRow.topic || '') + '</div>';
+      var gRows = extractPollRows(gRow.results);
+      if (gRows.length) html += renderPollBars(gRows, 'grievances');
+      else html += '<div class="k-macro-empty" style="padding:12px;font-size:12px">Yapılandırılmış sonuç yok.</div>';
+    } else {
+      html += '<div class="k-macro-empty k-macro-empty--pulse" style="padding:12px;font-size:12px">Veri bekleniyor…</div>';
+    }
+    html += '</div>';
+
+    html += '<div class="k-macro-poll-section">';
+    html += '<div class="k-macro-poll-section__label k-macro-poll-section__label--demand">En çok talep edilenler <span style="font-weight:500;text-transform:none;letter-spacing:0">(Demands)</span></div>';
+    if (dRow) {
+      html += '<div class="k-macro-poll-section__topic">' + escapeHtml(dRow.topic || '') + '</div>';
+      var dRows = extractPollRows(dRow.results);
+      if (dRows.length) html += renderPollBars(dRows, 'demands');
+      else html += '<div class="k-macro-empty" style="padding:12px;font-size:12px">Yapılandırılmış sonuç yok.</div>';
+    } else {
+      html += '<div class="k-macro-empty k-macro-empty--pulse" style="padding:12px;font-size:12px">Veri bekleniyor…</div>';
+    }
+    html += '</div>';
+
+    html += '</article>';
+    return html;
+  }
+
+  var _inflight = null;
+
+  window.MacroHud = {
+    load: function (options) {
+      var quiet = options && options.quiet;
+      var metricsEl = document.getElementById('k-macro-hud-metrics');
+      var pollsEl = document.getElementById('k-macro-hud-polls');
+      var statusEl = document.getElementById('k-macro-hud-status');
+      if (!metricsEl || !pollsEl) return;
+      if (_inflight) return _inflight;
+
+      try {
+        var showSkeleton = !quiet || metricsEl.dataset.state === 'loading' || !metricsEl.dataset.state || metricsEl.dataset.state === 'error';
+        if (showSkeleton) {
+          metricsEl.dataset.state = 'loading';
+          pollsEl.dataset.state = 'loading';
+          metricsEl.innerHTML = skeletonMetrics();
+          pollsEl.innerHTML = skeletonPolls();
+          if (statusEl) statusEl.textContent = 'Güncelleniyor…';
+        } else if (statusEl) {
+          statusEl.textContent = 'Güncelleniyor…';
+        }
+      } catch (sk) {
+        try {
+          metricsEl.innerHTML = emptyState('Makro veri bekleniyor…', true);
+          pollsEl.innerHTML = emptyState('Şikâyet ve talep verisi bekleniyor…', true);
+        } catch (e0) {}
+      }
+
+      var run = fetch(API_URL, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        })
+        .then(function (data) {
+          try {
+            data = data && typeof data === 'object' ? data : {};
+            var rawMacro = data.macro_indicators;
+            if (!Array.isArray(rawMacro)) rawMacro = [];
+            var indicators = sortIndicators(rawMacro);
+            var polls = data.polls;
+            if (!Array.isArray(polls)) polls = [];
+
+            var prevVals = readPrev();
+            var nextPrev = Object.assign({}, prevVals);
+
+            if (!indicators.length) {
+              metricsEl.innerHTML = emptyState('Makro veri bekleniyor…', true);
+            } else {
+              var mHtml = '';
+              indicators.forEach(function (ind) {
+                var t = ind.indicator_type || '';
+                var val = ind.value;
+                var dir = trendFor(t, val, prevVals);
+                nextPrev[t] = val;
+                var dateStr = '';
+                if (ind.recorded_date) {
+                  try {
+                    dateStr = new Date(ind.recorded_date).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' });
+                  } catch (e1) {
+                    dateStr = String(ind.recorded_date);
+                  }
+                }
+                mHtml += '<article class="k-macro-metric-card">';
+                mHtml += '<div class="k-macro-metric-card__label">' + escapeHtml(labelForType(t)) + '</div>';
+                mHtml += '<div class="k-macro-metric-card__value-row">';
+                mHtml += '<span class="k-macro-metric-card__value">' + formatIndicatorValue(t, val) + '</span>';
+                mHtml += trendMarkup(dir);
+                mHtml += '</div>';
+                mHtml += '<div class="k-macro-metric-card__meta">' + (dateStr ? escapeHtml(dateStr) : '') +
+                  (ind.source ? ' · ' + escapeHtml(ind.source) : '') + '</div>';
+                mHtml += '</article>';
+              });
+              metricsEl.innerHTML = mHtml;
+            }
+            try {
+              writePrev(nextPrev);
+            } catch (e2) {}
+
+            if (!polls.length) {
+              pollsEl.innerHTML = emptyState('Şikâyet ve talep verisi bekleniyor…', true);
+            } else {
+              var grouped = groupPollsByCompany(polls);
+              var companies = Object.keys(grouped).sort(function (a, b) {
+                return a.localeCompare(b, 'tr', { sensitivity: 'base' });
+              });
+              var pHtml = '';
+              companies.forEach(function (co) {
+                var slot = grouped[co];
+                pHtml += renderPollInsightCard(co, slot.grievances, slot.demands);
+              });
+              pollsEl.innerHTML = pHtml;
+            }
+
+            metricsEl.dataset.state = 'ready';
+            pollsEl.dataset.state = 'ready';
+            if (statusEl) statusEl.textContent = '';
+          } catch (inner) {
+            try {
+              metricsEl.innerHTML = emptyState('Makro paneli güncellenemedi. Sayfayı yenileyin.', false);
+              pollsEl.innerHTML = emptyState('Şikâyet ve talep verisi şu an gösterilemiyor.', false);
+              metricsEl.dataset.state = 'error';
+              pollsEl.dataset.state = 'error';
+              if (statusEl) statusEl.textContent = '';
+            } catch (e3) {}
+          }
+        })
+        .catch(function () {
+          try {
+            metricsEl.innerHTML = emptyState('Veri yüklenemedi. Bağlantıyı kontrol edin.', false);
+            pollsEl.innerHTML = emptyState('Güncelleniyor… Tekrar deneyin.', true);
+            metricsEl.dataset.state = 'error';
+            pollsEl.dataset.state = 'error';
+            if (statusEl) statusEl.textContent = '';
+          } catch (e4) {}
+        })
+        .finally(function () {
+          if (_inflight === run) _inflight = null;
+        });
+
+      _inflight = run;
+      return run;
+    },
+
+    refresh: function () {
+      this.load({ quiet: true });
+    },
+
+    init: function () {
+      this.load({ quiet: false });
+    },
+  };
+
+  document.addEventListener('DOMContentLoaded', function () {
+    try {
+      if (window.MacroHud) window.MacroHud.init();
+    } catch (e) {}
+  });
+})();
+</script>

@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.models.core import Content, ContentLabel, Source
+from app.models.core import Content, ContentLabel, ContentMetric, ContentEmbedding, EntityRelation, Source
 from app.repositories.base import BaseRepository
 
 
@@ -77,6 +77,19 @@ class ContentRepository(BaseRepository):
     async def delete_by_source_id(self, source_id: int) -> None:
         await self._session.execute(delete(Content).where(Content.source_id == source_id))
 
+    async def delete_intelligence_content_published_before(self, cutoff: datetime) -> int:
+        """
+        Retention: published_at < cutoff olan içerikleri ve bağlı vektör/etiket/metrik/ilişki
+        satırlarını siler. MacroIndicator / PollData burada silinmez.
+        """
+        id_subq = select(Content.id).where(Content.published_at < cutoff)
+        await self._session.execute(delete(ContentEmbedding).where(ContentEmbedding.content_id.in_(id_subq)))
+        await self._session.execute(delete(ContentLabel).where(ContentLabel.content_id.in_(id_subq)))
+        await self._session.execute(delete(ContentMetric).where(ContentMetric.content_id.in_(id_subq)))
+        await self._session.execute(delete(EntityRelation).where(EntityRelation.content_id.in_(id_subq)))
+        res = await self._session.execute(delete(Content).where(Content.published_at < cutoff))
+        return int(res.rowcount or 0)
+
     # --- Triage (unlabeled) ---
     async def fetch_unlabeled_by_fetched_since(self, cutoff: datetime) -> List[Content]:
         stmt = (
@@ -130,14 +143,67 @@ class ContentRepository(BaseRepository):
         self._session.add(row)
 
     # --- Dashboard / API reads ---
-    async def list_published_since_order_desc(self, time_threshold: datetime, limit: int) -> List[Content]:
+    async def list_pulse_candidates_since(
+        self,
+        time_threshold: datetime,
+        limit: int = 100,
+        fetch_pool: int = 280,
+    ) -> List[Content]:
+        """
+        Son N saat için içerik havuzunu çek; etkileşim (likes+replies+reposts+views/1000) + tarihe göre sıralayıp ilk limit kaydı döndür.
+        Etkileşim metrisi yoksa yalnızca published_at ile sıralanır.
+        """
+        lim = max(1, min(int(limit), 150))
+        pool = max(lim, min(int(fetch_pool), 500))
         res = await self._session.execute(
             select(Content)
             .where(Content.published_at >= time_threshold)
             .order_by(desc(Content.published_at))
-            .limit(limit)
+            .limit(pool)
+        )
+        contents = list(res.scalars().all())
+        if not contents:
+            return []
+
+        ids = [c.id for c in contents]
+        mres = await self._session.execute(
+            select(ContentMetric).where(ContentMetric.content_id.in_(ids))
+        )
+        latest_metric: dict[Any, ContentMetric] = {}
+        for m in mres.scalars().all():
+            cur = latest_metric.get(m.content_id)
+            if cur is None or (m.captured_at or datetime.min) >= (cur.captured_at or datetime.min):
+                latest_metric[m.content_id] = m
+
+        def _score(c: Content) -> float:
+            met = latest_metric.get(c.id)
+            if not met:
+                return 0.0
+            return float(
+                (met.likes or 0)
+                + (met.replies or 0)
+                + (met.reposts or 0)
+                + (met.views or 0) / 1000.0
+            )
+
+        contents.sort(key=lambda c: (_score(c), c.published_at.timestamp()), reverse=True)
+        return contents[:lim]
+
+    async def list_published_since_order_desc(
+        self,
+        since_date: datetime,
+        limit: int = 100,
+    ) -> List[Content]:
+        """Dashboard / API: published_at >= since_date, yeniden eskiye, limit."""
+        lim = max(1, min(int(limit), 500))
+        res = await self._session.execute(
+            select(Content)
+            .where(Content.published_at >= since_date)
+            .order_by(desc(Content.published_at))
+            .limit(lim)
         )
         return list(res.scalars().all())
+
 
     async def get_latest_poll_content(self) -> Optional[Content]:
         res = await self._session.execute(

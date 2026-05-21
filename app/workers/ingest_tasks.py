@@ -22,7 +22,7 @@ from app.core.utils import (
     select_ai_triage_candidates,
 )
 from app.repositories.content_repository import ContentRepository
-from app.repositories.target_repository import TargetRepository
+from app.repositories.source_repository import SourceRepository
 from app.repositories.vector_repository import VectorRepository
 from app.services.embedding_service import generate_embedding
 
@@ -151,23 +151,21 @@ def ingest_rss_all_sources(self):
         provider = RSSProvider()
 
         async with AsyncSessionLocal() as db:
-            target_repo = TargetRepository(db)
+            source_repo = SourceRepository(db)
             content_repo = ContentRepository(db)
-            sources = await target_repo.list_active_rss_maps()
+            sources = await source_repo.list_active_rss_maps()
 
-            all_source_infos = [
-                {"name": "Google Haberler", "url": "https://news.google.com/rss?hl=tr&gl=TR&ceid=TR:tr", "id": None}
-            ]
-            for s in sources:
-                all_source_infos.append({"name": s["name"], "url": s["url"], "id": s["id"], "domain": s.get("domain") or "general"})
+            if not sources:
+                logger.warning("⚠️ Celery RSS: aktif kaynak yok (veritabanında type=rss).")
+                return "RSS: aktif kaynak yok"
 
             total_added = 0
-            for s_info in all_source_infos:
+            for s_info in sources:
                 try:
                     articles = await provider.fetch_feed(s_info["url"], s_info["name"])
                     for article in articles:
                         article['source_id'] = s_info["id"]
-                        article['domain'] = s_info.get("domain", "general")
+                        article['domain'] = s_info.get("domain") or "general"
                         article['is_analyzed'] = True
 
                     for i in range(0, len(articles), 100):
@@ -183,6 +181,7 @@ def ingest_rss_all_sources(self):
                                     str(art.get("external_id") or ""),
                                     str(art.get("text") or ""),
                                 )
+                    await source_repo.touch_last_fetched(s_info["id"], commit=False)
 
                 except Exception as e:
                     logger.error(f"RSS hata [{s_info['name']}]: {e}")
@@ -217,9 +216,9 @@ def ingest_youtube_all_sources(self):
         provider = YouTubeProvider()
 
         async with AsyncSessionLocal() as db:
-            target_repo = TargetRepository(db)
+            source_repo = SourceRepository(db)
             content_repo = ContentRepository(db)
-            sources = await target_repo.list_active_youtube_maps()
+            sources = await source_repo.list_active_youtube_maps()
 
             total_added = 0
             for source in sources:
@@ -255,12 +254,13 @@ def ingest_youtube_all_sources(self):
                                         str(art.get("text") or ""),
                                     )
 
+                    await source_repo.touch_last_fetched(source_id, commit=False)
+
                 except Exception as e:
                     if isinstance(e, YouTubeQuotaExceeded):
                         logger.error(f"YouTube kotası doldu [{source_name}], diğer kaynaklara geçiliyor: {e}")
                         continue
                     logger.error(f"YouTube hatası [{source_name}]: {e}")
-
             await content_repo.commit()
             logger.info(f"✅ YouTube Ingestion Tamamlandı. {total_added} yeni içerik eklendi.")
             return f"YouTube: {total_added} yeni içerik"
@@ -302,9 +302,9 @@ def ingest_x_all_sources(self):
         provider = get_x_provider()
 
         async with AsyncSessionLocal() as db:
-            target_repo = TargetRepository(db)
+            source_repo = SourceRepository(db)
             content_repo = ContentRepository(db)
-            sources = await target_repo.list_active_x_maps()
+            sources = await source_repo.list_active_x_maps()
 
             if not sources:
                 logger.warning("⚠️ Hiç aktif Twitter kaynağı bulunamadı!")
@@ -360,6 +360,7 @@ def ingest_x_all_sources(self):
                             source_skipped += 1
 
                     await content_repo.commit()
+                    await source_repo.touch_last_fetched(source_id, commit=False)
                     grand_total_added += source_added
                     grand_total_skipped += source_skipped
                     source_results.append(f"✅ {source_name}: +{source_added} yeni, {source_skipped} mevcut")

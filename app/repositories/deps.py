@@ -9,6 +9,11 @@ from app.repositories.content_repository import ContentRepository
 from app.repositories.opportunity_repository import OpportunityRepository
 from app.repositories.target_repository import TargetRepository
 from app.repositories.vector_repository import VectorRepository
+from app.repositories.macro_repository import MacroRepository
+from app.repositories.source_repository import SourceRepository
+from app.repositories.alert_repository import AlertRepository
+from app.repositories.election_repository import ElectionRepository
+from app.repositories.nisanyan_repository import NisanyanRepository
 
 
 def get_content_repository(db: AsyncSession = Depends(get_db)) -> ContentRepository:
@@ -29,3 +34,23 @@ def get_complaint_cache_repository(db: AsyncSession = Depends(get_db)) -> Compla
 
 def get_vector_repository(db: AsyncSession = Depends(get_db)) -> VectorRepository:
     return VectorRepository(db)
+
+
+def get_macro_repository(db: AsyncSession = Depends(get_db)) -> MacroRepository:
+    return MacroRepository(db)
+
+
+def get_source_repository(db: AsyncSession = Depends(get_db)) -> SourceRepository:
+    return SourceRepository(db)
+
+
+def get_alert_repository(db: AsyncSession = Depends(get_db)) -> AlertRepository:
+    return AlertRepository(db)
+
+
+def get_election_repository(db: AsyncSession = Depends(get_db)) -> ElectionRepository:
+    return ElectionRepository(db)
+
+
+def get_nisanyan_repository(db: AsyncSession = Depends(get_db)) -> NisanyanRepository:
+    return NisanyanRepository(db)

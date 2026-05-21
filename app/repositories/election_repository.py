@@ -28,6 +28,18 @@ class ElectionRepository(BaseRepository):
         res = await self._session.execute(select(DistrictDemographics))
         return list(res.scalars().all())
 
+    async def list_district_demographics_for(
+        self,
+        province: str,
+        district: Optional[str] = None,
+    ) -> List[DistrictDemographics]:
+        """İl (+ isteğe bağlı ilçe) TÜİK satırları (district_demographics)."""
+        q = select(DistrictDemographics).where(DistrictDemographics.province == province)
+        if district and str(district).strip():
+            q = q.where(DistrictDemographics.district == district)
+        res = await self._session.execute(q.order_by(DistrictDemographics.year.desc()))
+        return list(res.scalars().all())
+
     async def list_election_results_by_type(self, category) -> List[ElectionResult]:
         res = await self._session.execute(
             select(ElectionResult).where(ElectionResult.election_type == category)

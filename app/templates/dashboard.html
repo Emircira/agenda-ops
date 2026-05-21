@@ -82,10 +82,25 @@
         
         <header class="h-16 bg-panel/90 backdrop-blur border-b border-slate-800 flex items-center justify-between px-6 z-10 shadow-sm shrink-0 gap-4">
             <h2 id="header-title" class="text-lg font-medium k-header-title flex items-center gap-2 truncate">Genel Durum Özeti</h2>
+            <div class="flex items-center gap-2 shrink-0">
+            <div class="relative mr-1" id="karargah-alert-wrap">
+                <button type="button" id="karargah-alert-btn" class="relative p-2 rounded-full border border-[#dadce0] bg-[#fff] hover:bg-[#f1f3f4] transition-colors shadow-sm" title="Sistem bildirimleri" aria-label="Sistem bildirimleri">
+                    <svg class="w-5 h-5 text-[#5f6368]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                    <span id="karargah-alert-badge" class="hidden absolute -top-0.5 -right-0.5 min-w-[1.125rem] h-[1.125rem] px-0.5 flex items-center justify-center rounded-full bg-[#c5221f] text-white text-[10px] font-bold leading-none pointer-events-none">0</span>
+                </button>
+                <div id="karargah-alert-panel" class="hidden absolute right-0 mt-2 w-[min(22rem,calc(100vw-2rem))] max-h-[min(70vh,26rem)] rounded-xl border border-[#dadce0] bg-panel shadow-xl z-[80] flex flex-col text-left overflow-hidden">
+                    <div class="px-3 py-2 border-b border-[#dadce0] text-xs font-bold text-[#5f6368] shrink-0">Okunmamış bildirimler</div>
+                    <div id="karargah-alert-list" class="overflow-y-auto flex-1 min-h-[4rem] max-h-[min(60vh,22rem)]"></div>
+                    <p id="karargah-alert-empty" class="hidden px-4 py-6 text-center text-[#5f6368] text-xs border-t border-[#dadce0]">Okunmamış bildirim yok.</p>
+                </div>
+            </div>
+            <button type="button" id="karargah-sitrep-open" onclick="window.open('/api/v1/reports/sitrep?format=html', '_blank'); return false;" class="k-header-src-btn" title="Günlük durum raporu — yazdır veya PDF" style="border:1px solid var(--k-border,#dadce0);background:var(--k-surface,#fff);color:var(--k-text,#202124);font-size:12px;font-weight:600;padding:8px 14px;border-radius:999px;cursor:pointer;box-shadow:0 1px 2px rgba(60,64,67,0.08);white-space:nowrap">SITREP İndir</button>
+            <button type="button" class="k-header-src-btn" id="k-open-sources-modal" title="RSS, X, YouTube ve scraper hedefleri" style="border:1px solid var(--k-border,#dadce0);background:var(--k-surface,#fff);color:var(--k-text,#202124);font-size:12px;font-weight:600;padding:8px 14px;border-radius:999px;cursor:pointer;box-shadow:0 1px 2px rgba(60,64,67,0.08);white-space:nowrap">Kaynak Yönetimi</button>
             <button type="button" data-karargah-theme-toggle class="k-theme-toggle" title="Gündüz / Gece modu" aria-label="Gündüz veya gece temasına geç">
                 <span data-theme-icon="sun" class="hidden" aria-hidden="true">☀️</span>
                 <span data-theme-icon="moon" aria-hidden="true">🌙</span>
             </button>
+            </div>
         </header>
 
         <div id="main-scroll" class="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden scroll-smooth relative z-[5]">
@@ -108,6 +123,9 @@
 
         <div id="view-dashboard" class="view-section active flex-1 flex flex-col w-full p-6 z-10 relative scroll-smooth bg-dark min-h-0">
             <div class="radar-scan opacity-30"></div>
+            {# HUD Faz 4.2+: şikâyet (grievances) & talep (demands) — veri: /api/v1/macro/dashboard-data #}
+            {% include 'includes/macro_hud_panel.html' %}
+            {% include 'includes/macro_trends_panel.html' %}
             
             <!-- OPPORTUNITY CARDS -->
             <div id="opportunity-section" class="mb-8 relative z-10">
@@ -370,11 +388,16 @@
             </div>
         </div>
 
+    {% include 'includes/intelligence_sources_modal.html' %}
+
     </main>
 
     <script>
         const pollDataFromServer = {{ poll_json | safe }};
     </script>
+
+    {% include 'includes/macro_hud_script.html' %}
+    {% include 'includes/macro_trends_script.html' %}
 
     <script>
         class DashboardController {
@@ -394,6 +417,7 @@
                     this.loadOsintIntelligence();
                     this.restoreStates();
                     this.initRagSearchUi();
+                    this.initKarargahAlerts();
                     this.loadDataStreams();
                     setInterval(() => this.loadDataStreams(), 15000);
                 } catch (e) {
@@ -412,6 +436,99 @@
                         this.updateGauge('sarcasm', data.sarcasm_rate);
                     }
                 } catch(e) { console.error("OSINT load error:", e); }
+            }
+
+            initKarargahAlerts() {
+                this._karargahAlertsOpen = false;
+                this._karargahUnreadAlerts = [];
+                const btn = document.getElementById('karargah-alert-btn');
+                const panel = document.getElementById('karargah-alert-panel');
+                if (!btn || !panel) return;
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this._karargahAlertsOpen = !this._karargahAlertsOpen;
+                    panel.classList.toggle('hidden', !this._karargahAlertsOpen);
+                    if (this._karargahAlertsOpen) this.refreshKarargahAlerts();
+                });
+                panel.addEventListener('click', (e) => e.stopPropagation());
+                document.addEventListener('click', () => {
+                    if (!this._karargahAlertsOpen) return;
+                    this._karargahAlertsOpen = false;
+                    panel.classList.add('hidden');
+                });
+                this.refreshKarargahAlerts();
+                setInterval(() => this.refreshKarargahAlerts(), 180000);
+            }
+
+            async refreshKarargahAlerts() {
+                const badge = document.getElementById('karargah-alert-badge');
+                try {
+                    const res = await fetch('/api/v1/alerts/unread', {
+                        method: 'GET',
+                        headers: { Accept: 'application/json' },
+                        cache: 'no-store',
+                    });
+                    if (!res.ok) {
+                        if (badge) badge.classList.add('hidden');
+                        return;
+                    }
+                    const data = await res.json();
+                    const n = typeof data.count === 'number' ? data.count : 0;
+                    if (badge) {
+                        if (n > 0) {
+                            badge.textContent = n > 99 ? '99+' : String(n);
+                            badge.classList.remove('hidden');
+                        } else {
+                            badge.classList.add('hidden');
+                        }
+                    }
+                    this._karargahUnreadAlerts = Array.isArray(data.alerts) ? data.alerts : [];
+                    if (this._karargahAlertsOpen) this.renderKarargahAlertPanel();
+                } catch (_) {
+                    if (badge) badge.classList.add('hidden');
+                }
+            }
+
+            renderKarargahAlertPanel() {
+                const list = document.getElementById('karargah-alert-list');
+                const empty = document.getElementById('karargah-alert-empty');
+                if (!list || !empty) return;
+                const rows = this._karargahUnreadAlerts || [];
+                if (!rows.length) {
+                    list.innerHTML = '';
+                    empty.classList.remove('hidden');
+                    return;
+                }
+                empty.classList.add('hidden');
+                list.innerHTML = rows.map((a) => {
+                    const sev = String(a.severity || '').toLowerCase();
+                    const urgent = sev === 'high' || sev === 'critical';
+                    const boxCls = urgent
+                        ? 'border-l-4 border-danger bg-[#fce8e6]/90 dark:bg-danger/15'
+                        : 'border-l-4 border-transparent';
+                    return `<button type="button" class="karargah-alert-item w-full text-left px-3 py-2.5 hover:bg-[#f1f3f4] border-b border-[#ececec] transition-colors ${boxCls}" data-alert-id="${Number(a.id)}">
+                        <span class="text-[10px] uppercase font-bold text-[#80868b]">${this.escapeHtml(a.alert_type || '')}</span>
+                        <span class="text-[10px] ml-2 font-semibold ${urgent ? 'text-danger' : 'text-[#80868b]'}">${this.escapeHtml(String(a.severity || ''))}</span>
+                        <p class="text-[13px] text-[#202124] mt-1 leading-snug">${this.escapeHtml(a.message || '')}</p>
+                    </button>`;
+                }).join('');
+                list.querySelectorAll('.karargah-alert-item').forEach((el) => {
+                    el.addEventListener('click', () => {
+                        const id = parseInt(el.getAttribute('data-alert-id'), 10);
+                        if (!Number.isNaN(id)) this.markKarargahAlertRead(id);
+                    });
+                });
+            }
+
+            async markKarargahAlertRead(id) {
+                try {
+                    const res = await fetch(`/api/v1/alerts/mark-read/${id}`, {
+                        method: 'PATCH',
+                        headers: { Accept: 'application/json' },
+                    });
+                    if (!res.ok) return;
+                    await this.refreshKarargahAlerts();
+                } catch (_) {}
             }
 
             updateGauge(id, val) {
@@ -701,6 +818,7 @@
 
                     if(tabId === 'polls') { this.initPollChart(); }
                     if(tabId === 'systemstatus') { this.loadSystemStats(); }
+                    if(tabId === 'dashboard' && window.MacroHud) { window.MacroHud.refresh(); }
                 }
             }
 
@@ -1309,10 +1427,10 @@
                 const sourceCategory = document.getElementById('sourceCategory').value;
                 if(!name || !url) return alert('Ad ve URL zorunludur.');
                 try {
-                    const res = await fetch('/api/sources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, url: url, type: type, domain: domain, source_category: sourceCategory }) });
+                    const res = await fetch('/api/v1/sources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, url_or_handle: url, source_type: type, domain: domain, source_category: sourceCategory, is_active: true }) });
                     const data = await res.json();
-                    if(data.success) { alert(data.message || 'Kaynak eklendi!'); window.location.reload(); }
-                    else { alert('Hata: ' + (data.error || 'Kaynak eklenemedi.')); }
+                    if(res.ok) { alert('Kaynak eklendi!'); window.location.reload(); }
+                    else { alert('Hata: ' + (typeof data.detail === 'string' ? data.detail : (data.detail?.[0]?.msg || 'Kaynak eklenemedi.'))); }
                 } catch(e) { alert('Bağlantı hatası: ' + e.message); }
             }
 
@@ -1346,9 +1464,8 @@
             async deleteSource(sourceId, btn) {
                 if(!confirm("Emin misiniz?")) return;
                 try {
-                    const res = await fetch(`/api/sources/${sourceId}`, { method: 'DELETE' });
-                    const data = await res.json();
-                    if(data.success) {
+                    const res = await fetch(`/api/v1/sources/${sourceId}`, { method: 'DELETE' });
+                    if(res.ok || res.status === 204) {
                         if (btn) {
                             const row = btn.closest('.p-3');
                             if (row) row.remove();
@@ -1357,7 +1474,9 @@
                             window.location.reload();
                         }
                     } else {
-                        this.showToast('Silinemedi: ' + data.error, 'error');
+                        let err = 'Silinemedi';
+                        try { const d = await res.json(); err = d.detail || err; } catch (_) {}
+                        this.showToast('Silinemedi: ' + err, 'error');
                     }
                 } catch(e) {
                     this.showToast('Bağlantı hatası.', 'error');

@@ -1,0 +1,985 @@
+{
+  "generated_at": "2026-05-20T14:13:21.764751+00:00",
+  "source": "https://nisanyanmap.com/?y={province}",
+  "user_agent_note": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)…",
+  "province_count": 81,
+  "results": [
+    {
+      "province": "Adana",
+      "url": "https://nisanyanmap.com/?y=Adana",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Adıyaman",
+      "url": "https://nisanyanmap.com/?y=Ad%C4%B1yaman",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Afyonkarahisar",
+      "url": "https://nisanyanmap.com/?y=Afyonkarahisar",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Ağrı",
+      "url": "https://nisanyanmap.com/?y=A%C4%9Fr%C4%B1",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Amasya",
+      "url": "https://nisanyanmap.com/?y=Amasya",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Ankara",
+      "url": "https://nisanyanmap.com/?y=Ankara",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Antalya",
+      "url": "https://nisanyanmap.com/?y=Antalya",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Artvin",
+      "url": "https://nisanyanmap.com/?y=Artvin",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Aydın",
+      "url": "https://nisanyanmap.com/?y=Ayd%C4%B1n",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Balıkesir",
+      "url": "https://nisanyanmap.com/?y=Bal%C4%B1kesir",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Bilecik",
+      "url": "https://nisanyanmap.com/?y=Bilecik",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Bingöl",
+      "url": "https://nisanyanmap.com/?y=Bing%C3%B6l",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Bitlis",
+      "url": "https://nisanyanmap.com/?y=Bitlis",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Bolu",
+      "url": "https://nisanyanmap.com/?y=Bolu",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Burdur",
+      "url": "https://nisanyanmap.com/?y=Burdur",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Bursa",
+      "url": "https://nisanyanmap.com/?y=Bursa",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Çanakkale",
+      "url": "https://nisanyanmap.com/?y=%C3%87anakkale",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Çankırı",
+      "url": "https://nisanyanmap.com/?y=%C3%87ank%C4%B1r%C4%B1",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Çorum",
+      "url": "https://nisanyanmap.com/?y=%C3%87orum",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Denizli",
+      "url": "https://nisanyanmap.com/?y=Denizli",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Diyarbakır",
+      "url": "https://nisanyanmap.com/?y=Diyarbak%C4%B1r",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Edirne",
+      "url": "https://nisanyanmap.com/?y=Edirne",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Elazığ",
+      "url": "https://nisanyanmap.com/?y=Elaz%C4%B1%C4%9F",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Erzincan",
+      "url": "https://nisanyanmap.com/?y=Erzincan",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Erzurum",
+      "url": "https://nisanyanmap.com/?y=Erzurum",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Eskişehir",
+      "url": "https://nisanyanmap.com/?y=Eski%C5%9Fehir",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Gaziantep",
+      "url": "https://nisanyanmap.com/?y=Gaziantep",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Giresun",
+      "url": "https://nisanyanmap.com/?y=Giresun",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Gümüşhane",
+      "url": "https://nisanyanmap.com/?y=G%C3%BCm%C3%BC%C5%9Fhane",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Hakkâri",
+      "url": "https://nisanyanmap.com/?y=Hakk%C3%A2ri",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Hatay",
+      "url": "https://nisanyanmap.com/?y=Hatay",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Isparta",
+      "url": "https://nisanyanmap.com/?y=Isparta",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Mersin",
+      "url": "https://nisanyanmap.com/?y=Mersin",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "İstanbul",
+      "url": "https://nisanyanmap.com/?y=%C4%B0stanbul",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "İzmir",
+      "url": "https://nisanyanmap.com/?y=%C4%B0zmir",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Kars",
+      "url": "https://nisanyanmap.com/?y=Kars",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Kastamonu",
+      "url": "https://nisanyanmap.com/?y=Kastamonu",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Kayseri",
+      "url": "https://nisanyanmap.com/?y=Kayseri",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Kırklareli",
+      "url": "https://nisanyanmap.com/?y=K%C4%B1rklareli",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Kırşehir",
+      "url": "https://nisanyanmap.com/?y=K%C4%B1r%C5%9Fehir",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Kocaeli",
+      "url": "https://nisanyanmap.com/?y=Kocaeli",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Konya",
+      "url": "https://nisanyanmap.com/?y=Konya",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Kütahya",
+      "url": "https://nisanyanmap.com/?y=K%C3%BCtahya",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Malatya",
+      "url": "https://nisanyanmap.com/?y=Malatya",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Manisa",
+      "url": "https://nisanyanmap.com/?y=Manisa",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Kahramanmaraş",
+      "url": "https://nisanyanmap.com/?y=Kahramanmara%C5%9F",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Mardin",
+      "url": "https://nisanyanmap.com/?y=Mardin",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Muğla",
+      "url": "https://nisanyanmap.com/?y=Mu%C4%9Fla",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Muş",
+      "url": "https://nisanyanmap.com/?y=Mu%C5%9F",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Nevşehir",
+      "url": "https://nisanyanmap.com/?y=Nev%C5%9Fehir",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Niğde",
+      "url": "https://nisanyanmap.com/?y=Ni%C4%9Fde",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Ordu",
+      "url": "https://nisanyanmap.com/?y=Ordu",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Rize",
+      "url": "https://nisanyanmap.com/?y=Rize",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Sakarya",
+      "url": "https://nisanyanmap.com/?y=Sakarya",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Samsun",
+      "url": "https://nisanyanmap.com/?y=Samsun",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Siirt",
+      "url": "https://nisanyanmap.com/?y=Siirt",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Sinop",
+      "url": "https://nisanyanmap.com/?y=Sinop",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Sivas",
+      "url": "https://nisanyanmap.com/?y=Sivas",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Tekirdağ",
+      "url": "https://nisanyanmap.com/?y=Tekirda%C4%9F",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Tokat",
+      "url": "https://nisanyanmap.com/?y=Tokat",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Trabzon",
+      "url": "https://nisanyanmap.com/?y=Trabzon",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Tunceli",
+      "url": "https://nisanyanmap.com/?y=Tunceli",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Şanlıurfa",
+      "url": "https://nisanyanmap.com/?y=%C5%9Eanl%C4%B1urfa",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Uşak",
+      "url": "https://nisanyanmap.com/?y=U%C5%9Fak",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Van",
+      "url": "https://nisanyanmap.com/?y=Van",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Yozgat",
+      "url": "https://nisanyanmap.com/?y=Yozgat",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Zonguldak",
+      "url": "https://nisanyanmap.com/?y=Zonguldak",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Aksaray",
+      "url": "https://nisanyanmap.com/?y=Aksaray",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Bayburt",
+      "url": "https://nisanyanmap.com/?y=Bayburt",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Karaman",
+      "url": "https://nisanyanmap.com/?y=Karaman",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Kırıkkale",
+      "url": "https://nisanyanmap.com/?y=K%C4%B1r%C4%B1kkale",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Batman",
+      "url": "https://nisanyanmap.com/?y=Batman",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Şırnak",
+      "url": "https://nisanyanmap.com/?y=%C5%9E%C4%B1rnak",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Bartın",
+      "url": "https://nisanyanmap.com/?y=Bart%C4%B1n",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Ardahan",
+      "url": "https://nisanyanmap.com/?y=Ardahan",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Iğdır",
+      "url": "https://nisanyanmap.com/?y=I%C4%9Fd%C4%B1r",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Yalova",
+      "url": "https://nisanyanmap.com/?y=Yalova",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Karabük",
+      "url": "https://nisanyanmap.com/?y=Karab%C3%BCk",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Kilis",
+      "url": "https://nisanyanmap.com/?y=Kilis",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Osmaniye",
+      "url": "https://nisanyanmap.com/?y=Osmaniye",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    },
+    {
+      "province": "Düzce",
+      "url": "https://nisanyanmap.com/?y=D%C3%BCzce",
+      "ok": false,
+      "rows": [],
+      "meta": {
+        "embedded_json_roots": 0,
+        "parse_sources": [],
+        "html_bytes": 20828
+      },
+      "error": "no_rows_extracted"
+    }
+  ],
+  "summary": {
+    "success_provinces": 0,
+    "failed_or_empty": 81,
+    "total_rows": 0
+  }
+}

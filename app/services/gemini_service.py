@@ -363,3 +363,49 @@ Kurallar: Türkçe, nötr istihbarat brifingi üslubu; kendini yapay zeka veya d
         except Exception as e:
             logger.error(f"Gemini Async Hata: {e}")
             return f"Hata: {str(e)}"
+
+    def analyze_grievances_demands_from_corpus(self, corpus_text: str) -> Optional[Dict[str, Any]]:
+        """
+        Son 48 saat içerik metin bloğundan halkın baskın şikâyet ve taleplerini JSON üretir.
+        Karargah OSINT direktifi uygulanmaz (saf sosyolojik özet + yapısal JSON).
+        """
+        if not self.model or not self.api_key:
+            logger.warning("Gemini hazır değil; grievances/demands çıkarılamıyor.")
+            return None
+        corpus = (corpus_text or "").strip()
+        if len(corpus) < 80:
+            logger.warning("Grievances/demands: yeterli içerik yok (min ~80 karakter).")
+            return None
+        if len(corpus) > 95000:
+            corpus = corpus[:95000] + "\n[… metin 95.000 karakterde kesildi …]"
+
+        instruction = """Sen Karargah'ın sosyolojik analiz yapay zekasısın. Sana Türkiye'nin son 48 saatlik sosyal medya ve haber verilerini veriyorum. Bu verileri analiz et ve halkın şu anki EN BÜYÜK 3 ŞİKAYETİNİ (Grievances) ve EN BÜYÜK 3 TALEBİNİ (Demands) bul.
+
+KURALLAR:
+- Yanıtta YALNIZCA tek bir JSON nesnesi döndür; markdown, açıklama veya kod çiti yok.
+- Tam 3 şikâyet maddesi ve 3 talep maddesi; her değer 0–100 arası yaklaşık pay (üçlü toplam ~100).
+- Anahtarlar kısa Türkçe başlıklar olsun (örn: "Ekonomi/Enflasyon").
+
+ŞEMA:
+{"grievances": {"Başlık1": sayı, "Başlık2": sayı, "Başlık3": sayı}, "demands": {"Başlık1": sayı, "Başlık2": sayı, "Başlık3": sayı}}"""
+
+        prompt = f"""{instruction}
+
+VERİ (içerikler birleşik metin):
+{corpus}
+"""
+        try:
+            raw = self._safe_generate(prompt)
+            if not raw:
+                return None
+            data = self._parse_response(raw)
+            if not isinstance(data, dict):
+                return None
+            g = data.get("grievances")
+            d = data.get("demands")
+            if not isinstance(g, dict) or not isinstance(d, dict):
+                return None
+            return {"grievances": g, "demands": d}
+        except Exception as e:
+            logger.exception(f"grievances/demands analiz hatası: {e}")
+            return None
