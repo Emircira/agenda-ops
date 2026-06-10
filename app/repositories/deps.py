@@ -1,4 +1,4 @@
-"""FastAPI Depends fabrikaları — tek istek içinde paylaşılan AsyncSession."""
+"""FastAPI Depends fabrikalari — tek istek icinde paylasilan AsyncSession."""
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,7 @@ from app.repositories.source_repository import SourceRepository
 from app.repositories.alert_repository import AlertRepository
 from app.repositories.election_repository import ElectionRepository
 from app.repositories.nisanyan_repository import NisanyanRepository
+from app.repositories.radar_repository import RadarRepository
 
 
 def get_content_repository(db: AsyncSession = Depends(get_db)) -> ContentRepository:
@@ -54,3 +55,7 @@ def get_election_repository(db: AsyncSession = Depends(get_db)) -> ElectionRepos
 
 def get_nisanyan_repository(db: AsyncSession = Depends(get_db)) -> NisanyanRepository:
     return NisanyanRepository(db)
+
+
+def get_radar_repository(db: AsyncSession = Depends(get_db)) -> RadarRepository:
+    return RadarRepository(db)
