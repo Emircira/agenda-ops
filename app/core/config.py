@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     PYTHONPATH: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
     YOUTUBE_API_KEY: Optional[str] = None
+    # .env dosyası RAPIDAPI_KEY / RAPIDAPI_HOST kullanıyor; case_sensitive=True
+    # olduğu için alan adları .env ile birebir eşleşmeli. Geriye dönük uyumluluk
+    # için eski (RAPID_API_*) isimler de korunuyor.
+    RAPIDAPI_KEY: Optional[str] = None
+    RAPIDAPI_HOST: Optional[str] = None
     RAPID_API_KEY: Optional[str] = None
     RAPID_API_HOST: Optional[str] = None
 

@@ -14,6 +14,11 @@ celery_app = Celery(
     "agenda_ops",
     broker=redis_url,
     backend=redis_url,
+    include=[
+        "app.workers.ingest_tasks",
+        "app.workers.labeling_tasks",
+        "app.workers.scoring_tasks",
+    ],
 )
 
 celery_app.conf.update(
@@ -72,9 +77,7 @@ celery_app.conf.beat_schedule = {
     },
 }
 
-# Task'lerin bulunduğu tüm klasörleri Celery'e tanıt
-celery_app.autodiscover_tasks([
-    "app.workers.ingest_tasks",
-    "app.workers.labeling_tasks",
-    "app.workers.scoring_tasks",
-])
+# NOT: Görev modülleri yukarıda Celery(include=[...]) ile doğrudan içe aktarılır.
+# autodiscover_tasks() paket bekler ve her paketin sonuna ".tasks" ekler; modül
+# yolları (ör. "app.workers.ingest_tasks") verildiğinde görevler KAYIT OLMAZ.
+# Bu yüzden include= kullanıyoruz.

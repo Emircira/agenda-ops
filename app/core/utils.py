@@ -115,6 +115,7 @@ def extract_youtube_comments_as_articles(video, comments, source_id, domain='gen
             pub_at_str = snippet["publishedAt"]
             if pub_at_str.endswith('Z'): pub_at_str = pub_at_str[:-1] + '+00:00'
             
+            comment_url = "https://youtube.com/watch?v=" + str(vid_id) + "&lc=" + str(c["id"])
             articles.append({
                 "source_id": source_id,
                 "platform": "youtube_comment",
@@ -123,7 +124,7 @@ def extract_youtube_comments_as_articles(video, comments, source_id, domain='gen
                 "published_at": datetime.fromisoformat(pub_at_str).replace(tzinfo=None),
                 "text": full_text,
                 "content_type": "comment",
-                "url": f"https://youtube.com/watch?v={vid_id}&lc={c['id']}",
+                "url": comment_url,
                 "domain": domain,
                 "raw_json": c
             })
@@ -152,6 +153,7 @@ def extract_youtube_video_stub_article(
             pub_at_str = pub_at_str[:-1] + "+00:00"
         pub = datetime.fromisoformat(pub_at_str).replace(tzinfo=None) if pub_at_str else datetime.utcnow()
         text = f"[Video: {title} | Kanal: {channel} | Bağlam: {domain}]\n{desc}".strip()
+        video_url = "https://youtube.com/watch?v=" + str(vid_id)
         return {
             "source_id": source_id,
             "platform": "youtube",
@@ -160,7 +162,7 @@ def extract_youtube_video_stub_article(
             "published_at": pub,
             "text": text,
             "content_type": "article",
-            "url": f"https://youtube.com/watch?v={vid_id}",
+            "url": video_url,
             "domain": domain,
             "raw_json": {"kind": "youtube_video_stub", "video_snippet": snip},
         }

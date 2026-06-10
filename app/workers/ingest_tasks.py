@@ -115,15 +115,18 @@ def _post_to_article(post: dict, source_id=None, domain="general") -> dict:
     safe_json["bot_likelihood"] = calculate_twitter_bot_likelihood(safe_json)
     safe_json["bot_signals"] = twitter_bot_signal_summary(safe_json)
 
+    external_id = post.get("external_id")
+    tweet_url = "https://twitter.com/x/status/" + str(external_id)
+
     return {
         "source_id": source_id,
         "platform": "twitter",
-        "external_id": post.get("external_id"),
+        "external_id": external_id,
         "author_name": author,
         "published_at": _safe_parse_date(post.get("published_at")),
         "text": (post.get("text", "") or "")[:8000],
         "content_type": ContentType.reply if is_reply else ContentType.post,
-        "url": f"https://twitter.com/x/status/{post.get('external_id')}",
+        "url": tweet_url,
         "domain": domain,
         "raw_json": safe_json,
         "is_analyzed": False,
