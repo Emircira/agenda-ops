@@ -1,4 +1,4 @@
-"""Radar modulu API uclari — etkilesim liderlik tablosu ve manuel yeniden hesap."""
+"""Radar modulu API uclari — etkilesim liderlik tablosu, manuel yeniden hesap ve metrik backfill."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.repositories.deps import get_radar_repository
 from app.repositories.radar_repository import RadarRepository
-from app.workers.radar_tasks import compute_radar_daily
+from app.workers.radar_tasks import compute_radar_daily, snapshot_content_metrics
 
 router = APIRouter()
 
@@ -86,4 +86,23 @@ async def recompute_radar(
         "status": "queued",
         "task_id": task.id,
         "target_day": target_day or "yesterday",
+    }
+
+
+@router.post("/snapshot-metrics")
+async def snapshot_metrics(
+    since_days: Optional[int] = Query(
+        None, description="Son N gun ile sinirla; bossa tum eksik metrikler islenir"
+    ),
+):
+    """raw_json.metrics -> content_metrics materyalizasyonunu tetikler (backfill).
+
+    Radar gercek skor uretebilmek icin content_metrics tablosuna ihtiyac duyar; ingest
+    etkilesimleri yalnizca raw_json'a yazdigi icin bu uc eksik metrikleri doldurur.
+    """
+    task = snapshot_content_metrics.delay(since_days=since_days)
+    return {
+        "status": "queued",
+        "task_id": task.id,
+        "since_days": since_days if since_days is not None else "all",
     }

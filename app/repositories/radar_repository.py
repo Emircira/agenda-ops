@@ -40,6 +40,54 @@ _ORDER_COLUMNS = {
 class RadarRepository(BaseRepository):
     """contents + content_metrics -> radar_user_daily toplulastirma ve sorgu."""
 
+    async def snapshot_metrics_from_raw_json(
+        self,
+        *,
+        since: Optional[datetime] = None,
+        commit: bool = False,
+    ) -> int:
+        """`contents.raw_json.metrics` icindeki etkilesimleri `content_metrics`'e materyalize eder.
+
+        Ingest sirasinda Twitter etkilesimleri yalnizca raw_json icine yazildigi icin,
+        Radar'in besledigi `content_metrics` tablosu bos kaliyordu. Bu metot eksik satirlari
+        (NOT EXISTS) doldurur; idempotenttir (tekrar calistirmak guvenli).
+
+        raw_json.metrics semasi: {"likes": int, "retweets": int, "replies": int}
+        Esleme: likes->likes, replies->replies, retweets->reposts, views=0 (kaynakta yok).
+
+        :param since: verilirse yalnizca bu tarihten sonra yayinlanan icerikler islenir.
+        :returns: eklenen content_metrics satir sayisi.
+        """
+        where_since = "AND c.published_at >= :since" if since else ""
+        sql = text(
+            f"""
+            INSERT INTO content_metrics (content_id, captured_at, likes, replies, reposts, views)
+            SELECT
+                c.id,
+                COALESCE(c.fetched_at, c.published_at, now()),
+                COALESCE(CASE WHEN (c.raw_json->'metrics'->>'likes') ~ '^[0-9]+$'
+                         THEN (c.raw_json->'metrics'->>'likes')::int ELSE 0 END, 0),
+                COALESCE(CASE WHEN (c.raw_json->'metrics'->>'replies') ~ '^[0-9]+$'
+                         THEN (c.raw_json->'metrics'->>'replies')::int ELSE 0 END, 0),
+                COALESCE(CASE WHEN (c.raw_json->'metrics'->>'retweets') ~ '^[0-9]+$'
+                         THEN (c.raw_json->'metrics'->>'retweets')::int ELSE 0 END, 0),
+                0
+            FROM contents c
+            WHERE c.raw_json -> 'metrics' IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM content_metrics m WHERE m.content_id = c.id
+              )
+              {where_since}
+            """
+        )
+        params: dict = {}
+        if since:
+            params["since"] = since
+        res = await self._session.execute(sql, params)
+        if commit:
+            await self.commit()
+        return res.rowcount or 0
+
     async def aggregate_activity_for_day(self, day: date) -> list[dict]:
         """Verilen gun icin platform/kullanici bazli ham etkilesim toplamlari.
 

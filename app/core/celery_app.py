@@ -82,6 +82,12 @@ celery_app.conf.beat_schedule = {
         "task": "fetch_grievances_and_demands",
         "schedule": crontab(minute="0", hour="*/6"),
     },
+    # ─── RADAR: metrik snapshot (raw_json -> content_metrics) — saatlik :50 ───
+    # 00:30'daki compute_radar_daily'den once gece de calisarak dunun metriklerini hazirlar.
+    "metrics-snapshot-hourly": {
+        "task": "snapshot_content_metrics",
+        "schedule": crontab(minute="50", hour="*"),  # Her saat 50. dakika
+    },
     # ─── RADAR: gunluk etkilesim skoru (bir onceki gunu hesaplar) ───
     "radar-daily-0030": {
         "task": "compute_radar_daily",
