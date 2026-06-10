@@ -1,8 +1,12 @@
-"""Radar modulu Celery gorevi — gunluk etkilesim skorlarini hesaplar.
+"""Radar modulu Celery gorevleri.
 
 `compute_radar_daily`: varsayilan olarak (Europe/Istanbul) bir onceki gunun
 iceriklerini toplulastirip `radar_user_daily` tablosuna yazar; streak (ust uste
 aktif gun) bonusu uygular.
+
+`snapshot_content_metrics`: `contents.raw_json.metrics` icindeki etkilesimleri
+`content_metrics` tablosuna materyalize eder (backfill + sureklilik). Radar bu
+tablodan beslendigi icin, ingest sadece raw_json'a yazdiginda skorlar 0 kalmasin diye.
 """
 
 from __future__ import annotations
@@ -29,6 +33,37 @@ def _resolve_target_day(target_day: Optional[str]) -> date:
     tz = pytz.timezone("Europe/Istanbul")
     now_ist = datetime.now(tz)
     return (now_ist - timedelta(days=1)).date()
+
+
+@celery_app.task(name="snapshot_content_metrics", bind=True, max_retries=2)
+def snapshot_content_metrics(self, since_days: Optional[int] = None):
+    """raw_json.metrics -> content_metrics materyalizasyonu (eksik satirlari doldurur).
+
+    :param since_days: verilirse son N gunluk icerikle sinirlar; bossa tum eksikler islenir.
+    """
+
+    async def _job():
+        since: Optional[datetime] = None
+        if since_days is not None:
+            since = datetime.utcnow() - timedelta(days=int(since_days))
+
+        async with AsyncSessionLocal() as session:
+            repo = RadarRepository(session)
+            try:
+                written = await repo.snapshot_metrics_from_raw_json(since=since, commit=True)
+            except Exception as e:
+                await repo.rollback()
+                logger.debug(f"snapshot_content_metrics hata: {e}")
+                return f"metrics:error:{e}"
+
+        logger.info(f"\U0001F4E1 Radar metrik snapshot: {written} satir content_metrics'e yazildi.")
+        return f"metrics:ok:{written}"
+
+    try:
+        return _run_async(_job())
+    except Exception as e:
+        logger.debug(f"snapshot_content_metrics: {e}")
+        return f"metrics:error:{e}"
 
 
 @celery_app.task(name="compute_radar_daily", bind=True, max_retries=2)
