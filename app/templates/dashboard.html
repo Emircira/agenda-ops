@@ -127,117 +127,28 @@
             {% include 'includes/macro_hud_panel.html' %}
             {% include 'includes/macro_trends_panel.html' %}
             
-            <!-- OPPORTUNITY CARDS -->
-            <div id="opportunity-section" class="mb-8 relative z-10">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
-                        <svg class="w-5 h-5 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                        Sıcak Fırsat Kartları (AI Öncelikli)
-                    </h3>
-                </div>
-                <div id="opportunity-cards-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                    {% for opp in opportunities %}
-                    {% set score = opp.score|float %}
-                    {% if score >= 75 %}
-                        {% set accent = 'rose' %}
-                        {% set tier = 'critical' %}
-                        {% set importance = 'KRİTİK' %}
-                        {% set reaction = 'Yüksek Tepki' %}
-                    {% elif score >= 50 %}
-                        {% set accent = 'indigo' %}
-                        {% set tier = 'high' %}
-                        {% set importance = 'YÜKSEK' %}
-                        {% set reaction = 'Yükselen İlgi' %}
-                    {% else %}
-                        {% set accent = 'emerald' %}
-                        {% set tier = 'watch' %}
-                        {% set importance = 'İZLEMEDE' %}
-                        {% set reaction = 'Fırsat Sinyali' %}
-                    {% endif %}
-                    <div class="k-opportunity-card k-opp-tier--{{ tier }} p-5 group relative overflow-hidden flex flex-col max-h-[500px] min-h-0 hover:border-primary/40 transition-colors">
-                        <div class="k-opp-accent-bar" aria-hidden="true"></div>
-
-                        <div class="relative z-10 flex items-center justify-between mb-4">
-                            <span class="text-[9px] font-black text-[#5f6368] uppercase tracking-[0.25em]">SaaS Intelligence</span>
-                            <span class="text-[9px] k-badge {% if accent == 'rose' %}k-badge--danger{% elif accent == 'indigo' %}k-badge--info{% else %}k-badge--success{% endif %}">CANLI SKOR</span>
+            <!-- STRATEGIC OPPORTUNITIES -->
+            <section id="strategic-opportunities-section" class="mb-8 relative z-10" style="border-radius: 12px; border: 1px solid var(--k-border, #dadce0); background: var(--k-surface, #ffffff); box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.28), 0 1px 3px 1px rgba(60, 64, 67, 0.12); padding: 16px 18px;">
+                <div style="display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--k-stroke-ring, #e8eaed);">
+                    <div>
+                        <div style="font-size: 14px; font-weight: 600; color: var(--k-text, #202124); display: flex; align-items: center; gap: 8px;">
+                            <span style="width: 8px; height: 8px; border-radius: 50%; background: #1a73e8;"></span>
+                            Yapay Zeka Destekli Stratejik Analiz
                         </div>
-
-                        <div class="flex justify-between items-start mb-3 relative z-10">
-                            <div class="min-w-0 pr-3">
-                                <span class="text-[10px] font-bold text-{{ accent }}-300 uppercase tracking-widest mb-1 block">{{ opp.frame or 'KATEGORİ BELİRSİZ' }}</span>
-                                <h4 class="text-white font-bold text-[15px] leading-snug group-hover:text-{{ accent }}-200 transition-colors line-clamp-3">
-                                    {{ opp.topic if opp.topic else '⚠️ Konu başlığı tespit edilemedi' }}
-                                </h4>
-                            </div>
-                            <div class="flex flex-col items-end shrink-0">
-                                <div class="k-opp-score-box relative w-14 h-14 rounded-xl flex items-center justify-center">
-                                    <span class="relative text-xl font-black text-[#202124] leading-none">{{ opp.score|round|int }}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="mb-4 relative z-10 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 mt-2">
-                            <div class="bg-black/20 p-2.5 rounded-lg border border-white/5">
-                                <p class="text-[12px] text-slate-300 leading-relaxed">
-                                    <span class="text-{{ accent }}-300 font-bold block mb-1">AI DURUM ÖZETİ:</span>
-                                    {% if opp.rationale %}
-                                        {% if opp.rationale is mapping %}
-                                            {{ opp.rationale.get('insight', opp.rationale | string) }}
-                                        {% else %}
-                                            {{ opp.rationale }}
-                                        {% endif %}
-                                    {% else %}
-                                        <span class="text-slate-500 italic">Detaylı istihbarat özeti henüz veritabanına işlenmedi...</span>
-                                    {% endif %}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-1 gap-2 mb-4 relative z-10 shrink-0">
-                            <div class="k-opp-metric-row">
-                                <span class="text-[10px] text-[#5f6368] uppercase font-bold">Stratejik Önem</span>
-                                <span class="text-[10px] k-opp-frame-label font-black tracking-wider">{{ importance }}</span>
-                            </div>
-                            <div class="k-opp-metric-row">
-                                <span class="text-[10px] text-[#5f6368] uppercase font-bold">Halkın Tepki Potansiyeli</span>
-                                <span class="text-[10px] text-[#202124] font-bold">{{ reaction }}</span>
-                            </div>
-                            <div class="k-opp-progress-track">
-                                <div class="k-opp-progress-fill" style="width: {{ opp.score }}%"></div>
-                            </div>
-                            <div class="grid grid-cols-2 gap-2">
-                                <div class="k-opp-stat-cell">
-                                    <span class="text-[9px] text-[#5f6368] block mb-1 uppercase font-bold">Velocity</span>
-                                    <span class="text-[#202124] text-sm font-black">%{{ opp.rationale.breakdown.velocity if opp.rationale else '0' }}</span>
-                                </div>
-                                <div class="k-opp-stat-cell">
-                                    <span class="text-[9px] text-[#5f6368] block mb-1 uppercase font-bold">Reach</span>
-                                    <span class="text-[#202124] text-sm font-black">%{{ opp.rationale.breakdown.reach if opp.rationale else '0' }}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="flex items-center justify-between mt-auto pt-3 border-t border-slate-800 relative z-10">
-                            <div class="flex items-center gap-1.5">
-                                <div class="k-opp-live-dot" aria-hidden="true"></div>
-                                <span class="text-[10px] text-[#5f6368] font-medium">{{ opp.created_at.strftime('%H:%M') if opp.created_at else '' }}</span>
-                            </div>
-                            <span class="k-opp-priority-pill">AI PRIORITY</span>
-                        </div>
+                        <p style="font-size: 12px; font-weight: 400; color: var(--k-text-secondary, #5f6368); margin-top: 4px; line-height: 1.4;">Tarihsel verilerden süzülen stratejik fırsat ve risk raporu.</p>
                     </div>
-                    {% endfor %}
-                    {% if not opportunities %}
-                    <div class="col-span-5 py-12 flex flex-col items-center justify-center bg-panel rounded-xl border border-dashed border-[#dadce0] text-[#5f6368]">
-                        <div class="w-16 h-16 bg-[#f1f3f4] rounded-full flex items-center justify-center mb-4 border border-[#dadce0]">
-                            <svg class="w-8 h-8 text-[#80868b]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                        </div>
-                        <p class="text-sm font-medium">Stratejik Fırsat Verisi Bekleniyor</p>
-                        <p class="text-[10px] uppercase tracking-widest mt-1 mb-4 opacity-50">Yapay Zeka Analiz Motoru Beklemede</p>
-                        <button onclick="window.AgendaOps.triggerPipeline(event, this)" class="bg-[#e8f0fe] hover:bg-[#d2e3fc] text-[#1967d2] text-xs px-4 py-2 rounded-full border border-[#dadce0] transition-all font-bold">🚀 ANALİZ HATTINI TETİKLE</button>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button onclick="window.AgendaOps.clearStrategicOpportunities()" style="font-size: 12px; font-weight: 500; color: var(--k-text-secondary, #5f6368); padding: 6px 14px; border-radius: 999px; background: transparent; border: 1px solid var(--k-border, #dadce0); cursor: pointer; transition: all 0.2s;" onmouseover="this.style.color='var(--k-text, #202124)'" onmouseout="this.style.color='var(--k-text-secondary, #5f6368)'">Analizleri Sil</button>
+                        <button onclick="window.AgendaOps.loadStrategicOpportunities(true)" style="font-size: 12px; font-weight: 500; color: #1967d2; background: #e8f0fe; padding: 6px 14px; border-radius: 999px; border: 1px solid transparent; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#d2e3fc'" onmouseout="this.style.background='#e8f0fe'">Yeniden Analiz Yap</button>
                     </div>
-                    {% endif %}
                 </div>
-            </div>
+                <div id="strategic-opportunities-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;">
+                    <div style="grid-column: 1 / -1; padding: 40px 20px; text-align: center; color: var(--k-text-secondary, #5f6368); border: 1px dashed var(--k-border, #dadce0); border-radius: 10px; background: var(--k-bg-page, #f8f9fa);">
+                        <div class="animate-spin rounded-full h-8 w-8 mb-3 mx-auto" style="border: 2px solid transparent; border-top-color: #1a73e8; border-right-color: #1a73e8;"></div>
+                        <p style="font-size: 13px; font-weight: 500;">Stratejik Analiz Bekleniyor...</p>
+                    </div>
+                </div>
+            </section>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 relative z-10">
                 <div class="lg:col-span-2 bg-panel p-5 rounded-xl border border-slate-800 shadow-lg flex flex-col min-h-0 max-h-[min(520px,calc(100vh-10rem))]">
@@ -418,8 +329,8 @@
                     this.restoreStates();
                     this.initRagSearchUi();
                     this.initKarargahAlerts();
-                    this.loadDataStreams();
-                    setInterval(() => this.loadDataStreams(), 15000);
+                    this.loadStrategicOpportunities();
+                    // Auto-refresh iptal edildi, sadece butonla manuel yenilenecek.
                 } catch (e) {
                     console.error("Dashboard constructor error:", e);
                 }
@@ -1248,34 +1159,82 @@
                 const time = item.published_at ? new Date(item.published_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '';
                 const replyBadge = item.twitter_reply ? '<span class="k-badge k-badge--info text-[10px] py-0.5">Yanıt</span>' : '';
                 return `
-                    <div class="k-list-row">
+                    <div class="bg-black/20 border border-slate-700/50 rounded-lg p-3.5 hover:border-slate-600 transition-colors">
                         <div class="flex items-center gap-3 mb-2 flex-wrap">
-                            <span class="text-[#202124] text-sm font-semibold">${this.escapeHtml(item.author_name)}</span>
+                            <span class="text-slate-200 text-sm font-bold tracking-wide">${this.escapeHtml(item.author_name)}</span>
                             ${replyBadge}
-                            <span class="text-[#5f6368] text-xs ml-auto">${time}</span>
+                            <span class="text-slate-500 text-xs ml-auto font-medium tracking-wide">${time}</span>
                         </div>
-                        <p class="text-sm text-[#3c4043] whitespace-pre-line leading-relaxed">${this.escapeHtml(item.text).slice(0, 700)}</p>
+                        <p class="text-[13px] text-slate-400 whitespace-pre-line leading-relaxed overflow-hidden" style="display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;">${this.escapeHtml(item.text)}</p>
                     </div>
                 `;
             }
 
-            async loadDataStreams() {
+            clearStrategicOpportunities() {
+                const grid = document.getElementById('strategic-opportunities-grid');
+                if(grid) {
+                    grid.innerHTML = `
+                        <div style="grid-column: 1 / -1; padding: 40px 20px; text-align: center; color: var(--k-text-secondary, #5f6368); border: 1px dashed var(--k-border, #dadce0); border-radius: 10px; background: var(--k-bg-page, #f8f9fa);">
+                            <p style="font-size: 13px; font-weight: 500;">Analizler temizlendi. "Yeniden Analiz Yap" butonuna tıklayarak yeni rapor üretebilirsiniz.</p>
+                        </div>
+                    `;
+                }
+            }
+
+            async loadStrategicOpportunities(force = false) {
                 try {
-                    const res = await fetch('/api/stream/recent?limit=30');
+                    const grid = document.getElementById('strategic-opportunities-grid');
+                    if(!grid) return;
+                    
+                    if(force) {
+                        grid.innerHTML = `<div style="grid-column: 1 / -1; padding: 40px 20px; text-align: center; color: var(--k-text-secondary, #5f6368); border: 1px dashed var(--k-border, #dadce0); border-radius: 10px; background: var(--k-bg-page, #f8f9fa);">
+                            <div class="animate-spin rounded-full h-8 w-8 mb-3 mx-auto" style="border: 2px solid transparent; border-top-color: #1a73e8; border-right-color: #1a73e8;"></div>
+                            <p style="font-size: 13px; font-weight: 500;">Yapay Zeka Yeni Analiz Üretiyor, Lütfen Bekleyin...</p>
+                        </div>`;
+                    }
+                    
+                    const res = await fetch(`/api/dashboard/strategic-opportunities?force=${force}`);
                     const data = await res.json();
-                    if (!data.success || !data.streams) return;
-                    const map = {
-                        twitter: document.getElementById('stream-twitter'),
-                        youtube: document.getElementById('stream-youtube'),
-                        rss: document.getElementById('stream-rss')
-                    };
-                    Object.keys(map).forEach(key => {
-                        const container = map[key];
-                        if (!container || !data.streams[key]) return;
-                        container.innerHTML = data.streams[key].map(item => this.renderStreamCard(item)).join('');
-                    });
+                    
+                    if (data.success && data.opportunities && data.opportunities.length > 0) {
+                        grid.innerHTML = data.opportunities.map(opp => {
+                            const isRisk = opp.type && opp.type.toLowerCase().includes('risk');
+                            const color = isRisk ? '#c5221f' : '#137333';
+                            const bgColor = isRisk ? '#fce8e6' : '#e6f4ea';
+                            const icon = isRisk 
+                                ? `<svg style="width:16px; height:16px; color:${color};" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`
+                                : `<svg style="width:16px; height:16px; color:${color};" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>`;
+
+                            return `
+                                <div style="border-radius: 10px; border: 1px solid var(--k-border, #dadce0); background: var(--k-surface, #ffffff); padding: 14px 16px; display: flex; flex-direction: column; transition: box-shadow 0.2s;" onmouseover="this.style.boxShadow='0 1px 3px rgba(60,64,67,0.1)'" onmouseout="this.style.boxShadow='none'">
+                                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                                        <div style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; background: ${bgColor};">${icon}</div>
+                                        <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: ${color};">${this.escapeHtml(opp.type)}</span>
+                                    </div>
+                                    <h4 style="font-size: 14px; font-weight: 600; color: var(--k-text, #202124); margin-bottom: 8px; line-height: 1.4;">${this.escapeHtml(opp.title)}</h4>
+                                    <p style="font-size: 12px; color: var(--k-text-muted, #3c4043); margin-bottom: 14px; line-height: 1.5; flex: 1;">${this.escapeHtml(opp.insight)}</p>
+                                    <div style="margin-top: auto; padding-top: 10px; border-top: 1px solid var(--k-stroke-ring, #e8eaed);">
+                                        <div style="font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--k-text-secondary, #5f6368); margin-bottom: 4px;">Önerilen Aksiyon</div>
+                                        <div style="font-size: 12px; font-weight: 500; color: #1967d2; line-height: 1.4;">${this.escapeHtml(opp.action)}</div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('');
+                    } else if (!data.success && data.error) {
+                        grid.innerHTML = `
+                            <div style="grid-column: 1 / -1; padding: 30px 20px; text-align: center; color: #c5221f; border: 1px dashed #fce8e6; border-radius: 10px; background: #fce8e6;">
+                                <p style="font-size: 13px; font-weight: 600;">HATA: ${this.escapeHtml(data.error)}</p>
+                            </div>
+                        `;
+                    } else {
+                        grid.innerHTML = `
+                            <div style="grid-column: 1 / -1; padding: 40px 20px; text-align: center; color: var(--k-text-secondary, #5f6368); border: 1px dashed var(--k-border, #dadce0); border-radius: 10px; background: var(--k-bg-page, #f8f9fa);">
+                                <p style="font-size: 13px; font-weight: 500;">Stratejik analiz için yeterli veri bulunamadı veya henüz üretilmedi.</p>
+                            </div>
+                        `;
+                    }
                 } catch (e) {
-                    console.error('Data stream refresh error:', e);
+                    console.error('Strategic opportunities fetch error:', e);
                 }
             }
 

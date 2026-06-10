@@ -35,6 +35,7 @@
             border-top-color: #8ab4f8;
         }
         @keyframes geo-spin { to { transform: rotate(360deg); } }
+        @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         .k-layer-btn { background: var(--k-surface); color: var(--k-text); transition: opacity .15s, border-color .15s; }
         .k-layer-btn.k-layer-active { border-color: #1967d2 !important; box-shadow: 0 0 0 1px #1967d2; }
         html.dark-mode .k-layer-btn.k-layer-active { border-color: #8ab4f8 !important; box-shadow: 0 0 0 1px #8ab4f8; }
@@ -57,6 +58,43 @@
         .geo-wiki-report .geo-wiki-body { white-space: pre-wrap; word-break: break-word; }
         .geo-wiki-report a { color: #1967d2; text-decoration: underline; text-underline-offset: 2px; }
         html.dark-mode .geo-wiki-report a { color: #8ab4f8; }
+        /* --- Saha Nabzı (News Pulse) --- */
+        .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: #ea4335; display: inline-block; animation: pulse-blink 1.5s ease-in-out infinite; margin-right: 4px; vertical-align: middle; }
+        @keyframes pulse-blink { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.7); } }
+        .news-card {
+            border: 1px solid var(--k-border); border-radius: 0.5rem; padding: 0.65rem 0.75rem;
+            margin-bottom: 0.5rem; background: var(--k-surface); transition: border-color .2s, box-shadow .2s, transform .15s;
+            cursor: pointer; position: relative; overflow: hidden;
+        }
+        .news-card::before {
+            content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+            background: linear-gradient(180deg, #1967d2, #34a853); border-radius: 3px 0 0 3px;
+            opacity: 0; transition: opacity .2s;
+        }
+        .news-card:hover { border-color: #1967d2; box-shadow: 0 2px 8px rgba(25,103,210,0.10); transform: translateY(-1px); }
+        .news-card:hover::before { opacity: 1; }
+        html.dark-mode .news-card:hover { border-color: #8ab4f8; box-shadow: 0 2px 8px rgba(138,180,248,0.12); }
+        html.dark-mode .news-card::before { background: linear-gradient(180deg, #8ab4f8, #81c995); }
+        .news-card .news-title { font-size: 0.7rem; font-weight: 600; color: var(--k-text); line-height: 1.4; margin-bottom: 0.25rem; }
+        .news-card .news-snippet { font-size: 0.625rem; color: var(--k-text-secondary); line-height: 1.45; }
+        .news-card .news-meta { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.35rem; flex-wrap: wrap; }
+        .news-source-badge {
+            font-size: 0.55rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+            background: rgba(26, 115, 232, 0.08); color: #1967d2; padding: 1px 6px; border-radius: 3px;
+        }
+        html.dark-mode .news-source-badge { background: rgba(138, 180, 248, 0.12); color: #8ab4f8; }
+        .news-time { font-size: 0.55rem; color: var(--k-text-secondary); }
+        .news-pulse-empty { text-align: center; padding: 2rem 1rem; color: var(--k-text-secondary); }
+        .news-pulse-empty .empty-icon { font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.5; }
+        .news-pulse-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--k-border); }
+        .news-pulse-header h4 { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #ea4335; display: flex; align-items: center; gap: 0.25rem; }
+        html.dark-mode .news-pulse-header h4 { color: #f28b82; }
+        .news-refresh-btn {
+            font-size: 0.6rem; background: transparent; border: 1px solid var(--k-border); color: var(--k-text-secondary);
+            padding: 2px 8px; border-radius: 4px; cursor: pointer; transition: all .2s;
+        }
+        .news-refresh-btn:hover { border-color: #1967d2; color: #1967d2; }
+        html.dark-mode .news-refresh-btn:hover { border-color: #8ab4f8; color: #8ab4f8; }
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: var(--k-elevated); }
         ::-webkit-scrollbar-thumb { background: var(--k-border); border-radius: 8px; }
@@ -135,7 +173,8 @@
             <div class="geo-command-panel w-full xl:w-[min(40vw,24rem)] shrink-0 glass-panel rounded-xl border border-[var(--k-border)] flex flex-col min-h-[340px] xl:min-h-[460px] overflow-hidden">
                 <div class="flex border-b border-[var(--k-border)] shrink-0">
                     <button type="button" id="tab-political" class="flex-1 py-3 text-xs font-bold uppercase tracking-wide k-tab-btn k-tab-active" onclick="switchGeoTab('political')">Siyasal Dinamikler</button>
-                    <button type="button" id="tab-memory" class="flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wide k-tab-btn opacity-90 leading-tight" onclick="switchGeoTab('memory')">Tarihsel ve Demografik Hafıza (Wiki-OSINT)</button>
+                    <button type="button" id="tab-memory" class="flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wide k-tab-btn opacity-90 leading-tight" onclick="switchGeoTab('memory')">Hafıza (Wiki)</button>
+                    <button type="button" id="tab-newspulse" class="flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wide k-tab-btn opacity-90 leading-tight" onclick="switchGeoTab('newspulse')"><span class="pulse-dot"></span>Saha Nabzı</button>
                 </div>
                 <div id="geo-panel-political" class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                     <p class="text-[11px] text-[var(--k-text-secondary)]">YSK (2009–2024 yerel) ve TÜİK — haritadan il seçildiğinde coğrafi sentez yüklenir.</p>
@@ -150,6 +189,14 @@
                     </div>
                     <div id="geo-wiki-report" class="hidden geo-wiki-report flex-1 min-h-0"></div>
                     <p id="geo-wiki-fallback" class="text-xs text-[var(--k-text-secondary)] italic py-6 text-center hidden leading-relaxed"></p>
+                </div>
+                <div id="geo-panel-newspulse" class="hidden flex-1 overflow-y-auto p-4 flex flex-col min-h-0 custom-scrollbar">
+                    <div id="news-pulse-loading" class="hidden flex-1 flex flex-col items-center justify-center gap-3 py-10 min-h-[200px]">
+                        <div class="geo-osint-radar" aria-hidden="true"></div>
+                        <p class="text-xs font-bold uppercase tracking-widest text-[#ea4335] text-center">Saha Nabzı Taranıyor...</p>
+                        <p class="text-[10px] text-[var(--k-text-secondary)] text-center max-w-[17rem]">Google News RSS — son dakika haberleri derleniyor</p>
+                    </div>
+                    <div id="news-pulse-content" class="flex-1 min-h-0"></div>
                 </div>
             </div>
         </div>
@@ -205,6 +252,8 @@
         let mapLayerMode = "election";
         let geoYskChart = null;
         let geoCurrentTab = "political";
+        let newsPulseLoaded = false;
+        let newsPulseProvince = "";
 
         function escapeGeoHtml(s) {
             if (s == null) return "";
@@ -228,15 +277,17 @@
 
         function switchGeoTab(tab) {
             geoCurrentTab = tab;
-            const p = document.getElementById("geo-panel-political");
-            const m = document.getElementById("geo-panel-memory");
-            const t1 = document.getElementById("tab-political");
-            const t2 = document.getElementById("tab-memory");
-            const mem = tab === "memory";
-            if (p) p.classList.toggle("hidden", mem);
-            if (m) m.classList.toggle("hidden", !mem);
-            if (t1) t1.classList.toggle("k-tab-active", !mem);
-            if (t2) t2.classList.toggle("k-tab-active", mem);
+            const panels = ['political', 'memory', 'newspulse'];
+            panels.forEach(function(p) {
+                const panel = document.getElementById('geo-panel-' + p);
+                const btn   = document.getElementById('tab-' + p);
+                if (panel) panel.classList.toggle('hidden', p !== tab);
+                if (btn)   btn.classList.toggle('k-tab-active', p === tab);
+            });
+            // Saha Nabzı sekmesine geçildiğinde ve il seçiliyse otomatik yükle
+            if (tab === 'newspulse' && currentSelectedProvince && !newsPulseLoaded) {
+                loadNewsPulse(currentSelectedProvince);
+            }
         }
 
         function wikiScopeLabel(scope) {
@@ -621,7 +672,10 @@
         }
 
         async function triggerAnalysis(provinceName, forceRefresh = false) {
-            if (currentSelectedProvince !== provinceName) await loadDistricts(provinceName);
+            if (currentSelectedProvince !== provinceName) {
+                await loadDistricts(provinceName);
+                newsPulseLoaded = false; // il de\u011fi\u015fti, saha nabz\u0131n\u0131 resetle
+            }
             currentSelectedProvince = provinceName;
             
             const electionType = document.getElementById('electionTypeSelect').value;
@@ -690,11 +744,102 @@
                 } catch (geoErr) {
                     console.warn("geo-synthesis (post-analyze):", geoErr);
                 }
+                // Saha Nabzı: bağımsız ve fail-safe (ana akışı etkilemez)
+                loadNewsPulse(provinceName).catch(function(e) { console.warn('news-pulse:', e); });
             } catch (error) {
                 loadingIndicator.classList.add('hidden');
                 document.getElementById('ai-content').classList.remove('hidden');
                 document.getElementById('ai-content').innerHTML = `<span class="text-[#c5221f]">Bağlantı hatası. API'yi kontrol edin.</span>`;
             }
+        }
+
+        /* ======================================================= */
+        /* CANLI SAHA NABZI (News Pulse)                           */
+        /* ======================================================= */
+        async function loadNewsPulse(provinceName) {
+            if (!provinceName) return;
+            // Aynı il zaten yüklüyse tekrar çekme
+            if (newsPulseProvince === provinceName && newsPulseLoaded) return;
+
+            newsPulseProvince = provinceName;
+            newsPulseLoaded = false;
+
+            var loadEl = document.getElementById('news-pulse-loading');
+            var contentEl = document.getElementById('news-pulse-content');
+            if (loadEl) loadEl.classList.remove('hidden');
+            if (contentEl) contentEl.innerHTML = '';
+
+            try {
+                var url = '/api/election/news-pulse?province=' + encodeURIComponent(provinceName) + '&max_items=8';
+                var res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                var data = await res.json();
+                renderNewsPulse(data, provinceName);
+                newsPulseLoaded = true;
+            } catch (err) {
+                console.warn('news-pulse fetch error:', err);
+                renderNewsPulse({ ok: false, items: [], error: 'Bağlantı hatası: ' + (err.message || err) }, provinceName);
+            } finally {
+                if (loadEl) loadEl.classList.add('hidden');
+            }
+        }
+
+        function renderNewsPulse(data, provinceName) {
+            var container = document.getElementById('news-pulse-content');
+            if (!container) return;
+
+            var html = [];
+
+            // Başlık
+            html.push('<div class="news-pulse-header">');
+            html.push('  <h4><span class="pulse-dot"></span> ' + escapeGeoHtml((provinceName || '').toUpperCase()) + ' SAHA NABZI</h4>');
+            html.push('  <button class="news-refresh-btn" onclick="newsPulseLoaded=false; loadNewsPulse(\'' + escapeGeoHtml(provinceName).replace(/'/g, "\\'") + '\')" title="Yenile">🔄 Yenile</button>');
+            html.push('</div>');
+
+            // Hata durumu
+            if (!data.ok && data.error) {
+                html.push('<div class="news-pulse-empty">');
+                html.push('  <div class="empty-icon">⚠️</div>');
+                html.push('  <p class="text-xs">' + escapeGeoHtml(data.error) + '</p>');
+                html.push('  <p class="text-[10px] mt-2 opacity-60">Ana analiz motoru etkilenmemiştir.</p>');
+                html.push('</div>');
+                container.innerHTML = html.join('');
+                return;
+            }
+
+            // Boş sonuç
+            if (!data.items || data.items.length === 0) {
+                html.push('<div class="news-pulse-empty">');
+                html.push('  <div class="empty-icon">📭</div>');
+                html.push('  <p class="text-xs font-medium">Bu il için güncel haber bulunamadı.</p>');
+                html.push('  <p class="text-[10px] mt-1 opacity-60">Google News RSS — son 48 saat tarandı.</p>');
+                html.push('</div>');
+                container.innerHTML = html.join('');
+                return;
+            }
+
+            // Haber kartları
+            data.items.forEach(function(item, idx) {
+                var cardUrl = item.url ? escapeGeoHtml(item.url) : '#';
+                html.push('<a href="' + cardUrl + '" target="_blank" rel="noopener noreferrer" class="news-card block" style="text-decoration:none; animation: fadeSlideIn 0.3s ease-out ' + (idx * 0.06) + 's both;">');
+                html.push('  <div class="news-title">' + escapeGeoHtml(item.title || 'Başlık yok') + '</div>');
+                if (item.snippet) {
+                    html.push('  <div class="news-snippet">' + escapeGeoHtml(item.snippet).substring(0, 200) + '</div>');
+                }
+                html.push('  <div class="news-meta">');
+                if (item.source) {
+                    html.push('    <span class="news-source-badge">' + escapeGeoHtml(item.source) + '</span>');
+                }
+                if (item.age_label) {
+                    html.push('    <span class="news-time">🕐 ' + escapeGeoHtml(item.age_label) + '</span>');
+                }
+                html.push('  </div>');
+                html.push('</a>');
+            });
+
+            // Alt bilgi
+            html.push('<p class="text-[10px] text-center mt-3 opacity-50">Kaynak: Google News RSS · ' + data.items.length + ' haber · ' + new Date().toLocaleTimeString('tr-TR') + '</p>');
+
+            container.innerHTML = html.join('');
         }
     </script>
 </body>

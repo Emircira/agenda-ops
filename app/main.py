@@ -1064,6 +1064,79 @@ async def get_dashboard_hot_topics(refresh: bool = False, db: AsyncSession = Dep
         logger.error(f"Hot topics error: {e}")
         return {"status": "error", "message": str(e)}
 
+_strategic_opps_cache = {"data": None, "timestamp": None}
+
+@app.get("/api/dashboard/strategic-opportunities", tags=["Dashboard Verileri"])
+async def get_dashboard_strategic_opportunities(force: bool = False, db: AsyncSession = Depends(get_db)):
+    """Veritabanındaki son verileri harmanlayıp Fırsat/Risk stratejik analiz kartları üretir. İstenmedikçe (force=False) önbellekten verir."""
+    try:
+        global _strategic_opps_cache
+        now = datetime.utcnow()
+
+        if not force and _strategic_opps_cache["data"] is not None:
+            return _strategic_opps_cache["data"]
+
+        time_threshold = now - timedelta(hours=24)
+        content_repo = ContentRepository(db)
+        # 100 veriyi analiz için çekelim
+        contents = await content_repo.list_hot_topics_candidates(time_threshold, 100)
+        
+        if not contents:
+            # Eğer son 24 saatte veri yoksa son 15 güne bakalım
+            fallback_threshold = now - timedelta(days=15)
+            contents = await content_repo.list_hot_topics_candidates(fallback_threshold, 100)
+            
+        if not contents:
+            return {"success": False, "error": "Son 15 güne ait veri bulunamadı. Lütfen veritabanına veri (Tweet/Haber) akışı sağlayın."}
+
+        text_blob = format_contents_by_domain(contents)
+        as_of = now.strftime("%Y-%m-%d %H:%M UTC")
+        
+        prompt = f"""Sen üst düzey bir istihbarat ve siyasi strateji analistisin.
+Aşağıdaki sosyal medya ve haber verilerini (Twitter, RSS, YouTube) analiz et ve yöneticiler için "Stratejik Fırsat" ve "Risk" kartları üret.
+
+Kurallar:
+1. Sadece 3 ila en fazla 5 önemli konuyu belirle.
+2. Her konu 'Fırsat' veya 'Risk' tipinde olmalı.
+3. Çıktı KESİNLİKLE markdown barındırmayan saf bir JSON formatında olmalı.
+
+JSON Formatı:
+{{
+    "success": true,
+    "opportunities": [
+        {{
+            "type": "Fırsat", 
+            "title": "Kısa, net ve vurucu başlık (Örn: Genç Seçmen Etkileşimi)",
+            "insight": "Veriye dayalı kısa ve net durum analizi (Örn: Son 24 saatte sosyal medyada gençlerin bu konudaki ilgisi %30 arttı.)",
+            "action": "Alınması gereken stratejik/siyasi aksiyon önerisi"
+        }}
+    ]
+}}
+
+Veriler (Rapor saati: {as_of}):
+{text_blob}
+"""
+        ai_response = await gemini_generate_content(prompt)
+        if "```json" in ai_response:
+            ai_response = ai_response.split("```json")[1].split("```")[0].strip()
+
+        try:
+            data = json.loads(ai_response)
+            if not isinstance(data.get("opportunities", []), list):
+                data["opportunities"] = []
+                
+            _strategic_opps_cache["data"] = data
+            _strategic_opps_cache["timestamp"] = now
+            return data
+        except json.JSONDecodeError:
+            if GEMINI_BLOCKED_PLAIN_MESSAGE in (ai_response or ""):
+                return {"success": False, "error": GEMINI_BLOCKED_PLAIN_MESSAGE}
+            return {"success": False, "error": "Geçersiz JSON yanıtı", "raw": ai_response}
+            
+    except Exception as e:
+        logger.error(f"Strategic opportunities error: {e}")
+        return {"success": False, "error": str(e)}
+
 # =======================================================
 # GERÇEK VERİ ANALİZ ROTALARI (4 YENİ ENDPOINT)
 # =======================================================
@@ -1695,6 +1768,23 @@ async def poll_radar(req: PollRadarRequest):
         return {"success": True, "analysis": analysis}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+@app.get("/api/election/news-pulse", tags=["Seçim Veritabanı"])
+async def get_news_pulse(province: str, max_items: int = 8):
+    """İl bazlı canlı saha nabzı — Google News RSS üzerinden son haberleri çeker.
+    Fail-safe: Hata durumunda ana analiz motorunu etkilemez."""
+    try:
+        from app.services.news_pulse_service import fetch_province_news_pulse
+        return await fetch_province_news_pulse(province, max_items=min(max(1, max_items), 15))
+    except Exception as e:
+        logger.warning(f"news-pulse endpoint hatası [{province}]: {e}")
+        return {
+            "ok": False,
+            "province": province,
+            "items": [],
+            "fetched_at": datetime.utcnow().isoformat(),
+            "error": f"Servis hatası: {str(e)[:120]}"
+        }
 
 @app.post("/api/election/analyze", tags=["Seçim Veritabanı"])
 async def analyze_election(province: str, election_type: str, district: str = "", force_refresh: bool = False, db: AsyncSession = Depends(get_db)):
