@@ -105,3 +105,113 @@ class PulseRepository(BaseRepository):
                 "sample_text": (row["text"] or "")[:240].strip(),
             }
         return out
+
+    # ------------------------------------------------------------------
+    # Gundem Icgoruleri (Momentum / Kutuplasma / Naratif) icin ek sorgular
+    # ------------------------------------------------------------------
+
+    async def topic_counts_between(
+        self,
+        *,
+        start: datetime,
+        end: datetime,
+    ) -> List[dict]:
+        """[start, end) araliginda X/Twitter konularinin mention sayisi.
+
+        Momentum hesabi icin iki ayri pencerede (mevcut + onceki) cagrilir.
+        Donen her satir: topic, mention_count. Azalan siralanir.
+        """
+        mention_count = func.count(ContentLabel.content_id)
+        stmt = (
+            select(
+                ContentLabel.topic.label("topic"),
+                mention_count.label("mention_count"),
+            )
+            .join(Content, Content.id == ContentLabel.content_id)
+            .where(
+                Content.platform.in_(_X_PLATFORMS),
+                Content.published_at >= start,
+                Content.published_at < end,
+                ContentLabel.topic.isnot(None),
+                func.length(func.trim(ContentLabel.topic)) > 0,
+            )
+            .group_by(ContentLabel.topic)
+            .order_by(desc(mention_count))
+        )
+        res = await self._session.execute(stmt)
+        return [dict(r) for r in res.mappings().all()]
+
+    async def topic_hourly_counts(
+        self,
+        *,
+        since: datetime,
+        topics: List[str],
+    ) -> List[dict]:
+        """Verilen konular icin saatlik mention sayilari (sparkline icin).
+
+        Donen her satir: topic, bucket (ISO saat), cnt.
+        """
+        if not topics:
+            return []
+        bucket = func.date_trunc("hour", Content.published_at).label("bucket")
+        mention_count = func.count(ContentLabel.content_id)
+        stmt = (
+            select(
+                ContentLabel.topic.label("topic"),
+                bucket,
+                mention_count.label("cnt"),
+            )
+            .join(Content, Content.id == ContentLabel.content_id)
+            .where(
+                Content.platform.in_(_X_PLATFORMS),
+                Content.published_at >= since,
+                ContentLabel.topic.in_(topics),
+            )
+            .group_by(ContentLabel.topic, bucket)
+            .order_by(ContentLabel.topic, bucket)
+        )
+        res = await self._session.execute(stmt)
+        out: List[dict] = []
+        for row in res.mappings().all():
+            b = row["bucket"]
+            out.append(
+                {
+                    "topic": row["topic"],
+                    "bucket": b.isoformat() if hasattr(b, "isoformat") else str(b),
+                    "cnt": int(row["cnt"]),
+                }
+            )
+        return out
+
+    async def frame_breakdown_for_topics(
+        self,
+        *,
+        since: datetime,
+        topics: List[str],
+    ) -> List[dict]:
+        """Konu basina cerceve (frame) dagilimi — Naratif/Cerceve Savasi icin.
+
+        Donen her satir: topic, frame, cnt. Konu + cnt azalan siralanir.
+        """
+        if not topics:
+            return []
+        mention_count = func.count(ContentLabel.content_id)
+        stmt = (
+            select(
+                ContentLabel.topic.label("topic"),
+                ContentLabel.frame.label("frame"),
+                mention_count.label("cnt"),
+            )
+            .join(Content, Content.id == ContentLabel.content_id)
+            .where(
+                Content.platform.in_(_X_PLATFORMS),
+                Content.published_at >= since,
+                ContentLabel.topic.in_(topics),
+                ContentLabel.frame.isnot(None),
+                func.length(func.trim(ContentLabel.frame)) > 0,
+            )
+            .group_by(ContentLabel.topic, ContentLabel.frame)
+            .order_by(ContentLabel.topic, desc(mention_count))
+        )
+        res = await self._session.execute(stmt)
+        return [dict(r) for r in res.mappings().all()]
