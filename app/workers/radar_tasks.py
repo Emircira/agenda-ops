@@ -2,7 +2,8 @@
 
 `compute_radar_daily`: varsayilan olarak (Europe/Istanbul) bir onceki gunun
 iceriklerini toplulastirip `radar_user_daily` tablosuna yazar; streak (ust uste
-aktif gun) bonusu uygular.
+aktif gun) bonusu uygular. Ardindan gunun en yuksek skorlu hesaplari icin
+SystemAlert (yukselen hesap uyarisi) uretir.
 
 `snapshot_content_metrics`: `contents.raw_json.metrics` icindeki etkilesimleri
 `content_metrics` tablosuna materyalize eder (backfill + sureklilik). Radar bu
@@ -20,7 +21,13 @@ from loguru import logger
 
 from app.core.celery_app import celery_app
 from app.db.session import AsyncSessionLocal
+from app.repositories.alert_repository import AlertRepository
 from app.repositories.radar_repository import RadarRepository
+
+# Radar -> alarm uretimi esikleri
+RADAR_ALERT_TOP_N = 3
+RADAR_ALERT_MIN_SCORE = 50.0
+RADAR_ALERT_HIGH_SCORE = 200.0
 
 
 def _run_async(coro):
@@ -33,6 +40,49 @@ def _resolve_target_day(target_day: Optional[str]) -> date:
     tz = pytz.timezone("Europe/Istanbul")
     now_ist = datetime.now(tz)
     return (now_ist - timedelta(days=1)).date()
+
+
+async def _emit_top_mover_alerts(session, day: date) -> int:
+    """Gunun en yuksek Radar skorlu hesaplari icin SystemAlert uretir (idempotent).
+
+    Ayni gun+hesap icin tekrar calistirildiginda yeni uyari uretmez
+    (exists_by_type_message ile mesaj bazli dedup).
+    """
+    radar_repo = RadarRepository(session)
+    alert_repo = AlertRepository(session)
+    movers = await radar_repo.leaderboard(
+        start_day=day, platform=None, limit=RADAR_ALERT_TOP_N, order="score"
+    )
+    created = 0
+    for r in movers:
+        score = float(r.get("total_score") or 0)
+        if score < RADAR_ALERT_MIN_SCORE:
+            continue
+        username = r.get("username") or "?"
+        platform = r.get("platform") or "?"
+        posts = int(r.get("total_posts") or 0)
+        engagement = int(r.get("total_engagement") or 0)
+        streak = int(r.get("max_streak") or 0)
+        message = (
+            f"\U0001F4E1 Radar yukselen: {username} ({platform}) - {day.isoformat()} gunu "
+            f"{score:.0f} puanla one cikti ({posts} gonderi, {engagement} etkilesim, "
+            f"seri {streak}g)."
+        )
+        if await alert_repo.exists_by_type_message(
+            alert_type="radar_top_mover", message=message
+        ):
+            continue
+        severity = "high" if score >= RADAR_ALERT_HIGH_SCORE else "medium"
+        await alert_repo.create_alert(
+            alert_type="radar_top_mover",
+            severity=severity,
+            message=message,
+            commit=False,
+        )
+        created += 1
+    if created:
+        await alert_repo.commit()
+    return created
 
 
 @celery_app.task(name="snapshot_content_metrics", bind=True, max_retries=2)
@@ -68,7 +118,7 @@ def snapshot_content_metrics(self, since_days: Optional[int] = None):
 
 @celery_app.task(name="compute_radar_daily", bind=True, max_retries=2)
 def compute_radar_daily(self, target_day: Optional[str] = None):
-    """Bir gunun (varsayilan: dun) Radar skorlarini hesaplar ve yazar."""
+    """Bir gunun (varsayilan: dun) Radar skorlarini hesaplar, yazar ve uyari uretir."""
 
     async def _job():
         day = _resolve_target_day(target_day)
@@ -129,7 +179,17 @@ def compute_radar_daily(self, target_day: Optional[str] = None):
                 logger.debug(f"Radar commit hatasi ({day}): {e}")
                 return f"radar:commit_failed:{day.isoformat()}"
 
-        logger.info(f"\U0001F4E1 Radar: {day.isoformat()} icin {written} kullanici skoru yazildi.")
+            # Radar -> alarm: gunun en yukselen hesaplari icin bildirim uret (idempotent).
+            try:
+                alerts_created = await _emit_top_mover_alerts(session, day)
+            except Exception as e:
+                logger.debug(f"Radar alarm uretimi atlandi ({day}): {e}")
+                alerts_created = 0
+
+        logger.info(
+            f"\U0001F4E1 Radar: {day.isoformat()} icin {written} kullanici skoru, "
+            f"{alerts_created} yukselen-hesap uyarisi yazildi."
+        )
         return f"radar:ok:{day.isoformat()}:{written}"
 
     try:

@@ -57,6 +57,16 @@ class AlertRepository(BaseRepository):
         )
         return int(res.rowcount or 0) > 0
 
+    async def exists_by_type_message(self, *, alert_type: str, message: str) -> bool:
+        """Ayni tur+mesajli bir uyari zaten var mi? (idempotent uretim icin)."""
+        q = await self._session.scalar(
+            select(func.count(SystemAlert.id)).where(
+                SystemAlert.alert_type == alert_type,
+                SystemAlert.message == message,
+            )
+        )
+        return int(q or 0) > 0
+
     async def list_by_severity_since_order_desc(
         self,
         *,
@@ -64,7 +74,7 @@ class AlertRepository(BaseRepository):
         since: datetime,
         limit: int = 100,
     ) -> List[SystemAlert]:
-        """Örn. high/critical uyarıları belirli bir zamandan sonrası için (rapor / SITREP)."""
+        """Orn. high/critical uyarilari belirli bir zamandan sonrasi icin (rapor / SITREP)."""
         lim = max(1, min(int(limit), 500))
         sev_norm = tuple({(s or "").strip().lower() for s in severities if (s or "").strip()})
         if not sev_norm:
