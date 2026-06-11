@@ -1,13 +1,15 @@
 """Gündem Nabızı + Gündem İçgörüleri API uclari — X/Twitter.
 
 LLM kullanmaz; content_labels icindeki mevcut topic / sentiment / stance /
-frame verisini istatistiksel olarak toplulastırır.
+frame / target verisini istatistiksel olarak toplulastırır.
 
 Uclar:
 - GET /agenda        : bugun ne konusuluyor + kitle duygusu/tutumu
 - GET /momentum      : yukselen/dusen gundem (mevcut vs onceki pencere + sparkline)
-- GET /polarization  : kutuplasma/catisma haritasi (support vs oppose dengesi)
+- GET /polarization  : kutuplasma/catisma haritasi (target bazli, stance + sentiment)
 - GET /frames        : naratif/cerceve savasi (konu basina frame dagilimi)
+- GET /subjects      : drill-down icin top konu + ozne listesi
+- GET /subject       : tek bir konu/ozne icin detayli analiz (drill-down)
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import List, Optional
 
 import pytz
 from fastapi import APIRouter, Depends, Query
@@ -53,6 +55,17 @@ def _mood_label(avg: Optional[float]) -> str:
     if avg <= -0.25:
         return "olumsuz"
     return "karışık"
+
+
+def _hour_axis(since: datetime, now: datetime) -> List[str]:
+    """since -> now arasi saatlik eksen (YYYY-MM-DDTHH prefixleri)."""
+    axis: List[str] = []
+    t = since.replace(minute=0, second=0, microsecond=0)
+    end_axis = now.replace(minute=0, second=0, microsecond=0)
+    while t <= end_axis:
+        axis.append(t.isoformat()[:13])
+        t += timedelta(hours=1)
+    return axis
 
 
 @router.get("/agenda")
@@ -142,13 +155,7 @@ async def get_momentum(
         pref = str(row["bucket"])[:13]  # YYYY-MM-DDTHH
         hmap[row["topic"]][pref] += int(row["cnt"])
 
-    # saat ekseni (cur_start -> now)
-    axis = []
-    t = cur_start.replace(minute=0, second=0, microsecond=0)
-    end_axis = now.replace(minute=0, second=0, microsecond=0)
-    while t <= end_axis:
-        axis.append(t.isoformat()[:13])
-        t += timedelta(hours=1)
+    axis = _hour_axis(cur_start, now)
 
     items = []
     for r in cur_sorted:
@@ -193,40 +200,68 @@ async def get_polarization(
     limit: int = Query(8, ge=1, le=20),
     pulse_repo: PulseRepository = Depends(get_pulse_repository),
 ):
-    """Kutuplasma/catisma haritasi: support ile oppose'un en dengeli (en cok
-    bolunmus) oldugu konulari one cikarir. polarization 0-100.
+    """Kutuplasma/catisma haritasi — OZNE (target) bazli.
+
+    Her ozne icin once tutum (stance: destek/karsi) yarilmasina bakilir; tutum
+    sinyali zayifsa duygu (sentiment) kutuplasmasina (olumlu<->olumsuz) duser.
+    Boylece 'Rahmi Koç', 'Kürtler' gibi spesifik gerilimler yakalanir; coarse
+    'iç/dış politika' konulari yerine somut ozneler one cikar.
     """
     hours = _parse_window_hours(window)
     since = datetime.utcnow() - timedelta(hours=hours)
 
-    rows = await pulse_repo.top_topics_since(
-        since=since, limit=max(limit * 3, limit), min_mentions=3
+    rows = await pulse_repo.polarization_targets_since(
+        since=since, min_mentions=4, limit=max(limit * 4, 24)
     )
 
     items = []
-    for t in rows:
-        sup = int(t.get("support_count") or 0)
-        opp = int(t.get("oppose_count") or 0)
-        neu = int(t.get("neutral_count") or 0)
-        total = sup + opp + neu
-        # gercek bir 'catisma' icin iki taraf da temsil edilmeli
-        if sup == 0 or opp == 0 or total == 0:
+    for r in rows:
+        total = int(r.get("mention_count") or 0)
+        if total <= 0:
             continue
-        so = sup + opp
-        balance = 1 - abs(sup - opp) / so  # 1.0 = tam ortadan bolunmus
-        # tutum alanlarin oranina gore agirliklandir (gurultuyu bastir)
-        polarization = round(100 * balance * (so / total))
+        sup = int(r.get("support_count") or 0)
+        opp = int(r.get("oppose_count") or 0)
+        neu = int(r.get("neutral_count") or 0)
+        pos = int(r.get("pos_count") or 0)
+        neg = int(r.get("neg_count") or 0)
+        avg_raw = r.get("avg_sentiment")
+        avg_sent = float(avg_raw) if avg_raw is not None else None
+
+        stance_op = sup + opp
+        # 1) Once tutum yarilmasi (her iki taraf da temsil ediliyorsa)
+        if sup > 0 and opp > 0 and stance_op >= 2:
+            basis = "stance"
+            left, right, denom = sup, opp, stance_op
+            left_label, right_label = "Destek", "Karşı"
+            neutral_n = neu
+        # 2) Tutum zayifsa duygu yarilmasina dus
+        elif pos > 0 and neg > 0:
+            basis = "sentiment"
+            left, right, denom = pos, neg, (pos + neg)
+            left_label, right_label = "Olumlu", "Olumsuz"
+            neutral_n = max(0, total - pos - neg)
+        else:
+            continue
+
+        if denom <= 0:
+            continue
+        balance = 1 - abs(left - right) / denom  # 1.0 = tam ortadan bolunmus
+        polarization = round(100 * balance * (denom / total))
+        left_pct = round(100 * left / denom)
+        right_pct = 100 - left_pct
         items.append(
             {
-                "topic": t["topic"],
-                "mention_count": int(t.get("mention_count") or 0),
-                "support": sup,
-                "oppose": opp,
-                "neutral": neu,
-                "support_pct": round(100 * sup / total),
-                "oppose_pct": round(100 * opp / total),
-                "neutral_pct": round(100 * neu / total),
+                "subject": r["target"],
+                "mention_count": total,
+                "basis": basis,
+                "left_label": left_label,
+                "right_label": right_label,
+                "left_pct": left_pct,
+                "right_pct": right_pct,
+                "neutral_count": neutral_n,
                 "polarization": polarization,
+                "avg_sentiment": round(avg_sent, 3) if avg_sent is not None else None,
+                "crisis_score": int(r.get("max_crisis") or 0),
             }
         )
 
@@ -237,6 +272,7 @@ async def get_polarization(
         "window": window,
         "hours": hours,
         "generated_at": datetime.now(_IST).isoformat(),
+        "basis": "target",
         "count": len(items),
         "topics": items,
     }
@@ -292,4 +328,119 @@ async def get_frames(
         "generated_at": datetime.now(_IST).isoformat(),
         "count": len(items),
         "topics": items,
+    }
+
+
+@router.get("/subjects")
+async def get_subjects(
+    window: str = Query("24h", description="Zaman penceresi: 24h, 48h, 7d"),
+    limit: int = Query(12, ge=1, le=30),
+    pulse_repo: PulseRepository = Depends(get_pulse_repository),
+):
+    """Drill-down sol panel: en cok konusulan konular (topic) ve ozneler (target)."""
+    hours = _parse_window_hours(window)
+    since = datetime.utcnow() - timedelta(hours=hours)
+
+    topics = await pulse_repo.top_topics_since(since=since, limit=limit, min_mentions=2)
+    targets = await pulse_repo.top_targets_since(since=since, limit=limit, min_mentions=2)
+
+    return {
+        "window": window,
+        "hours": hours,
+        "generated_at": datetime.now(_IST).isoformat(),
+        "topics": [
+            {"name": t["topic"], "count": int(t.get("mention_count") or 0)}
+            for t in topics
+        ],
+        "targets": [
+            {"name": t["name"], "count": int(t.get("mention_count") or 0)}
+            for t in targets
+        ],
+    }
+
+
+@router.get("/subject")
+async def get_subject_detail(
+    name: str = Query(..., description="Konu (topic) veya ozne (target) adi"),
+    by: str = Query("topic", description="'topic' veya 'target'"),
+    window: str = Query("24h", description="Zaman penceresi: 24h, 48h, 7d"),
+    pulse_repo: PulseRepository = Depends(get_pulse_repository),
+):
+    """Tek bir konu/ozne icin detayli analiz (drill-down detay paneli).
+
+    Tutum dagilimi, duygu dagilimi, naratif (frame), ornek gonderiler ve
+    saatlik hacim (spark) dondurur.
+    """
+    by = "target" if by == "target" else "topic"
+    hours = _parse_window_hours(window)
+    now = datetime.utcnow()
+    since = now - timedelta(hours=hours)
+
+    agg = await pulse_repo.subject_aggregate(since=since, name=name, by=by)
+    total = int(agg.get("mention_count") or 0) if agg else 0
+    if not agg or total == 0:
+        return {
+            "found": False,
+            "subject": name,
+            "by": by,
+            "window": window,
+            "generated_at": datetime.now(_IST).isoformat(),
+        }
+
+    sup = int(agg.get("support_count") or 0)
+    opp = int(agg.get("oppose_count") or 0)
+    neu = int(agg.get("neutral_count") or 0)
+    stance_total = (sup + opp + neu) or 1
+    pos = int(agg.get("pos_count") or 0)
+    neg = int(agg.get("neg_count") or 0)
+    neu_sent = max(0, total - pos - neg)
+    avg_raw = agg.get("avg_sentiment")
+    avg_sent = float(avg_raw) if avg_raw is not None else None
+
+    frames_rows = await pulse_repo.subject_frame_breakdown(since=since, name=name, by=by)
+    frame_total = sum(int(r["cnt"]) for r in frames_rows) or 1
+    frames = [
+        {
+            "frame": r["frame"],
+            "count": int(r["cnt"]),
+            "pct": round(100 * int(r["cnt"]) / frame_total),
+        }
+        for r in frames_rows[:6]
+    ]
+
+    samples = await pulse_repo.subject_samples(since=since, name=name, by=by, limit=8)
+
+    hourly = await pulse_repo.subject_hourly(since=since, name=name, by=by)
+    hmap: dict = defaultdict(int)
+    for row in hourly:
+        hmap[str(row["bucket"])[:13]] += int(row["cnt"])
+    axis = _hour_axis(since, now)
+    spark = [hmap.get(p, 0) for p in axis]
+
+    return {
+        "found": True,
+        "subject": name,
+        "by": by,
+        "window": window,
+        "hours": hours,
+        "generated_at": datetime.now(_IST).isoformat(),
+        "mention_count": total,
+        "avg_sentiment": round(avg_sent, 3) if avg_sent is not None else None,
+        "mood": _mood_label(avg_sent),
+        "crisis_score": int(agg.get("max_crisis") or 0),
+        "manipulation_pct": round(100 * float(agg.get("max_manip") or 0.0)),
+        "bot_pct": round(100 * float(agg.get("max_bot") or 0.0)),
+        "stance": {
+            "support_pct": round(100 * sup / stance_total),
+            "oppose_pct": round(100 * opp / stance_total),
+            "neutral_pct": round(100 * neu / stance_total),
+        },
+        "sentiment": {
+            "pos_pct": round(100 * pos / total),
+            "neg_pct": round(100 * neg / total),
+            "neu_pct": round(100 * neu_sent / total),
+        },
+        "frames": frames,
+        "samples": samples,
+        "spark": spark,
     }
