@@ -53,7 +53,8 @@ class RadarRepository(BaseRepository):
         (NOT EXISTS) doldurur; idempotenttir (tekrar calistirmak guvenli).
 
         raw_json.metrics semasi: {"likes": int, "retweets": int, "replies": int}
-        Esleme: likes->likes, replies->replies, retweets->reposts, views=0 (kaynakta yok).
+        Esleme: likes->likes, replies->replies, retweets->reposts,
+        views<-account_metrics.followers_count (impression yoksa erisim/reach proxy'si).
 
         :param since: verilirse yalnizca bu tarihten sonra yayinlanan icerikler islenir.
         :returns: eklenen content_metrics satir sayisi.
@@ -71,7 +72,8 @@ class RadarRepository(BaseRepository):
                          THEN (c.raw_json->'metrics'->>'replies')::int ELSE 0 END, 0),
                 COALESCE(CASE WHEN (c.raw_json->'metrics'->>'retweets') ~ '^[0-9]+$'
                          THEN (c.raw_json->'metrics'->>'retweets')::int ELSE 0 END, 0),
-                0
+                COALESCE(CASE WHEN (c.raw_json->'account_metrics'->>'followers_count') ~ '^[0-9]+$'
+                         THEN (c.raw_json->'account_metrics'->>'followers_count')::int ELSE 0 END, 0)
             FROM contents c
             WHERE c.raw_json -> 'metrics' IS NOT NULL
               AND NOT EXISTS (
@@ -92,6 +94,8 @@ class RadarRepository(BaseRepository):
         """Verilen gun icin platform/kullanici bazli ham etkilesim toplamlari.
 
         Her icerik icin en guncel metrik anlik goruntusu (captured_at DESC) alinir.
+        reach_estimate: kullanici takipci sayisi kisi basina sabit oldugu icin gun
+        icinde MAX ile alinir (gonderi sayisina gore asiri toplama yapilmaz).
         """
         start = datetime(day.year, day.month, day.day)
         end = start + timedelta(days=1)
@@ -116,7 +120,7 @@ class RadarRepository(BaseRepository):
                 COALESCE(SUM(
                     COALESCE(lm.likes, 0) + COALESCE(lm.replies, 0) + COALESCE(lm.reposts, 0)
                 ), 0) AS total_engagement,
-                COALESCE(SUM(COALESCE(lm.views, 0)), 0) AS reach_estimate
+                COALESCE(MAX(COALESCE(lm.views, 0)), 0) AS reach_estimate
             FROM contents c
             LEFT JOIN latest_metric lm ON lm.content_id = c.id
             WHERE c.published_at >= :start AND c.published_at < :end
