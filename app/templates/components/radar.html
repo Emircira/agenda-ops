@@ -153,7 +153,6 @@
     function fetchAndRender() {
         var loading = document.getElementById('radar-loading');
         var empty = document.getElementById('radar-empty');
-        var table = document.getElementById('radar-table');
         show(empty, false);
         show(loading, true);
         var qs = new URLSearchParams({
@@ -219,6 +218,12 @@
         if (snapshot) snapshot.addEventListener('click', function () { postAction('/api/v1/radar/snapshot-metrics', 'Metrik tazeleme', snapshot); });
     }
 
+    function relocate() {
+        var scroll = document.getElementById('main-scroll');
+        var view = document.getElementById('view-radar');
+        if (scroll && view && view.parentNode !== scroll) { scroll.appendChild(view); }
+    }
+
     function injectNav() {
         if (document.getElementById('nav-radar')) return;
         var nav = document.querySelector('aside nav');
@@ -236,6 +241,7 @@
 
     function boot() {
         if (booted) return; booted = true;
+        try { relocate(); } catch (e) {}
         try { injectNav(); } catch (e) {}
         try { wire(); } catch (e) {}
         try { syncWinChips(); } catch (e) {}
