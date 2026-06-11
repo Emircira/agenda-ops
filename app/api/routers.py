@@ -23,6 +23,8 @@ from app.workers.ingest_tasks import (
 
 # Radar modulu API uclari (GET /api/v1/radar, POST /api/v1/radar/recompute)
 from app.api.v1.endpoints import radar as radar_endpoints
+# Gundem Nabzi API ucu (GET /api/v1/pulse/agenda)
+from app.api.v1.endpoints import pulse as pulse_endpoints
 
 # Swagger arayuzunde temiz gorunmesi icin tag ekledik
 router = APIRouter(tags=["Karargah Operasyonlari"])
@@ -82,3 +84,5 @@ async def get_daily_report(
 
 # Radar liderlik tablosu alt-router'i (/api/v1 altinda -> /api/v1/radar)
 router.include_router(radar_endpoints.router, prefix="/radar", tags=["Radar"])
+# Gundem Nabzi alt-router'i (/api/v1 altinda -> /api/v1/pulse)
+router.include_router(pulse_endpoints.router, prefix="/pulse", tags=["Gundem Nabzi"])
