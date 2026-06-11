@@ -1,0 +1,209 @@
+<!-- Gundem Nabzi — veri: /api/v1/pulse/agenda (yalnizca X/Twitter) -->
+<div id="view-pulse" class="view-section flex-1 flex flex-col w-full min-h-0 p-6 z-10 relative scroll-smooth bg-[#f8f9fa]">
+
+    <!-- KONTROL PANELI -->
+    <div class="bg-panel p-5 rounded-xl border border-slate-800 shadow-lg mb-6">
+        <div class="flex justify-between items-start gap-4 flex-wrap">
+            <div class="min-w-0">
+                <h3 class="text-[#202124] font-bold text-lg flex items-center gap-2">
+                    <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h4l3 8 4-16 3 8h4"></path></svg>
+                    G&uuml;ndem Nabz&#305;
+                </h3>
+                <p class="text-xs text-[#5f6368] mt-1 max-w-2xl leading-relaxed">X/Twitter verisine dayanarak se&ccedil;ilen pencerede en &ccedil;ok konu&#351;ulan ba&#351;l&#305;klar; her ba&#351;l&#305;k i&ccedil;in kitle ruh hali (sentiment) ve tutum (destek/kar&#351;&#305;/n&ouml;tr) da&#287;&#305;l&#305;m&#305;.</p>
+                <p id="pulse-meta" class="text-[11px] text-[#5f6368] mt-1 font-medium"></p>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap justify-end">
+                <div class="inline-flex rounded-full bg-[#f1f3f4] border border-[#dadce0] p-1" role="group" aria-label="Zaman penceresi">
+                    <button type="button" class="pulse-win-chip text-xs font-medium px-3 py-1.5 rounded-full text-[#5f6368] transition-colors" data-win="24h">24 Saat</button>
+                    <button type="button" class="pulse-win-chip text-xs font-medium px-3 py-1.5 rounded-full text-[#5f6368] transition-colors" data-win="48h">48 Saat</button>
+                    <button type="button" class="pulse-win-chip text-xs font-medium px-3 py-1.5 rounded-full text-[#5f6368] transition-colors" data-win="7d">7 G&uuml;n</button>
+                </div>
+                <button id="pulse-refresh" type="button" class="text-xs bg-primary/10 text-primary border border-primary/30 px-3 py-2 rounded-lg font-bold hover:bg-primary/20 transition-colors">Yenile</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- KONU KARTLARI -->
+    <div class="bg-panel rounded-xl border border-slate-800 shadow-lg overflow-hidden">
+        <div id="pulse-loading" class="hidden flex-col items-center justify-center py-16 text-primary">
+            <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary mb-3"></div>
+            <p class="text-sm font-medium">G&uuml;ndem verisi y&uuml;kleniyor...</p>
+        </div>
+        <div id="pulse-empty" class="hidden py-16 px-6 text-center text-[#5f6368]">
+            <p class="text-sm font-medium">Bu pencerede g&ouml;sterilecek g&uuml;ndem verisi yok.</p>
+            <p class="text-xs mt-1">Daha fazla X/Twitter i&ccedil;eri&#287;i analiz edildik&ccedil;e burada birikecek.</p>
+        </div>
+        <div id="pulse-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4 p-5"></div>
+    </div>
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    var state = { window: '24h' };
+    var booted = false;
+
+    function fmt(n) {
+        try { return Number(n || 0).toLocaleString('tr-TR'); } catch (e) { return String(n || 0); }
+    }
+
+    function esc(v) {
+        return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c];
+        });
+    }
+
+    function toast(msg, type) {
+        try {
+            if (window.AgendaOps && typeof window.AgendaOps.showToast === 'function') {
+                window.AgendaOps.showToast(msg, type || 'info');
+                return;
+            }
+        } catch (e) {}
+        try { console.log('[Pulse]', msg); } catch (e) {}
+    }
+
+    function show(el, on) { if (el) el.classList.toggle('hidden', !on); }
+
+    function moodBadge(mood, avg) {
+        var cls = 'bg-[#f1f3f4] text-[#5f6368]';
+        var label = mood || 'nötr';
+        if (mood === 'olumlu') { cls = 'bg-[#e6f4ea] text-[#137333]'; }
+        else if (mood === 'olumsuz') { cls = 'bg-[#fce8e6] text-[#c5221f]'; }
+        else if (mood === 'karışık') { cls = 'bg-[#fef7e0] text-[#b06000]'; }
+        var sc = (avg == null) ? '' : ' (' + (avg > 0 ? '+' : '') + avg + ')';
+        return '<span class="text-[10px] font-bold px-2 py-0.5 rounded ' + cls + '">' + esc(label) + esc(sc) + '</span>';
+    }
+
+    function stanceBar(st) {
+        st = st || {};
+        var sup = st.support_pct || 0, opp = st.oppose_pct || 0, neu = st.neutral_pct || 0;
+        return '<div class="mt-3">'
+            + '<div class="flex h-2 rounded-full overflow-hidden bg-[#f1f3f4]">'
+            + '<div class="bg-[#34a853]" style="width:' + sup + '%"></div>'
+            + '<div class="bg-[#ea4335]" style="width:' + opp + '%"></div>'
+            + '<div class="bg-[#9aa0a6]" style="width:' + neu + '%"></div>'
+            + '</div>'
+            + '<div class="flex justify-between text-[10px] text-[#5f6368] mt-1">'
+            + '<span class="text-[#137333] font-medium">Destek %' + sup + '</span>'
+            + '<span class="text-[#5f6368] font-medium">Nötr %' + neu + '</span>'
+            + '<span class="text-[#c5221f] font-medium">Karşı %' + opp + '</span>'
+            + '</div></div>';
+    }
+
+    function card(t) {
+        var crisis = (t.crisis_score && t.crisis_score >= 60)
+            ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-[#fce8e6] text-[#c5221f]">KRİZ ' + esc(t.crisis_score) + '</span>'
+            : '';
+        var blurb = t.summary || t.sample_text || '';
+        return '<div class="border border-[#e8eaed] rounded-xl p-4 bg-white hover:shadow-md transition-shadow">'
+            + '<div class="flex items-start justify-between gap-2">'
+            + '<h4 class="font-bold text-[#202124] text-sm leading-snug">' + esc(t.topic) + '</h4>'
+            + '<span class="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded bg-[#e8f0fe] text-[#1967d2]">' + fmt(t.mention_count) + ' gönderi</span>'
+            + '</div>'
+            + '<div class="flex items-center gap-2 mt-2 flex-wrap">' + moodBadge(t.mood, t.avg_sentiment) + crisis + '</div>'
+            + (blurb ? '<p class="text-xs text-[#5f6368] mt-2 leading-relaxed line-clamp-3">' + esc(blurb) + '</p>' : '')
+            + stanceBar(t.stance)
+            + '</div>';
+    }
+
+    function render(data) {
+        var grid = document.getElementById('pulse-grid');
+        var meta = document.getElementById('pulse-meta');
+        var empty = document.getElementById('pulse-empty');
+        if (!grid) return;
+        var rows = (data && Array.isArray(data.topics)) ? data.topics : [];
+        if (meta) {
+            meta.textContent = data && data.generated_at
+                ? ('Pencere: ' + (data.window || '') + ' | ' + (data.count || 0) + ' başlık | kaynak: X/Twitter')
+                : '';
+        }
+        if (!rows.length) {
+            grid.innerHTML = '';
+            show(empty, true);
+            return;
+        }
+        show(empty, false);
+        grid.innerHTML = rows.map(card).join('');
+    }
+
+    function fetchAndRender() {
+        var loading = document.getElementById('pulse-loading');
+        var empty = document.getElementById('pulse-empty');
+        var grid = document.getElementById('pulse-grid');
+        show(empty, false);
+        show(loading, true);
+        if (grid) grid.innerHTML = '';
+        fetch('/api/v1/pulse/agenda?window=' + encodeURIComponent(state.window) + '&limit=12', { credentials: 'same-origin' })
+            .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+            .then(function (data) { show(loading, false); render(data); })
+            .catch(function (e) {
+                show(loading, false);
+                show(empty, true);
+                toast('Gündem verisi alınamadı: ' + (e && e.message ? e.message : e), 'error');
+            });
+    }
+
+    function syncWinChips() {
+        document.querySelectorAll('.pulse-win-chip').forEach(function (c) {
+            var on = c.getAttribute('data-win') === state.window;
+            c.setAttribute('aria-pressed', on ? 'true' : 'false');
+            c.classList.toggle('bg-white', on);
+            c.classList.toggle('text-[#202124]', on);
+            c.classList.toggle('shadow-sm', on);
+            c.classList.toggle('text-[#5f6368]', !on);
+        });
+    }
+
+    function wire() {
+        document.querySelectorAll('.pulse-win-chip').forEach(function (c) {
+            c.addEventListener('click', function () {
+                state.window = c.getAttribute('data-win') || '24h';
+                syncWinChips();
+                fetchAndRender();
+            });
+        });
+        var refresh = document.getElementById('pulse-refresh');
+        if (refresh) refresh.addEventListener('click', fetchAndRender);
+    }
+
+    function relocate() {
+        var scroll = document.getElementById('main-scroll');
+        var view = document.getElementById('view-pulse');
+        if (scroll && view && view.parentNode !== scroll) { scroll.appendChild(view); }
+    }
+
+    function injectNav() {
+        if (document.getElementById('nav-pulse')) return;
+        var nav = document.querySelector('aside nav');
+        if (!nav) return;
+        var btn = document.createElement('button');
+        btn.id = 'nav-pulse';
+        btn.className = 'w-full flex items-center gap-3 text-slate-400 hover:bg-[#f1f3f4] px-4 py-3 rounded-lg font-medium transition-colors nav-btn';
+        btn.setAttribute('onclick', "window.AgendaOps.switchTab('pulse', 'Gündem Nabzı')");
+        btn.innerHTML = '<svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h4l3 8 4-16 3 8h4"></path></svg> Gündem Nabzı <span class="ml-auto bg-primary/20 text-primary text-[10px] px-2 py-0.5 rounded font-bold">YENİ</span>';
+        var anchor = document.getElementById('nav-radar');
+        if (anchor && anchor.parentNode) { anchor.insertAdjacentElement('afterend', btn); }
+        else { nav.appendChild(btn); }
+        btn.addEventListener('click', function () { setTimeout(fetchAndRender, 50); });
+    }
+
+    function boot() {
+        if (booted) return; booted = true;
+        try { relocate(); } catch (e) {}
+        try { injectNav(); } catch (e) {}
+        try { wire(); } catch (e) {}
+        try { syncWinChips(); } catch (e) {}
+        try { fetchAndRender(); } catch (e) {}
+    }
+
+    window.PulseWidget = { boot: boot, fetchAndRender: fetchAndRender };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot);
+    } else {
+        setTimeout(boot, 0);
+    }
+})();
+</script>

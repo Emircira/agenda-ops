@@ -15,6 +15,7 @@ from app.repositories.alert_repository import AlertRepository
 from app.repositories.election_repository import ElectionRepository
 from app.repositories.nisanyan_repository import NisanyanRepository
 from app.repositories.radar_repository import RadarRepository
+from app.repositories.pulse_repository import PulseRepository
 
 
 def get_content_repository(db: AsyncSession = Depends(get_db)) -> ContentRepository:
@@ -59,3 +60,7 @@ def get_nisanyan_repository(db: AsyncSession = Depends(get_db)) -> NisanyanRepos
 
 def get_radar_repository(db: AsyncSession = Depends(get_db)) -> RadarRepository:
     return RadarRepository(db)
+
+
+def get_pulse_repository(db: AsyncSession = Depends(get_db)) -> PulseRepository:
+    return PulseRepository(db)
