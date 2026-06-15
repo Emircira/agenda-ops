@@ -12,7 +12,7 @@ from typing import List, Optional
 
 from sqlalchemy import case, desc, func, select
 
-from app.models.core import Content, ContentLabel
+from app.models.core import Content, ContentLabel, ContentMetric
 from app.repositories.base import BaseRepository
 
 # X/Twitter icerikleri iki farkli platform etiketiyle gelebiliyor.
@@ -356,6 +356,71 @@ class PulseRepository(BaseRepository):
                 "sentiment_score": float(row["sentiment_score"]) if row["sentiment_score"] is not None else None,
             })
         return out
+
+    async def subject_top_post(self, *, since: datetime, name: str, by: str) -> Optional[dict]:
+        """Tek konu/ozne icin EN COK ETKILESIM alan tek gonderi.
+
+        Etkilesim = likes + replies + reposts (kullanici tercihi; views haric tutuldu).
+        Bir icerigin content_metrics tablosunda birden cok snapshot satiri
+        olabildigi icin her metrik MAX ile alinir (begeni zamanla arttigindan
+        max ~ guncel deger). content_metrics'e JOIN gerektigi icin hic metrigi
+        olmayan gonderiler bu sorguya girmez. Eslesme yoksa None doner.
+
+        Donen alanlar: text, author, url, published_at, stance, sentiment_score,
+        likes, replies, reposts, views, engagement.
+        """
+        col = self._subject_col(by)
+        likes = func.coalesce(func.max(ContentMetric.likes), 0)
+        replies = func.coalesce(func.max(ContentMetric.replies), 0)
+        reposts = func.coalesce(func.max(ContentMetric.reposts), 0)
+        views = func.coalesce(func.max(ContentMetric.views), 0)
+        engagement = likes + replies + reposts
+        stmt = (
+            select(
+                Content.text.label("text"),
+                Content.author_name.label("author_name"),
+                Content.url.label("url"),
+                Content.published_at.label("published_at"),
+                ContentLabel.stance.label("stance"),
+                ContentLabel.sentiment_score.label("sentiment_score"),
+                likes.label("likes"),
+                replies.label("replies"),
+                reposts.label("reposts"),
+                views.label("views"),
+                engagement.label("engagement"),
+            )
+            .join(Content, Content.id == ContentLabel.content_id)
+            .join(ContentMetric, ContentMetric.content_id == Content.id)
+            .where(
+                Content.platform.in_(_X_PLATFORMS),
+                Content.published_at >= since,
+                col == name,
+            )
+            .group_by(
+                Content.id,
+                ContentLabel.stance,
+                ContentLabel.sentiment_score,
+            )
+            .order_by(desc(engagement))
+            .limit(1)
+        )
+        res = await self._session.execute(stmt)
+        row = res.mappings().first()
+        if not row:
+            return None
+        return {
+            "text": (row["text"] or "")[:280].strip(),
+            "author": (row["author_name"] or "").strip(),
+            "url": row["url"] or "",
+            "published_at": row["published_at"].isoformat() if row["published_at"] else None,
+            "stance": (row["stance"] or "").strip(),
+            "sentiment_score": float(row["sentiment_score"]) if row["sentiment_score"] is not None else None,
+            "likes": int(row["likes"] or 0),
+            "replies": int(row["replies"] or 0),
+            "reposts": int(row["reposts"] or 0),
+            "views": int(row["views"] or 0),
+            "engagement": int(row["engagement"] or 0),
+        }
 
     async def subject_hourly(self, *, since: datetime, name: str, by: str) -> List[dict]:
         """Tek konu/ozne icin saatlik mention sayilari (sparkline)."""

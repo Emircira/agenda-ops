@@ -369,7 +369,8 @@ async def get_subject_detail(
     """Tek bir konu/ozne icin detayli analiz (drill-down detay paneli).
 
     Tutum dagilimi, duygu dagilimi, naratif (frame), ornek gonderiler ve
-    saatlik hacim (spark) dondurur.
+    saatlik hacim (spark) dondurur. Ayrica en cok etkilesim alan tek gonderiyi
+    (top_post) dondurur.
     """
     by = "target" if by == "target" else "topic"
     hours = _parse_window_hours(window)
@@ -410,6 +411,8 @@ async def get_subject_detail(
 
     samples = await pulse_repo.subject_samples(since=since, name=name, by=by, limit=8)
 
+    top_post = await pulse_repo.subject_top_post(since=since, name=name, by=by)
+
     hourly = await pulse_repo.subject_hourly(since=since, name=name, by=by)
     hmap: dict = defaultdict(int)
     for row in hourly:
@@ -442,5 +445,6 @@ async def get_subject_detail(
         },
         "frames": frames,
         "samples": samples,
+        "top_post": top_post,
         "spark": spark,
     }
