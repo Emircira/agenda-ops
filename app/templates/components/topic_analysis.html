@@ -188,6 +188,31 @@
     }).join("") : '<span class="text-[11px] text-[#9aa0a6]">Naratif verisi yok.</span>';
     var samples = (d.samples || []);
 
+    var tp = d.top_post;
+    var topPostHtml = "";
+    if (tp && tp.text) {
+      var engParts = [];
+      engParts.push('❤️ ' + fmt(tp.likes || 0));
+      engParts.push('🔁 ' + fmt(tp.reposts || 0));
+      engParts.push('💬 ' + fmt(tp.replies || 0));
+      if (tp.views) engParts.push('👁️ ' + fmt(tp.views));
+      var tpLink = tp.url ? '<a href="' + esc(tp.url) + '" target="_blank" rel="noopener" class="text-[#1a73e8] hover:underline text-[11px] font-medium shrink-0">aç↗</a>' : "";
+      var tpMeta = [];
+      if (tp.author) tpMeta.push(esc(tp.author));
+      if (tp.published_at) tpMeta.push(esc(String(tp.published_at).slice(0, 16).replace("T", " ")));
+      topPostHtml =
+        '<div class="mb-4 border border-[#d2e3fc] rounded-lg p-3 bg-[#f8fbff]">' +
+          '<div class="flex items-center justify-between gap-2 mb-1">' +
+            '<span class="text-[11px] font-bold text-[#1967d2]">⭐ Öne çıkan gönderi (en yüksek etkileşim)</span>' + tpLink +
+          '</div>' +
+          (tpMeta.length ? '<div class="text-[11px] text-[#5f6368] mb-1">' + tpMeta.join(" · ") + '</div>' : '') +
+          '<p class="text-[13px] text-[#202124] leading-relaxed mb-2">' + esc(tp.text) + '</p>' +
+          '<div class="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[#5f6368]">' +
+            engParts.map(function (e) { return '<span>' + e + '</span>'; }).join("") +
+          '</div>' +
+        '</div>';
+    }
+
     el.innerHTML =
       '<div class="flex items-start justify-between gap-3 flex-wrap mb-1">' +
         '<div class="min-w-0">' +
@@ -201,6 +226,8 @@
       ((d.manipulation_pct || d.bot_pct) ? '<div class="flex gap-3 text-[11px] text-[#5f6368] mb-3">' +
         '<span>Manipülasyon: <b class="text-[#b06000]">%' + (d.manipulation_pct || 0) + '</b></span>' +
         '<span>Bot olasılığı: <b class="text-[#b06000]">%' + (d.bot_pct || 0) + '</b></span></div>' : '<div class="mb-3"></div>') +
+
+      topPostHtml +
 
       '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">' +
         '<div><div class="text-[11px] font-bold text-[#5f6368] mb-1">Tutum (destek / karşı / nötr)</div>' + triBar(st.support_pct || 0, st.oppose_pct || 0, st.neutral_pct || 0, "Destek", "Karşı", "Nötr") + '</div>' +
