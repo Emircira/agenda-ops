@@ -3,6 +3,7 @@
      Sol panel: en cok konusulan konular (topic) + ozneler (target).
      Sag panel: secilen konu/ozne icin tutum, duygu, naratif, ornek gonderiler, hacim.
      Veri: /api/v1/pulse/subjects ve /api/v1/pulse/subject. LLM kullanmaz.
+     Ek: detay yuklenince /api/v1/pulse/subject-account otomatik cagrilir (LLM hesap analizi).
      Disa acik API: window.TopicAnalysis.open(name, by) ve .boot(). -->
 <div id="view-analysis" class="view-section flex-1 flex flex-col w-full min-h-0 p-6 z-10 relative scroll-smooth bg-[#f8f9fa]">
 
@@ -168,6 +169,72 @@
     '</div>';
   }
 
+  // ---- Hesap analizi (LLM) ----
+  function accountAnalysisLoadingHtml() {
+    return '<div class="border border-[#e1d5f0] rounded-lg p-3 bg-[#faf7ff]">' +
+      '<div class="flex items-center gap-2 text-[#6a1b9a] text-[12px] font-medium">' +
+      '<span class="inline-block animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-[#7b1fa2]"></span>' +
+      '🧠 Öne çıkan orta seviye bir hesap seçilip yapay zeka ile analiz ediliyor…</div></div>';
+  }
+
+  function riskBadge(label, level) {
+    var lv = String(level || "").toLowerCase();
+    var cls = "bg-[#f1f3f4] text-[#5f6368]";
+    if (/yüksek|yuksek|high/.test(lv)) cls = "bg-[#fce8e6] text-[#c5221f]";
+    else if (/orta|med/.test(lv)) cls = "bg-[#fef7e0] text-[#b06000]";
+    else if (/düşük|dusuk|low/.test(lv)) cls = "bg-[#e6f4ea] text-[#137333]";
+    return '<span class="text-[11px] px-2 py-0.5 rounded ' + cls + '">' + esc(label) + ': ' + esc(level || "—") + '</span>';
+  }
+
+  function renderAccountAnalysis(d) {
+    var box = document.getElementById("ta-account");
+    if (!box) return;
+    if (!d || !d.found || !d.account) { box.innerHTML = ""; return; }
+    var a = d.account || {};
+    var an = d.analysis || {};
+    var args = an.key_arguments || [];
+    if (!Array.isArray(args)) args = [];
+    var argsHtml = args.length ? '<ul class="list-disc list-inside text-[12px] text-[#202124] space-y-0.5 mb-2">' +
+      args.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join("") + '</ul>' : "";
+    var risks = [];
+    if (an.manipulation_risk) risks.push(riskBadge("Manipülasyon", an.manipulation_risk));
+    if (an.bot_risk) risks.push(riskBadge("Bot", an.bot_risk));
+    var stance = an.stance_label ? '<span class="text-[11px] px-2 py-0.5 rounded bg-[#ede7f6] text-[#5e35b1] font-medium">' + esc(an.stance_label) + '</span>' : "";
+    var hasAnalysis = an.profile || args.length || an.influence;
+    var bodyHtml = hasAnalysis
+      ? (an.profile ? '<p class="text-[13px] text-[#202124] leading-relaxed mb-2">' + esc(an.profile) + '</p>' : '') +
+        argsHtml +
+        (an.influence ? '<p class="text-[12px] text-[#5f6368] mb-2"><b>Etki:</b> ' + esc(an.influence) + '</p>' : '') +
+        (risks.length ? '<div class="flex flex-wrap gap-2 mb-1">' + risks.join("") + '</div>' : '') +
+        (an.credibility_note ? '<p class="text-[11px] text-[#9aa0a6] italic">' + esc(an.credibility_note) + '</p>' : '')
+      : '<p class="text-[12px] text-[#9aa0a6]">Bu hesap için yapay zeka analizi şu an üretilemedi.</p>';
+    var medianNote = a.median_engagement ? ' · medyan ~' + fmt(a.median_engagement) : "";
+    box.innerHTML =
+      '<div class="border border-[#e1d5f0] rounded-lg p-3 bg-[#faf7ff]">' +
+        '<div class="flex items-center justify-between gap-2 mb-1 flex-wrap">' +
+          '<span class="text-[11px] font-bold text-[#6a1b9a]">🧠 Hesap analizi (yapay zeka) — öne çıkan orta seviye hesap</span>' +
+          stance +
+        '</div>' +
+        '<div class="text-[12px] text-[#202124] font-medium mb-1">' + esc(a.author) + ' · ' + fmt(a.post_count) + ' gönderi · ~' + fmt(a.engagement) + ' etkileşim' + medianNote + '</div>' +
+        bodyHtml +
+      '</div>';
+  }
+
+  function loadAccountAnalysis(name, by) {
+    var box = document.getElementById("ta-account");
+    if (box) box.innerHTML = accountAnalysisLoadingHtml();
+    api("subject-account?name=" + encodeURIComponent(name) + "&by=" + encodeURIComponent(by || "topic") + "&window=" + encodeURIComponent(state.window))
+      .then(function (d) {
+        // Kullanici bu sirada baska bir konuya gectiyse eski sonucu basma.
+        if (!state.current || state.current.name !== name) return;
+        renderAccountAnalysis(d);
+      })
+      .catch(function () {
+        var b = document.getElementById("ta-account");
+        if (b) b.innerHTML = "";
+      });
+  }
+
   function renderDetail(d) {
     var el = document.getElementById("ta-detail");
     if (!el) return;
@@ -229,6 +296,8 @@
 
       topPostHtml +
 
+      '<div id="ta-account" class="mb-4"></div>' +
+
       '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">' +
         '<div><div class="text-[11px] font-bold text-[#5f6368] mb-1">Tutum (destek / karşı / nötr)</div>' + triBar(st.support_pct || 0, st.oppose_pct || 0, st.neutral_pct || 0, "Destek", "Karşı", "Nötr") + '</div>' +
         '<div><div class="text-[11px] font-bold text-[#5f6368] mb-1">Duygu (olumlu / olumsuz / nötr)</div>' + triBar(se.pos_pct || 0, se.neg_pct || 0, se.neu_pct || 0, "Olumlu", "Olumsuz", "Nötr") + '</div>' +
@@ -251,7 +320,12 @@
     var el = document.getElementById("ta-detail");
     if (el) el.innerHTML = '<div class="py-16 flex flex-col items-center justify-center text-[#1a73e8]"><div class="animate-spin rounded-full h-7 w-7 border-t-2 border-b-2 border-[#1a73e8] mb-3"></div><p class="text-sm">Yükleniyor…</p></div>';
     api("subject?name=" + encodeURIComponent(name) + "&by=" + encodeURIComponent(by || "topic") + "&window=" + encodeURIComponent(state.window))
-      .then(renderDetail)
+      .then(function (d) {
+        renderDetail(d);
+        if (d && d.found && state.current && state.current.name === name) {
+          loadAccountAnalysis(name, by || "topic");
+        }
+      })
       .catch(function (e) {
         if (el) el.innerHTML = '<div class="py-16 text-center text-[#c5221f] text-sm">Detay alınamadı.</div>';
         toast("Konu detayı alınamadı: " + (e && e.message ? e.message : e), "error");
