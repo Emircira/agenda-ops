@@ -8,10 +8,12 @@ ve duygu (sentiment) alanlarini toplulastirir.
 from __future__ import annotations
 
 from datetime import datetime
+from statistics import median
 from typing import List, Optional
 
 from sqlalchemy import case, desc, func, select
 
+from app.data.account_blocklist import is_blocklisted
 from app.models.core import Content, ContentLabel, ContentMetric
 from app.repositories.base import BaseRepository
 
@@ -20,11 +22,11 @@ _X_PLATFORMS = ["x", "twitter"]
 
 # Stance token normalizasyonu: model EN/TR + buyuk-kucuk harf karisik dondurebilir.
 _SUPPORT_TOKENS = ["support", "destek", "lehte", "pro", "for", "olumlu", "positive", "taraftar", "yandas"]
-_OPPOSE_TOKENS = ["oppose", "karsi", "karşı", "aleyhte", "against", "anti", "olumsuz", "negative", "muhalif"]
-_NEUTRAL_TOKENS = ["neutral", "notr", "nötr", "tarafsiz", "tarafşız", "taraf±z", "mixed", "karisik", "karışık", "belirsiz"]
+_OPPOSE_TOKENS = ["oppose", "karsi", "kar\u015f\u0131", "aleyhte", "against", "anti", "olumsuz", "negative", "muhalif"]
+_NEUTRAL_TOKENS = ["neutral", "notr", "n\u00f6tr", "tarafsiz", "taraf\u015f\u0131z", "taraf\u00b1z", "mixed", "karisik", "kar\u0131\u015f\u0131k", "belirsiz"]
 
 # Anlamsiz/varsayilan target degerleri (kutuplasma icin gurultu).
-_JUNK_TARGETS = ["", "bilinmiyor", "genel", "yok", "none", "n/a", "na", "-", "belirsiz", "diger", "diğer"]
+_JUNK_TARGETS = ["", "bilinmiyor", "genel", "yok", "none", "n/a", "na", "-", "belirsiz", "diger", "di\u011fer"]
 
 
 def _stance_norm():
@@ -420,6 +422,145 @@ class PulseRepository(BaseRepository):
             "reposts": int(row["reposts"] or 0),
             "views": int(row["views"] or 0),
             "engagement": int(row["engagement"] or 0),
+        }
+
+    async def subject_account_candidates(
+        self,
+        *,
+        since: datetime,
+        name: str,
+        by: str,
+        max_contents: int = 600,
+    ) -> List[dict]:
+        """Konu/ozne hakkindaki gonderileri (icerik bazinda) etkilesimle birlikte doner.
+
+        Her icerik icin etkilesim = max(likes) + max(replies) + max(reposts)
+        (content_metrics'te birden cok snapshot olabildigi icin MAX alinir;
+        views haric -- kullanici tercihi). author_name bos olanlar elenir.
+        Hesap secimi/eleme Python tarafinda yapilir (subject_top_account).
+        """
+        col = self._subject_col(by)
+        likes = func.coalesce(func.max(ContentMetric.likes), 0)
+        replies = func.coalesce(func.max(ContentMetric.replies), 0)
+        reposts = func.coalesce(func.max(ContentMetric.reposts), 0)
+        engagement = likes + replies + reposts
+        stmt = (
+            select(
+                Content.author_name.label("author_name"),
+                Content.text.label("text"),
+                Content.url.label("url"),
+                Content.published_at.label("published_at"),
+                ContentLabel.stance.label("stance"),
+                ContentLabel.sentiment_score.label("sentiment_score"),
+                engagement.label("engagement"),
+            )
+            .join(Content, Content.id == ContentLabel.content_id)
+            .join(ContentMetric, ContentMetric.content_id == Content.id)
+            .where(
+                Content.platform.in_(_X_PLATFORMS),
+                Content.published_at >= since,
+                col == name,
+                Content.author_name.isnot(None),
+                func.length(func.trim(Content.author_name)) > 0,
+            )
+            .group_by(
+                Content.id,
+                Content.author_name,
+                Content.text,
+                Content.url,
+                Content.published_at,
+                ContentLabel.stance,
+                ContentLabel.sentiment_score,
+            )
+            .order_by(desc(engagement))
+            .limit(max_contents)
+        )
+        res = await self._session.execute(stmt)
+        return [dict(r) for r in res.mappings().all()]
+
+    async def subject_top_account(
+        self,
+        *,
+        since: datetime,
+        name: str,
+        by: str,
+        median_factor: float = 5.0,
+        min_posts: int = 2,
+        max_posts_for_llm: int = 12,
+    ) -> Optional[dict]:
+        """Konu/ozne hakkinda konusan 'orta seviye (dev olmayan)' bir hesap secer.
+
+        Adimlar:
+          1) Hesap basina toplam etkilesim (begeni+yorum+RT) ve gonderi sayisi.
+          2) Kara listedeki hesaplar (cumhurbaskani vb.) elenir.
+          3) min_posts altindaki tek-atislik hesaplar elenir (hepsi elenirse gevsetilir).
+          4) Etkilesimi medyanin median_factor (vars. 5) katindan fazla olan
+             'dev' hesaplar elenir.
+          5) Kalanlardan medyan konumundaki (orta seviye) hesap secilir.
+
+        Donen alanlar: author, engagement, post_count, candidate_count,
+        median_engagement ve LLM icin kisaltilmis posts listesi. Eslesme yoksa None.
+        """
+        rows = await self.subject_account_candidates(since=since, name=name, by=by)
+        if not rows:
+            return None
+
+        accounts: dict = {}
+        for r in rows:
+            author = (r.get("author_name") or "").strip()
+            if not author:
+                continue
+            acc = accounts.get(author)
+            if acc is None:
+                acc = {"author": author, "engagement": 0, "post_count": 0, "posts": []}
+                accounts[author] = acc
+            eng = int(r.get("engagement") or 0)
+            acc["engagement"] += eng
+            acc["post_count"] += 1
+            acc["posts"].append({
+                "text": (r.get("text") or "").strip(),
+                "url": r.get("url") or "",
+                "published_at": r["published_at"].isoformat() if r.get("published_at") else None,
+                "stance": (r.get("stance") or "").strip(),
+                "sentiment_score": float(r["sentiment_score"]) if r.get("sentiment_score") is not None else None,
+                "engagement": eng,
+            })
+
+        # 2) kara liste elemesi
+        candidates = [a for a in accounts.values() if not is_blocklisted(a["author"])]
+        if not candidates:
+            return None
+
+        # 3) min_posts elemesi (cok agresifse gevset)
+        filtered = [a for a in candidates if a["post_count"] >= min_posts]
+        if not filtered:
+            filtered = candidates
+
+        # 4) dev (outlier) hesap elemesi -- medyanin median_factor kati ustu
+        engs = sorted(a["engagement"] for a in filtered)
+        med = median(engs) if engs else 0
+        if med and med > 0:
+            non_giants = [a for a in filtered if a["engagement"] <= med * median_factor]
+        else:
+            non_giants = filtered
+        if not non_giants:
+            non_giants = filtered
+
+        # 5) orta seviye: etkilesime gore artan sirala, medyan konumunu sec
+        non_giants.sort(key=lambda a: a["engagement"])
+        chosen = non_giants[len(non_giants) // 2]
+
+        posts = sorted(chosen["posts"], key=lambda p: p["engagement"], reverse=True)[:max_posts_for_llm]
+        for p in posts:
+            p["text"] = p["text"][:280]
+
+        return {
+            "author": chosen["author"],
+            "engagement": int(chosen["engagement"]),
+            "post_count": int(chosen["post_count"]),
+            "candidate_count": len(non_giants),
+            "median_engagement": int(med or 0),
+            "posts": posts,
         }
 
     async def subject_hourly(self, *, since: datetime, name: str, by: str) -> List[dict]:
