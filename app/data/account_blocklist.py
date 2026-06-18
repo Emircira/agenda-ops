@@ -2,8 +2,8 @@
 
 `subject_top_account` secimi yaparken, istatistiksel 'dev hesap' elemesine (medyan
 x kat) EK OLARAK buradaki hesaplar her zaman elenir. Cumhurbaskani, bakanliklar,
-resmi kurum/parti hesaplari gibi 'orta seviye' sayilamayacak hesaplar buraya
-elle eklenir.
+resmi kurum/parti hesaplari ve parti genel baskanlari gibi 'orta seviye' sayilamayacak
+hesaplar buraya elle eklenir.
 
 Yeni isim eklemek icin `ACCOUNT_BLOCKLIST_RAW` listesine ham adi/handle'i eklemek
 yeterli; karsilastirma normalize edilerek (kucuk harf, '@' ve bosluk temizligi,
@@ -16,13 +16,32 @@ from __future__ import annotations
 ACCOUNT_BLOCKLIST_RAW = [
     # --- Cumhurbaskani ---
     "Recep Tayyip Erdogan",
-    "Recep Tayyip Erdo\u011fan",
+    "Recep Tayyip Erdoğan",
     "RTErdogan",
     "tcbestepe",
     "Cumhurbaskanligi",
-    "Cumhurba\u015fkanl\u0131\u011f\u0131",
-    "T.C. Cumhurba\u015fkanl\u0131\u011f\u0131",
-    "Cumhurba\u015fkanl\u0131\u011f\u0131 \u0130leti\u015fim Ba\u015fkanl\u0131\u011f\u0131",
+    "Cumhurbaşkanlığı",
+    "T.C. Cumhurbaşkanlığı",
+    "Cumhurbaşkanlığı İletişim Başkanlığı",
+    # --- Parti genel baskanlari (orta seviye sayilmaz) ---
+    "Ümit Özdağ", "umitozdag",
+    "Özgür Özel", "eczozgurozel",
+    "Devlet Bahçeli", "dbdevletbahceli",
+    "Ekrem İmamoğlu", "ekrem_imamoglu",
+    "Mansur Yavaş", "mansuryavas06",
+    "Meral Akşener", "meral_aksener",
+    "Müsavat Dervişoğlu", "mdervisoglu",
+    "Fatih Erbakan", "fatiherbakann",
+    "Temel Karamollaoğlu", "temelkaramolla",
+    "Ahmet Davutoğlu", "Ahmet_Davutoglu",
+    "Ali Babacan", "babacanali",
+    "Tuncer Bakırhan", "tuncbakirhan",
+    "Tülay Hatimoğulları",
+    # --- Resmi parti hesaplari ---
+    "zaferpartisi",
+    "herkesicinCHP",
+    "akparti",
+    "MHP_Bilgi",
 ]
 
 
@@ -36,13 +55,13 @@ def normalize_account(name: str) -> str:
         return ""
     t = str(name).strip().lstrip("@").strip()
     t = (
-        t.replace("\u0130", "i")
-        .replace("I", "\u0131")
-        .replace("\u015e", "\u015f")
-        .replace("\u011e", "\u011f")
-        .replace("\u00dc", "\u00fc")
-        .replace("\u00d6", "\u00f6")
-        .replace("\u00c7", "\u00e7")
+        t.replace("İ", "i")
+        .replace("I", "ı")
+        .replace("Ş", "ş")
+        .replace("Ğ", "ğ")
+        .replace("Ü", "ü")
+        .replace("Ö", "ö")
+        .replace("Ç", "ç")
         .lower()
     )
     return " ".join(t.split())

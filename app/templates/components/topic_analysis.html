@@ -209,6 +209,10 @@
         (an.credibility_note ? '<p class="text-[11px] text-[#9aa0a6] italic">' + esc(an.credibility_note) + '</p>' : '')
       : '<p class="text-[12px] text-[#9aa0a6]">Bu hesap için yapay zeka analizi şu an üretilemedi.</p>';
     var medianNote = a.median_engagement ? ' · medyan ~' + fmt(a.median_engagement) : "";
+    var lowData = (Number(a.candidate_count) || 0) < 4;
+    var lowDataHtml = lowData
+      ? '<div class="text-[11px] text-[#b06000] bg-[#fef7e0] border border-[#fde293] rounded px-2 py-1 mb-2">⚠️ Az veri: bu pencerede yalnızca ' + fmt(a.candidate_count || 0) + ' aday hesap bulundu; seçim güvenilir olmayabilir. Daha geniş bir pencere (7g) deneyin.</div>'
+      : "";
     box.innerHTML =
       '<div class="border border-[#e1d5f0] rounded-lg p-3 bg-[#faf7ff]">' +
         '<div class="flex items-center justify-between gap-2 mb-1 flex-wrap">' +
@@ -216,6 +220,7 @@
           stance +
         '</div>' +
         '<div class="text-[12px] text-[#202124] font-medium mb-1">' + esc(a.author) + ' · ' + fmt(a.post_count) + ' gönderi · ~' + fmt(a.engagement) + ' etkileşim' + medianNote + '</div>' +
+        lowDataHtml +
         bodyHtml +
       '</div>';
   }
