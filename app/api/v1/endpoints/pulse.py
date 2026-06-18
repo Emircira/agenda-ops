@@ -10,11 +10,13 @@ Uclar:
 - GET /frames        : naratif/cerceve savasi (konu basina frame dagilimi)
 - GET /subjects      : drill-down icin top konu + ozne listesi
 - GET /subject       : tek bir konu/ozne icin detayli analiz (drill-down)
+- GET /subject-account : konu/ozne hakkinda one cikan orta seviye hesabin LLM analizi
 """
 
 from __future__ import annotations
 
 import math
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -66,6 +68,30 @@ def _hour_axis(since: datetime, now: datetime) -> List[str]:
         axis.append(t.isoformat()[:13])
         t += timedelta(hours=1)
     return axis
+
+
+# ---------------------------------------------------------------------------
+# Hesap analizi (LLM) icin basit bellek-ici TTL cache.
+# Token israfini onlemek icin ayni (by, name, hours) icin sonuc 30 dk saklanir.
+# Tek surecte calisir; cok-worker'da her worker kendi cache'ini tutar (kabul edilir).
+# ---------------------------------------------------------------------------
+_ACCOUNT_CACHE_TTL_SECONDS = 1800
+_account_cache: dict = {}
+
+
+def _account_cache_get(key: str):
+    entry = _account_cache.get(key)
+    if not entry:
+        return None
+    expires_at, value = entry
+    if time.time() > expires_at:
+        _account_cache.pop(key, None)
+        return None
+    return value
+
+
+def _account_cache_set(key: str, value: dict) -> None:
+    _account_cache[key] = (time.time() + _ACCOUNT_CACHE_TTL_SECONDS, value)
 
 
 @router.get("/agenda")
@@ -448,3 +474,72 @@ async def get_subject_detail(
         "top_post": top_post,
         "spark": spark,
     }
+
+
+@router.get("/subject-account")
+async def get_subject_account_analysis(
+    name: str = Query(..., description="Konu (topic) veya ozne (target) adi"),
+    by: str = Query("topic", description="'topic' veya 'target'"),
+    window: str = Query("24h", description="Zaman penceresi: 24h, 48h, 7d"),
+    pulse_repo: PulseRepository = Depends(get_pulse_repository),
+):
+    """Konu/ozne hakkinda konusan 'orta seviye (dev olmayan)' bir hesabi secip
+    Gemini ile analiz eder (durus profili + etki/manipulasyon/bot degerlendirmesi).
+
+    Token israfini onlemek icin sonuc 30 dk bellek-ici cache'te tutulur.
+    Uygun hesap bulunamazsa found=False doner (bu da cache'lenir).
+    """
+    by = "target" if by == "target" else "topic"
+    hours = _parse_window_hours(window)
+    now = datetime.utcnow()
+    since = now - timedelta(hours=hours)
+
+    cache_key = f"{by}:{name}:{hours}"
+    cached = _account_cache_get(cache_key)
+    if cached is not None:
+        return {**cached, "cached": True}
+
+    account = await pulse_repo.subject_top_account(since=since, name=name, by=by)
+    if not account:
+        payload = {
+            "found": False,
+            "subject": name,
+            "by": by,
+            "window": window,
+            "hours": hours,
+            "generated_at": datetime.now(_IST).isoformat(),
+        }
+        _account_cache_set(cache_key, payload)
+        return payload
+
+    posts = account.get("posts") or []
+
+    # Lazy import: LLM servisi yalnizca bu uc cagrildiginda yuklenir.
+    from app.services.account_analysis_service import analyze_account_profile
+
+    analysis = await analyze_account_profile(
+        account_name=account["author"],
+        subject=name,
+        by=by,
+        posts=posts,
+    )
+
+    payload = {
+        "found": True,
+        "subject": name,
+        "by": by,
+        "window": window,
+        "hours": hours,
+        "generated_at": datetime.now(_IST).isoformat(),
+        "account": {
+            "author": account["author"],
+            "engagement": account["engagement"],
+            "post_count": account["post_count"],
+            "median_engagement": account.get("median_engagement"),
+            "candidate_count": account.get("candidate_count"),
+        },
+        "samples": posts[:5],
+        "analysis": analysis,
+    }
+    _account_cache_set(cache_key, payload)
+    return payload
