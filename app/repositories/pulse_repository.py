@@ -437,6 +437,10 @@ class PulseRepository(BaseRepository):
         Her icerik icin etkilesim = max(likes) + max(replies) + max(reposts)
         (content_metrics'te birden cok snapshot olabildigi icin MAX alinir;
         views haric -- kullanici tercihi). author_name bos olanlar elenir.
+
+        Retweet'ler (metni 'RT @' ile baslayan gonderiler) elenir: bunlar hesabin
+        kendi sesi degil, baskasinin gonderisinin paylasimi oldugu icin 'one cikan
+        hesap' analizine girmemeli (kullanici tercihi).
         Hesap secimi/eleme Python tarafinda yapilir (subject_top_account).
         """
         col = self._subject_col(by)
@@ -462,6 +466,7 @@ class PulseRepository(BaseRepository):
                 col == name,
                 Content.author_name.isnot(None),
                 func.length(func.trim(Content.author_name)) > 0,
+                func.trim(func.coalesce(Content.text, "")).notlike("RT @%"),
             )
             .group_by(
                 Content.id,
