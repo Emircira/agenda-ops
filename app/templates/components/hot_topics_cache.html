@@ -1,0 +1,174 @@
+<!-- ================= GUNDEM OZETI CACHE (token tasarrufu) =================
+     'Sistem Gundem Ozeti' (#hot-topics-container) LLM ile uretiliyor ve her
+     sayfa yenilemede / api restart sonrasi yeniden uretilip token harciyordu.
+     Bu bilesen:
+       1) window.fetch'i sarmalar: /api/dashboard/hot-topics (refresh'siz) cagrilarini
+          localStorage'daki son sonuctan servis eder -> ag istegi yok -> token yok.
+          (localStorage client-side oldugu icin docker restart'tan da etkilenmez.)
+       2) Acilista ucuz /api/v1/pulse/subjects imzasini hesaplar; gundem degismisse
+          arka planda otomatik tazeler (loadHotTopics(true)).
+       3) Basliga '🔄 Yenile' butonu + 'son guncelleme' damgasi enjekte eder.
+     Hicbir buyuk sablonu yeniden yazmaz; kendini enjekte eder. -->
+<script>
+(function () {
+  'use strict';
+  var LS_KEY = 'aps_hot_topics_v1';
+  var MAX_AGE_MS = 1000 * 60 * 60 * 24; // 24s: bu sureyi gecen cache, imza ayni olsa bile bayat sayilir
+  var SIG_WIN = '24h';
+
+  function readCache() {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (e) { return null; }
+  }
+  function writeCache(data, signature) {
+    try { localStorage.setItem(LS_KEY, JSON.stringify({ data: data, signature: signature, ts: Date.now() })); } catch (e) {}
+  }
+  function cacheValid(c) {
+    return !!(c && c.data && (c.data.topics || c.data.alerts) && (Date.now() - (c.ts || 0)) < MAX_AGE_MS);
+  }
+  function storableResponse(d) {
+    // Hata yanitlarini (status:error) cache'leme.
+    return !!(d && (d.topics || d.alerts) && d.status !== 'error');
+  }
+
+  // Ucuz (LLM'siz) gundem imzasi: en cok konusulan ozne+konu adlari.
+  // Sayilari degil ADLARI kullaniriz; boylece kucuk sayim oynamalari tazeleme tetiklemez,
+  // ama yeni bir basligin gundeme girmesi imzayi degistirir.
+  function computeSignature() {
+    return fetch('/api/v1/pulse/subjects?window=' + encodeURIComponent(SIG_WIN) + '&limit=12', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return null;
+        var names = [];
+        (d.targets || []).forEach(function (x) { if (x && x.name) names.push('t:' + String(x.name).toLowerCase().trim()); });
+        (d.topics || []).forEach(function (x) { if (x && x.name) names.push('k:' + String(x.name).toLowerCase().trim()); });
+        names.sort();
+        return names.join('|');
+      })
+      .catch(function () { return null; });
+  }
+
+  function storeFromResponse(resp) {
+    try {
+      var clone = resp.clone();
+      clone.json().then(function (d) {
+        if (storableResponse(d)) {
+          computeSignature().then(function (sig) { writeCache(d, sig); updateTsLabel(); });
+        }
+      }).catch(function () {});
+    } catch (e) {}
+  }
+
+  // ---- fetch interceptor ----
+  var origFetch = (typeof window.fetch === 'function') ? window.fetch.bind(window) : null;
+  if (origFetch) {
+    window.fetch = function (input, init) {
+      var url = (typeof input === 'string') ? input : (input && input.url) || '';
+      var isHot = url.indexOf('/api/dashboard/hot-topics') !== -1;
+      var isRefresh = url.indexOf('refresh=true') !== -1;
+
+      if (isHot && !isRefresh) {
+        var c = readCache();
+        if (cacheValid(c)) {
+          var payload = {};
+          for (var k in c.data) { if (Object.prototype.hasOwnProperty.call(c.data, k)) payload[k] = c.data[k]; }
+          payload.cached = true;
+          payload._ls = true;
+          return Promise.resolve(new Response(JSON.stringify(payload), {
+            status: 200, headers: { 'Content-Type': 'application/json' }
+          }));
+        }
+        return origFetch(input, init).then(function (resp) { storeFromResponse(resp); return resp; });
+      }
+
+      if (isHot && isRefresh) {
+        return origFetch(input, init).then(function (resp) { storeFromResponse(resp); return resp; });
+      }
+
+      return origFetch(input, init);
+    };
+  }
+
+  // ---- UI: yenile butonu + son guncelleme damgasi ----
+  function fmtTime(ts) {
+    try { return new Date(ts).toLocaleString('tr-TR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }); }
+    catch (e) { return ''; }
+  }
+  function updateTsLabel() {
+    var el = document.getElementById('ht-cache-ts');
+    if (!el) return;
+    var c = readCache();
+    el.textContent = (c && c.ts) ? ('Son güncelleme: ' + fmtTime(c.ts)) : '';
+  }
+
+  function triggerRefresh(manual) {
+    var btn = document.getElementById('ht-refresh-btn');
+    if (btn) { btn.disabled = true; btn.dataset.prev = btn.innerHTML; btn.innerHTML = '⏳ Yenileniyor…'; }
+    var done = function () {
+      if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.prev || '🔄 Yenile'; }
+      updateTsLabel();
+    };
+    try {
+      if (window.AgendaOps && typeof window.AgendaOps.loadHotTopics === 'function') {
+        if (manual && window.AgendaOps.showToast) { try { window.AgendaOps.showToast('Gündem özeti yenileniyor…', 'info'); } catch (e) {} }
+        var p = window.AgendaOps.loadHotTopics(true);
+        if (p && typeof p.then === 'function') { p.then(done, done); } else { setTimeout(done, 2000); }
+      } else {
+        // AgendaOps henuz yoksa: dogrudan tazele, cache guncellensin.
+        fetch('/api/dashboard/hot-topics?refresh=true', { credentials: 'same-origin' })
+          .then(function (r) { return r.json(); }).then(done, done);
+      }
+    } catch (e) { done(); }
+  }
+
+  function injectUI() {
+    if (document.getElementById('ht-refresh-btn')) { updateTsLabel(); return; }
+    var badge = document.getElementById('cache-badge');
+    var anchor = badge ? badge.parentNode : null;
+    if (!anchor) {
+      var cont = document.getElementById('hot-topics-container');
+      anchor = cont ? cont.parentNode : null;
+    }
+    if (!anchor) return;
+    var wrap = document.createElement('span');
+    wrap.className = 'inline-flex items-center gap-2 ml-2 align-middle';
+    var btn = document.createElement('button');
+    btn.id = 'ht-refresh-btn';
+    btn.type = 'button';
+    btn.className = 'text-[11px] font-bold px-2 py-1 rounded bg-[#e8f0fe] text-[#1967d2] hover:bg-[#d2e3fc] transition-colors';
+    btn.innerHTML = '🔄 Yenile';
+    btn.title = 'Gündem özetini yeniden üret (LLM çağrısı yapar)';
+    btn.addEventListener('click', function () { triggerRefresh(true); });
+    var ts = document.createElement('span');
+    ts.id = 'ht-cache-ts';
+    ts.className = 'text-[10px] text-[#9aa0a6]';
+    wrap.appendChild(btn);
+    wrap.appendChild(ts);
+    anchor.appendChild(wrap);
+    updateTsLabel();
+  }
+
+  // ---- Acilis: yeni gundem sezilirse arka planda tazele ----
+  function autoUpdateCheck() {
+    var c = readCache();
+    if (!c || !c.data) return; // cache yok: constructor zaten taze yukleyecek
+    computeSignature().then(function (sig) {
+      if (sig && c.signature && sig !== c.signature) {
+        // Gundem degismis -> arka planda tazele (yeni token harcar, kullanicinin istedigi davranis).
+        triggerRefresh(false);
+        try { if (window.AgendaOps && window.AgendaOps.showToast) window.AgendaOps.showToast('Yeni gündem algılandı, özet güncellendi.', 'info'); } catch (e) {}
+      }
+    });
+  }
+
+  function boot() {
+    try { injectUI(); } catch (e) {}
+    try { autoUpdateCheck(); } catch (e) {}
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();
+</script>

@@ -82,12 +82,28 @@
         
         <header class="h-16 bg-panel/90 backdrop-blur border-b border-slate-800 flex items-center justify-between px-6 z-10 shadow-sm shrink-0 gap-4">
             <h2 id="header-title" class="text-lg font-medium k-header-title flex items-center gap-2 truncate">Genel Durum Özeti</h2>
+            <div class="flex items-center gap-2 shrink-0">
+            <div class="relative mr-1" id="karargah-alert-wrap">
+                <button type="button" id="karargah-alert-btn" class="relative p-2 rounded-full border border-[#dadce0] bg-[#fff] hover:bg-[#f1f3f4] transition-colors shadow-sm" title="Sistem bildirimleri" aria-label="Sistem bildirimleri">
+                    <svg class="w-5 h-5 text-[#5f6368]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                    <span id="karargah-alert-badge" class="hidden absolute -top-0.5 -right-0.5 min-w-[1.125rem] h-[1.125rem] px-0.5 flex items-center justify-center rounded-full bg-[#c5221f] text-white text-[10px] font-bold leading-none pointer-events-none">0</span>
+                </button>
+                <div id="karargah-alert-panel" class="hidden absolute right-0 mt-2 w-[min(22rem,calc(100vw-2rem))] max-h-[min(70vh,26rem)] rounded-xl border border-[#dadce0] bg-panel shadow-xl z-[80] flex flex-col text-left overflow-hidden">
+                    <div class="px-3 py-2 border-b border-[#dadce0] text-xs font-bold text-[#5f6368] shrink-0">Okunmamış bildirimler</div>
+                    <div id="karargah-alert-list" class="overflow-y-auto flex-1 min-h-[4rem] max-h-[min(60vh,22rem)]"></div>
+                    <p id="karargah-alert-empty" class="hidden px-4 py-6 text-center text-[#5f6368] text-xs border-t border-[#dadce0]">Okunmamış bildirim yok.</p>
+                </div>
+            </div>
+            <button type="button" id="karargah-sitrep-open" onclick="window.open('/api/v1/reports/sitrep?format=html', '_blank'); return false;" class="k-header-src-btn" title="Günlük durum raporu — yazdır veya PDF" style="border:1px solid var(--k-border,#dadce0);background:var(--k-surface,#fff);color:var(--k-text,#202124);font-size:12px;font-weight:600;padding:8px 14px;border-radius:999px;cursor:pointer;box-shadow:0 1px 2px rgba(60,64,67,0.08);white-space:nowrap">SITREP İndir</button>
+            <button type="button" class="k-header-src-btn" id="k-open-sources-modal" title="RSS, X, YouTube ve scraper hedefleri" style="border:1px solid var(--k-border,#dadce0);background:var(--k-surface,#fff);color:var(--k-text,#202124);font-size:12px;font-weight:600;padding:8px 14px;border-radius:999px;cursor:pointer;box-shadow:0 1px 2px rgba(60,64,67,0.08);white-space:nowrap">Kaynak Yönetimi</button>
             <button type="button" data-karargah-theme-toggle class="k-theme-toggle" title="Gündüz / Gece modu" aria-label="Gündüz veya gece temasına geç">
                 <span data-theme-icon="sun" class="hidden" aria-hidden="true">☀️</span>
                 <span data-theme-icon="moon" aria-hidden="true">🌙</span>
             </button>
+            </div>
         </header>
 
+        <div id="main-scroll" class="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden scroll-smooth relative z-[5]">
         <section class="k-rag-strip shrink-0 px-6 pt-4 pb-2 z-10" aria-label="Vektörel RAG istihbarat">
             <div class="k-rag-bar">
                 <div class="k-rag-input-wrap">
@@ -98,111 +114,41 @@
                 <p id="rag-result-meta" class="k-rag-meta hidden"></p>
                 <div id="rag-result-loading" class="hidden k-rag-meta text-primary font-medium">Aranıyor…</div>
                 <div id="rag-result-error" class="hidden k-rag-meta text-[#c5221f] font-medium"></div>
-                <div id="rag-result-body" class="hidden k-rag-doc custom-scrollbar max-h-[55vh] overflow-y-auto"></div>
+                <div id="rag-result-toolbar" class="hidden max-w-[800px] mx-auto w-full flex justify-end items-center gap-2 pt-3 pb-0 px-1">
+                    <button type="button" id="rag-close-btn" class="k-rag-close-btn">Analizi kapat</button>
+                </div>
+                <div id="rag-result-body" class="hidden k-rag-doc custom-scrollbar max-h-[min(55vh,28rem)] overflow-y-auto"></div>
             </div>
         </section>
 
-        <div id="view-dashboard" class="view-section active flex-1 flex flex-col w-full overflow-y-auto p-6 z-10 relative scroll-smooth bg-dark min-h-0">
+        <div id="view-dashboard" class="view-section active flex-1 flex flex-col w-full p-6 z-10 relative scroll-smooth bg-dark min-h-0">
             <div class="radar-scan opacity-30"></div>
+            {# HUD Faz 4.2+: şikâyet (grievances) & talep (demands) — veri: /api/v1/macro/dashboard-data #}
+            {% include 'includes/macro_hud_panel.html' %}
+            {% include 'includes/macro_trends_panel.html' %}
             
-            <!-- OPPORTUNITY CARDS -->
-            <div id="opportunity-section" class="mb-8 relative z-10">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
-                        <svg class="w-5 h-5 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                        Sıcak Fırsat Kartları (AI Öncelikli)
-                    </h3>
-                </div>
-                <div id="opportunity-cards-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                    {% for opp in opportunities %}
-                    {% set score = opp.score|float %}
-                    {% if score >= 75 %}
-                        {% set accent = 'rose' %}
-                        {% set importance = 'KRİTİK' %}
-                        {% set reaction = 'Yüksek Tepki' %}
-                    {% elif score >= 50 %}
-                        {% set accent = 'indigo' %}
-                        {% set importance = 'YÜKSEK' %}
-                        {% set reaction = 'Yükselen İlgi' %}
-                    {% else %}
-                        {% set accent = 'emerald' %}
-                        {% set importance = 'İZLEMEDE' %}
-                        {% set reaction = 'Fırsat Sinyali' %}
-                    {% endif %}
-                    <div class="bg-white border border-{{ accent }}-200 p-5 rounded-xl hover:shadow-md transition-shadow group relative overflow-hidden shadow-sm flex flex-col max-h-[500px] min-h-0">
-                        <div class="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-{{ accent }}-300 via-primary to-blue-400 opacity-90"></div>
-                        <div class="absolute -right-12 -top-12 w-32 h-32 bg-{{ accent }}-100 rounded-full blur-3xl opacity-40 group-hover:opacity-60 transition-all"></div>
-
-                        <div class="relative z-10 flex items-center justify-between mb-4">
-                            <span class="text-[9px] font-black text-[#5f6368] uppercase tracking-[0.25em]">SaaS Intelligence</span>
-                            <span class="text-[9px] k-badge {% if accent == 'rose' %}k-badge--danger{% elif accent == 'indigo' %}k-badge--info{% else %}k-badge--success{% endif %}">CANLI SKOR</span>
+            <!-- STRATEGIC OPPORTUNITIES -->
+            <section id="strategic-opportunities-section" class="mb-8 relative z-10" style="border-radius: 12px; border: 1px solid var(--k-border, #dadce0); background: var(--k-surface, #ffffff); box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.28), 0 1px 3px 1px rgba(60, 64, 67, 0.12); padding: 16px 18px;">
+                <div style="display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--k-stroke-ring, #e8eaed);">
+                    <div>
+                        <div style="font-size: 14px; font-weight: 600; color: var(--k-text, #202124); display: flex; align-items: center; gap: 8px;">
+                            <span style="width: 8px; height: 8px; border-radius: 50%; background: #1a73e8;"></span>
+                            Yapay Zeka Destekli Stratejik Analiz
                         </div>
-
-                        <div class="flex justify-between items-start mb-3 relative z-10">
-                            <div class="min-w-0 pr-3">
-                                <span class="text-[10px] font-bold text-{{ accent }}-700 uppercase tracking-widest mb-1 block">{{ opp.frame }}</span>
-                                <h4 class="text-[#202124] font-extrabold text-sm leading-tight group-hover:text-primary transition-colors line-clamp-2">{{ opp.topic }}</h4>
-                            </div>
-                            <div class="flex flex-col items-end shrink-0">
-                                <div class="relative w-14 h-14 rounded-xl bg-[#f8f9fa] border border-{{ accent }}-200 flex items-center justify-center shadow-inner">
-                                    <div class="absolute inset-1 rounded-lg bg-{{ accent }}-50"></div>
-                                    <span class="relative text-xl font-black text-[#202124] leading-none">{{ opp.score|round|int }}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="mb-4 relative z-10 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
-                            <p class="text-[11px] text-[#5f6368] leading-relaxed">
-                                <span class="text-{{ accent }}-700 font-bold">AI Analizi:</span>
-                                {{ opp.rationale.insight if opp.rationale else 'Stratejik özet hazırlanıyor...' }}
-                            </p>
-                        </div>
-
-                        <div class="grid grid-cols-1 gap-2 mb-4 relative z-10 shrink-0">
-                            <div class="flex items-center justify-between bg-[#f8f9fa] border border-[#dadce0] rounded-lg px-3 py-2">
-                                <span class="text-[10px] text-[#5f6368] uppercase font-bold">Stratejik Önem</span>
-                                <span class="text-[10px] text-{{ accent }}-700 font-black tracking-wider">{{ importance }}</span>
-                            </div>
-                            <div class="flex items-center justify-between bg-[#f8f9fa] border border-[#dadce0] rounded-lg px-3 py-2">
-                                <span class="text-[10px] text-[#5f6368] uppercase font-bold">Halkın Tepki Potansiyeli</span>
-                                <span class="text-[10px] text-[#202124] font-bold">{{ reaction }}</span>
-                            </div>
-                            <div class="w-full bg-[#e8eaed] rounded-full h-1.5 overflow-hidden border border-[#dadce0]">
-                                <div class="bg-gradient-to-r from-{{ accent }}-400 to-primary h-full rounded-full" style="width: {{ opp.score }}%"></div>
-                            </div>
-                            <div class="grid grid-cols-2 gap-2">
-                                <div class="bg-[#f8f9fa] p-3 rounded-lg border border-[#dadce0]">
-                                    <span class="text-[9px] text-[#5f6368] block mb-1 uppercase font-bold">Velocity</span>
-                                    <span class="text-[#202124] text-sm font-black">%{{ opp.rationale.breakdown.velocity if opp.rationale else '0' }}</span>
-                                </div>
-                                <div class="bg-[#f8f9fa] p-3 rounded-lg border border-[#dadce0]">
-                                    <span class="text-[9px] text-[#5f6368] block mb-1 uppercase font-bold">Reach</span>
-                                    <span class="text-[#202124] text-sm font-black">%{{ opp.rationale.breakdown.reach if opp.rationale else '0' }}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="flex items-center justify-between mt-auto pt-3 border-t border-[#dadce0] relative z-10">
-                            <div class="flex items-center gap-1.5">
-                                <div class="w-2 h-2 bg-{{ accent }}-500 rounded-full animate-pulse"></div>
-                                <span class="text-[10px] text-[#5f6368] font-medium">{{ opp.created_at.strftime('%H:%M') if opp.created_at else '' }}</span>
-                            </div>
-                            <span class="text-[9px] bg-[#e8f0fe] text-[#1967d2] px-2 py-0.5 rounded font-bold border border-[#dadce0]">AI PRIORITY</span>
-                        </div>
+                        <p style="font-size: 12px; font-weight: 400; color: var(--k-text-secondary, #5f6368); margin-top: 4px; line-height: 1.4;">Tarihsel verilerden süzülen stratejik fırsat ve risk raporu.</p>
                     </div>
-                    {% endfor %}
-                    {% if not opportunities %}
-                    <div class="col-span-5 py-12 flex flex-col items-center justify-center bg-panel rounded-xl border border-dashed border-[#dadce0] text-[#5f6368]">
-                        <div class="w-16 h-16 bg-[#f1f3f4] rounded-full flex items-center justify-center mb-4 border border-[#dadce0]">
-                            <svg class="w-8 h-8 text-[#80868b]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                        </div>
-                        <p class="text-sm font-medium">Stratejik Fırsat Verisi Bekleniyor</p>
-                        <p class="text-[10px] uppercase tracking-widest mt-1 mb-4 opacity-50">Yapay Zeka Analiz Motoru Beklemede</p>
-                        <button onclick="window.AgendaOps.triggerPipeline(event, this)" class="bg-[#e8f0fe] hover:bg-[#d2e3fc] text-[#1967d2] text-xs px-4 py-2 rounded-full border border-[#dadce0] transition-all font-bold">🚀 ANALİZ HATTINI TETİKLE</button>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button onclick="window.AgendaOps.clearStrategicOpportunities()" style="font-size: 12px; font-weight: 500; color: var(--k-text-secondary, #5f6368); padding: 6px 14px; border-radius: 999px; background: transparent; border: 1px solid var(--k-border, #dadce0); cursor: pointer; transition: all 0.2s;" onmouseover="this.style.color='var(--k-text, #202124)'" onmouseout="this.style.color='var(--k-text-secondary, #5f6368)'">Analizleri Sil</button>
+                        <button onclick="window.AgendaOps.loadStrategicOpportunities(true)" style="font-size: 12px; font-weight: 500; color: #1967d2; background: #e8f0fe; padding: 6px 14px; border-radius: 999px; border: 1px solid transparent; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#d2e3fc'" onmouseout="this.style.background='#e8f0fe'">Yeniden Analiz Yap</button>
                     </div>
-                    {% endif %}
                 </div>
-            </div>
+                <div id="strategic-opportunities-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;">
+                    <div style="grid-column: 1 / -1; padding: 40px 20px; text-align: center; color: var(--k-text-secondary, #5f6368); border: 1px dashed var(--k-border, #dadce0); border-radius: 10px; background: var(--k-bg-page, #f8f9fa);">
+                        <div class="animate-spin rounded-full h-8 w-8 mb-3 mx-auto" style="border: 2px solid transparent; border-top-color: #1a73e8; border-right-color: #1a73e8;"></div>
+                        <p style="font-size: 13px; font-weight: 500;">Stratejik Analiz Bekleniyor...</p>
+                    </div>
+                </div>
+            </section>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 relative z-10">
                 <div class="lg:col-span-2 bg-panel p-5 rounded-xl border border-slate-800 shadow-lg flex flex-col min-h-0 max-h-[min(520px,calc(100vh-10rem))]">
@@ -325,6 +271,8 @@
         </div>
 
         <!-- OTHER MODULAR VIEWS -->
+        {% include 'components/system_status.html' %}
+        {% include 'components/radar.html' %}   {% include 'components/agenda_pulse.html' %}
         {% include 'components/news_radar.html' %}
         {% include 'components/polls.html' %}
         {% include 'components/twitter.html' %}
@@ -334,6 +282,8 @@
         {% include 'components/deep_research.html' %}
         {% include 'components/targets.html' %}
         {% include 'components/system_status.html' %}
+
+        </div>
 
         <div id="aiModal" class="fixed inset-0 bg-[#202124]/40 backdrop-blur-sm z-[60] hidden flex items-center justify-center p-4 transition-opacity duration-300 opacity-0">
             <div class="bg-panel border border-slate-800 rounded-xl shadow-lg w-full max-w-4xl max-h-[85vh] flex flex-col transform transition-transform duration-300 scale-95" id="aiModalContent">
@@ -351,11 +301,16 @@
             </div>
         </div>
 
+    {% include 'includes/intelligence_sources_modal.html' %}
+
     </main>
 
     <script>
         const pollDataFromServer = {{ poll_json | safe }};
     </script>
+
+    {% include 'includes/macro_hud_script.html' %}
+    {% include 'includes/macro_trends_script.html' %}
 
     <script>
         class DashboardController {
@@ -375,8 +330,9 @@
                     this.loadOsintIntelligence();
                     this.restoreStates();
                     this.initRagSearchUi();
-                    this.loadDataStreams();
-                    setInterval(() => this.loadDataStreams(), 15000);
+                    this.initKarargahAlerts();
+                    this.loadStrategicOpportunities();
+                    // Auto-refresh iptal edildi, sadece butonla manuel yenilenecek.
                 } catch (e) {
                     console.error("Dashboard constructor error:", e);
                 }
@@ -393,6 +349,99 @@
                         this.updateGauge('sarcasm', data.sarcasm_rate);
                     }
                 } catch(e) { console.error("OSINT load error:", e); }
+            }
+
+            initKarargahAlerts() {
+                this._karargahAlertsOpen = false;
+                this._karargahUnreadAlerts = [];
+                const btn = document.getElementById('karargah-alert-btn');
+                const panel = document.getElementById('karargah-alert-panel');
+                if (!btn || !panel) return;
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this._karargahAlertsOpen = !this._karargahAlertsOpen;
+                    panel.classList.toggle('hidden', !this._karargahAlertsOpen);
+                    if (this._karargahAlertsOpen) this.refreshKarargahAlerts();
+                });
+                panel.addEventListener('click', (e) => e.stopPropagation());
+                document.addEventListener('click', () => {
+                    if (!this._karargahAlertsOpen) return;
+                    this._karargahAlertsOpen = false;
+                    panel.classList.add('hidden');
+                });
+                this.refreshKarargahAlerts();
+                setInterval(() => this.refreshKarargahAlerts(), 180000);
+            }
+
+            async refreshKarargahAlerts() {
+                const badge = document.getElementById('karargah-alert-badge');
+                try {
+                    const res = await fetch('/api/v1/alerts/unread', {
+                        method: 'GET',
+                        headers: { Accept: 'application/json' },
+                        cache: 'no-store',
+                    });
+                    if (!res.ok) {
+                        if (badge) badge.classList.add('hidden');
+                        return;
+                    }
+                    const data = await res.json();
+                    const n = typeof data.count === 'number' ? data.count : 0;
+                    if (badge) {
+                        if (n > 0) {
+                            badge.textContent = n > 99 ? '99+' : String(n);
+                            badge.classList.remove('hidden');
+                        } else {
+                            badge.classList.add('hidden');
+                        }
+                    }
+                    this._karargahUnreadAlerts = Array.isArray(data.alerts) ? data.alerts : [];
+                    if (this._karargahAlertsOpen) this.renderKarargahAlertPanel();
+                } catch (_) {
+                    if (badge) badge.classList.add('hidden');
+                }
+            }
+
+            renderKarargahAlertPanel() {
+                const list = document.getElementById('karargah-alert-list');
+                const empty = document.getElementById('karargah-alert-empty');
+                if (!list || !empty) return;
+                const rows = this._karargahUnreadAlerts || [];
+                if (!rows.length) {
+                    list.innerHTML = '';
+                    empty.classList.remove('hidden');
+                    return;
+                }
+                empty.classList.add('hidden');
+                list.innerHTML = rows.map((a) => {
+                    const sev = String(a.severity || '').toLowerCase();
+                    const urgent = sev === 'high' || sev === 'critical';
+                    const boxCls = urgent
+                        ? 'border-l-4 border-danger bg-[#fce8e6]/90 dark:bg-danger/15'
+                        : 'border-l-4 border-transparent';
+                    return `<button type="button" class="karargah-alert-item w-full text-left px-3 py-2.5 hover:bg-[#f1f3f4] border-b border-[#ececec] transition-colors ${boxCls}" data-alert-id="${Number(a.id)}">
+                        <span class="text-[10px] uppercase font-bold text-[#80868b]">${this.escapeHtml(a.alert_type || '')}</span>
+                        <span class="text-[10px] ml-2 font-semibold ${urgent ? 'text-danger' : 'text-[#80868b]'}">${this.escapeHtml(String(a.severity || ''))}</span>
+                        <p class="text-[13px] text-[#202124] mt-1 leading-snug">${this.escapeHtml(a.message || '')}</p>
+                    </button>`;
+                }).join('');
+                list.querySelectorAll('.karargah-alert-item').forEach((el) => {
+                    el.addEventListener('click', () => {
+                        const id = parseInt(el.getAttribute('data-alert-id'), 10);
+                        if (!Number.isNaN(id)) this.markKarargahAlertRead(id);
+                    });
+                });
+            }
+
+            async markKarargahAlertRead(id) {
+                try {
+                    const res = await fetch(`/api/v1/alerts/mark-read/${id}`, {
+                        method: 'PATCH',
+                        headers: { Accept: 'application/json' },
+                    });
+                    if (!res.ok) return;
+                    await this.refreshKarargahAlerts();
+                } catch (_) {}
             }
 
             updateGauge(id, val) {
@@ -682,18 +731,42 @@
 
                     if(tabId === 'polls') { this.initPollChart(); }
                     if(tabId === 'systemstatus') { this.loadSystemStats(); }
+                    if(tabId === 'dashboard' && window.MacroHud) { window.MacroHud.refresh(); }
                 }
             }
 
             initRagSearchUi() {
                 const inp = document.getElementById('rag-search-input');
                 const btn = document.getElementById('rag-search-btn');
+                const closeBtn = document.getElementById('rag-close-btn');
                 if (!inp || !btn) return;
                 const go = () => this.runRagSearch();
                 btn.addEventListener('click', go);
                 inp.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') { e.preventDefault(); go(); }
+                    if (e.key === 'Escape') { e.preventDefault(); this.closeRagResults(); }
                 });
+                if (closeBtn) closeBtn.addEventListener('click', () => this.closeRagResults());
+                document.addEventListener('keydown', (e) => {
+                    if (e.key !== 'Escape') return;
+                    const modal = document.getElementById('aiModal');
+                    if (modal && !modal.classList.contains('hidden')) return;
+                    const body = document.getElementById('rag-result-body');
+                    if (body && !body.classList.contains('hidden')) this.closeRagResults();
+                });
+            }
+
+            closeRagResults() {
+                const meta = document.getElementById('rag-result-meta');
+                const loading = document.getElementById('rag-result-loading');
+                const errEl = document.getElementById('rag-result-error');
+                const body = document.getElementById('rag-result-body');
+                const toolbar = document.getElementById('rag-result-toolbar');
+                if (toolbar) toolbar.classList.add('hidden');
+                if (meta) { meta.classList.add('hidden'); meta.textContent = ''; }
+                if (loading) loading.classList.add('hidden');
+                if (errEl) { errEl.classList.add('hidden'); errEl.textContent = ''; }
+                if (body) { body.classList.add('hidden'); body.innerHTML = ''; }
             }
 
             formatRagReportHtml(data) {
@@ -722,6 +795,7 @@
                 const loading = document.getElementById('rag-result-loading');
                 const errEl = document.getElementById('rag-result-error');
                 const body = document.getElementById('rag-result-body');
+                const toolbar = document.getElementById('rag-result-toolbar');
                 const q = inp && inp.value ? inp.value.trim() : '';
                 if (!q) { alert('Lütfen bir arama metni girin.'); return; }
                 errEl.classList.add('hidden');
@@ -729,6 +803,7 @@
                 body.classList.add('hidden');
                 body.innerHTML = '';
                 meta.classList.add('hidden');
+                if (toolbar) toolbar.classList.add('hidden');
                 loading.classList.remove('hidden');
                 const btn = document.getElementById('rag-search-btn');
                 if (btn) btn.disabled = true;
@@ -752,6 +827,7 @@
                         ? 'Sorgu: «' + this.escapeHtml(String(data.query || q)) + '» · ' + data.match_count + ' eşleşen içerik'
                         : 'Sorgu: «' + this.escapeHtml(String(data.query || q)) + '»';
                     meta.classList.remove('hidden');
+                    if (toolbar) toolbar.classList.remove('hidden');
                     if (data.message && !data.report) {
                         body.innerHTML = '<p>' + this.escapeHtml(String(data.message)) + '</p>';
                         body.classList.remove('hidden');
@@ -1085,34 +1161,82 @@
                 const time = item.published_at ? new Date(item.published_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '';
                 const replyBadge = item.twitter_reply ? '<span class="k-badge k-badge--info text-[10px] py-0.5">Yanıt</span>' : '';
                 return `
-                    <div class="k-list-row">
+                    <div class="bg-black/20 border border-slate-700/50 rounded-lg p-3.5 hover:border-slate-600 transition-colors">
                         <div class="flex items-center gap-3 mb-2 flex-wrap">
-                            <span class="text-[#202124] text-sm font-semibold">${this.escapeHtml(item.author_name)}</span>
+                            <span class="text-slate-200 text-sm font-bold tracking-wide">${this.escapeHtml(item.author_name)}</span>
                             ${replyBadge}
-                            <span class="text-[#5f6368] text-xs ml-auto">${time}</span>
+                            <span class="text-slate-500 text-xs ml-auto font-medium tracking-wide">${time}</span>
                         </div>
-                        <p class="text-sm text-[#3c4043] whitespace-pre-line leading-relaxed">${this.escapeHtml(item.text).slice(0, 700)}</p>
+                        <p class="text-[13px] text-slate-400 whitespace-pre-line leading-relaxed overflow-hidden" style="display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;">${this.escapeHtml(item.text)}</p>
                     </div>
                 `;
             }
 
-            async loadDataStreams() {
+            clearStrategicOpportunities() {
+                const grid = document.getElementById('strategic-opportunities-grid');
+                if(grid) {
+                    grid.innerHTML = `
+                        <div style="grid-column: 1 / -1; padding: 40px 20px; text-align: center; color: var(--k-text-secondary, #5f6368); border: 1px dashed var(--k-border, #dadce0); border-radius: 10px; background: var(--k-bg-page, #f8f9fa);">
+                            <p style="font-size: 13px; font-weight: 500;">Analizler temizlendi. "Yeniden Analiz Yap" butonuna tıklayarak yeni rapor üretebilirsiniz.</p>
+                        </div>
+                    `;
+                }
+            }
+
+            async loadStrategicOpportunities(force = false) {
                 try {
-                    const res = await fetch('/api/stream/recent?limit=30');
+                    const grid = document.getElementById('strategic-opportunities-grid');
+                    if(!grid) return;
+                    
+                    if(force) {
+                        grid.innerHTML = `<div style="grid-column: 1 / -1; padding: 40px 20px; text-align: center; color: var(--k-text-secondary, #5f6368); border: 1px dashed var(--k-border, #dadce0); border-radius: 10px; background: var(--k-bg-page, #f8f9fa);">
+                            <div class="animate-spin rounded-full h-8 w-8 mb-3 mx-auto" style="border: 2px solid transparent; border-top-color: #1a73e8; border-right-color: #1a73e8;"></div>
+                            <p style="font-size: 13px; font-weight: 500;">Yapay Zeka Yeni Analiz Üretiyor, Lütfen Bekleyin...</p>
+                        </div>`;
+                    }
+                    
+                    const res = await fetch(`/api/dashboard/strategic-opportunities?force=${force}`);
                     const data = await res.json();
-                    if (!data.success || !data.streams) return;
-                    const map = {
-                        twitter: document.getElementById('stream-twitter'),
-                        youtube: document.getElementById('stream-youtube'),
-                        rss: document.getElementById('stream-rss')
-                    };
-                    Object.keys(map).forEach(key => {
-                        const container = map[key];
-                        if (!container || !data.streams[key]) return;
-                        container.innerHTML = data.streams[key].map(item => this.renderStreamCard(item)).join('');
-                    });
+                    
+                    if (data.success && data.opportunities && data.opportunities.length > 0) {
+                        grid.innerHTML = data.opportunities.map(opp => {
+                            const isRisk = opp.type && opp.type.toLowerCase().includes('risk');
+                            const color = isRisk ? '#c5221f' : '#137333';
+                            const bgColor = isRisk ? '#fce8e6' : '#e6f4ea';
+                            const icon = isRisk 
+                                ? `<svg style="width:16px; height:16px; color:${color};" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`
+                                : `<svg style="width:16px; height:16px; color:${color};" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>`;
+
+                            return `
+                                <div style="border-radius: 10px; border: 1px solid var(--k-border, #dadce0); background: var(--k-surface, #ffffff); padding: 14px 16px; display: flex; flex-direction: column; transition: box-shadow 0.2s;" onmouseover="this.style.boxShadow='0 1px 3px rgba(60,64,67,0.1)'" onmouseout="this.style.boxShadow='none'">
+                                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                                        <div style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; background: ${bgColor};">${icon}</div>
+                                        <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: ${color};">${this.escapeHtml(opp.type)}</span>
+                                    </div>
+                                    <h4 style="font-size: 14px; font-weight: 600; color: var(--k-text, #202124); margin-bottom: 8px; line-height: 1.4;">${this.escapeHtml(opp.title)}</h4>
+                                    <p style="font-size: 12px; color: var(--k-text-muted, #3c4043); margin-bottom: 14px; line-height: 1.5; flex: 1;">${this.escapeHtml(opp.insight)}</p>
+                                    <div style="margin-top: auto; padding-top: 10px; border-top: 1px solid var(--k-stroke-ring, #e8eaed);">
+                                        <div style="font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--k-text-secondary, #5f6368); margin-bottom: 4px;">Önerilen Aksiyon</div>
+                                        <div style="font-size: 12px; font-weight: 500; color: #1967d2; line-height: 1.4;">${this.escapeHtml(opp.action)}</div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('');
+                    } else if (!data.success && data.error) {
+                        grid.innerHTML = `
+                            <div style="grid-column: 1 / -1; padding: 30px 20px; text-align: center; color: #c5221f; border: 1px dashed #fce8e6; border-radius: 10px; background: #fce8e6;">
+                                <p style="font-size: 13px; font-weight: 600;">HATA: ${this.escapeHtml(data.error)}</p>
+                            </div>
+                        `;
+                    } else {
+                        grid.innerHTML = `
+                            <div style="grid-column: 1 / -1; padding: 40px 20px; text-align: center; color: var(--k-text-secondary, #5f6368); border: 1px dashed var(--k-border, #dadce0); border-radius: 10px; background: var(--k-bg-page, #f8f9fa);">
+                                <p style="font-size: 13px; font-weight: 500;">Stratejik analiz için yeterli veri bulunamadı veya henüz üretilmedi.</p>
+                            </div>
+                        `;
+                    }
                 } catch (e) {
-                    console.error('Data stream refresh error:', e);
+                    console.error('Strategic opportunities fetch error:', e);
                 }
             }
 
@@ -1264,10 +1388,10 @@
                 const sourceCategory = document.getElementById('sourceCategory').value;
                 if(!name || !url) return alert('Ad ve URL zorunludur.');
                 try {
-                    const res = await fetch('/api/sources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, url: url, type: type, domain: domain, source_category: sourceCategory }) });
+                    const res = await fetch('/api/v1/sources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, url_or_handle: url, source_type: type, domain: domain, source_category: sourceCategory, is_active: true }) });
                     const data = await res.json();
-                    if(data.success) { alert(data.message || 'Kaynak eklendi!'); window.location.reload(); }
-                    else { alert('Hata: ' + (data.error || 'Kaynak eklenemedi.')); }
+                    if(res.ok) { alert('Kaynak eklendi!'); window.location.reload(); }
+                    else { alert('Hata: ' + (typeof data.detail === 'string' ? data.detail : (data.detail?.[0]?.msg || 'Kaynak eklenemedi.'))); }
                 } catch(e) { alert('Bağlantı hatası: ' + e.message); }
             }
 
@@ -1301,9 +1425,8 @@
             async deleteSource(sourceId, btn) {
                 if(!confirm("Emin misiniz?")) return;
                 try {
-                    const res = await fetch(`/api/sources/${sourceId}`, { method: 'DELETE' });
-                    const data = await res.json();
-                    if(data.success) {
+                    const res = await fetch(`/api/v1/sources/${sourceId}`, { method: 'DELETE' });
+                    if(res.ok || res.status === 204) {
                         if (btn) {
                             const row = btn.closest('.p-3');
                             if (row) row.remove();
@@ -1312,7 +1435,9 @@
                             window.location.reload();
                         }
                     } else {
-                        this.showToast('Silinemedi: ' + data.error, 'error');
+                        let err = 'Silinemedi';
+                        try { const d = await res.json(); err = d.detail || err; } catch (_) {}
+                        this.showToast('Silinemedi: ' + err, 'error');
                     }
                 } catch(e) {
                     this.showToast('Bağlantı hatası.', 'error');
@@ -1484,22 +1609,71 @@
                     rows.forEach((opp) => {
                         const score = Number(opp.score) || 0;
                         const insight = (opp.rationale && opp.rationale.insight) ? String(opp.rationale.insight) : 'Stratejik özet hazırlanıyor...';
+                        let tier = 'watch';
+                        let badgeClass = 'k-badge--success';
+                        if (score >= 75) { tier = 'critical'; badgeClass = 'k-badge--danger'; }
+                        else if (score >= 50) { tier = 'high'; badgeClass = 'k-badge--info'; }
+                        const importance = score >= 75 ? 'KRİTİK' : (score >= 50 ? 'YÜKSEK' : 'İZLEMEDE');
+                        const reaction = score >= 75 ? 'Yüksek Tepki' : (score >= 50 ? 'Yükselen İlgi' : 'Fırsat Sinyali');
+                        const bd = (opp.rationale && opp.rationale.breakdown) ? opp.rationale.breakdown : {};
+                        const velocity = bd.velocity != null ? String(bd.velocity) : '0';
+                        const reach = bd.reach != null ? String(bd.reach) : '0';
+                        let timeShort = '';
+                        if (opp.created_at) {
+                            const s = String(opp.created_at);
+                            const m = s.match(/T(\d{2}:\d{2})/);
+                            timeShort = m ? m[1] : s.slice(11, 16);
+                        }
                         const card = document.createElement('div');
-                        card.className = 'bg-panel border border-[#dadce0] p-5 rounded-xl flex flex-col max-h-[500px] min-h-0 shadow-sm';
+                        card.className = `k-opportunity-card k-opp-tier--${tier} p-5 group relative overflow-hidden flex flex-col max-h-[500px] min-h-0 hover:border-primary/40 transition-colors`;
                         card.innerHTML = `
-                            <div class="flex justify-between items-start mb-3">
+                            <div class="k-opp-accent-bar" aria-hidden="true"></div>
+                            <div class="relative z-10 flex items-center justify-between mb-4">
+                                <span class="text-[9px] font-black text-[#5f6368] uppercase tracking-[0.25em]">SaaS Intelligence</span>
+                                <span class="text-[9px] k-badge ${badgeClass}">CANLI SKOR</span>
+                            </div>
+                            <div class="flex justify-between items-start mb-3 relative z-10">
                                 <div class="min-w-0 pr-3">
-                                    <span class="text-[10px] font-bold text-[#1967d2] uppercase tracking-widest mb-1 block">${this.escapeHtml(opp.frame || '')}</span>
-                                    <h4 class="text-[#202124] font-bold text-sm leading-tight line-clamp-2">${this.escapeHtml(opp.topic || '')}</h4>
+                                    <span class="k-opp-frame-label text-[10px] font-bold uppercase tracking-widest mb-1 block">${this.escapeHtml(opp.frame || '')}</span>
+                                    <h4 class="text-[#202124] font-extrabold text-sm leading-tight line-clamp-2">${this.escapeHtml(opp.topic || '')}</h4>
                                 </div>
-                                <div class="w-14 h-14 rounded-lg bg-[#e8f0fe] border border-[#dadce0] flex items-center justify-center shrink-0">
-                                    <span class="text-xl font-bold text-[#1967d2] leading-none">${Math.round(score)}</span>
+                                <div class="k-opp-score-box relative w-14 h-14 rounded-xl flex items-center justify-center shrink-0">
+                                    <span class="relative text-xl font-black text-[#202124] leading-none">${Math.round(score)}</span>
                                 </div>
                             </div>
-                            <div class="mb-4 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
-                                <p class="text-[11px] text-[#5f6368] leading-relaxed"><span class="text-[#1967d2] font-bold">Özet:</span> ${this.escapeHtml(insight)}</p>
+                            <div class="mb-4 relative z-10 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
+                                <p class="text-[11px] text-[#5f6368] leading-relaxed"><span class="k-opp-frame-label font-bold">AI Analizi:</span> ${this.escapeHtml(insight)}</p>
                             </div>
-                            <div class="mt-auto pt-3 border-t border-[#dadce0] text-[10px] text-[#5f6368]">${opp.created_at ? this.escapeHtml(String(opp.created_at).slice(0, 16)) : ''}</div>`;
+                            <div class="grid grid-cols-1 gap-2 mb-4 relative z-10 shrink-0">
+                                <div class="k-opp-metric-row">
+                                    <span class="text-[10px] text-[#5f6368] uppercase font-bold">Stratejik Önem</span>
+                                    <span class="text-[10px] k-opp-frame-label font-black tracking-wider">${importance}</span>
+                                </div>
+                                <div class="k-opp-metric-row">
+                                    <span class="text-[10px] text-[#5f6368] uppercase font-bold">Halkın Tepki Potansiyeli</span>
+                                    <span class="text-[10px] text-[#202124] font-bold">${reaction}</span>
+                                </div>
+                                <div class="k-opp-progress-track">
+                                    <div class="k-opp-progress-fill" style="width: ${Math.min(100, score)}%"></div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div class="k-opp-stat-cell">
+                                        <span class="text-[9px] text-[#5f6368] block mb-1 uppercase font-bold">Velocity</span>
+                                        <span class="text-[#202124] text-sm font-black">%${this.escapeHtml(velocity)}</span>
+                                    </div>
+                                    <div class="k-opp-stat-cell">
+                                        <span class="text-[9px] text-[#5f6368] block mb-1 uppercase font-bold">Reach</span>
+                                        <span class="text-[#202124] text-sm font-black">%${this.escapeHtml(reach)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between mt-auto pt-3 border-t border-slate-800 relative z-10">
+                                <div class="flex items-center gap-1.5">
+                                    <div class="k-opp-live-dot" aria-hidden="true"></div>
+                                    <span class="text-[10px] text-[#5f6368] font-medium">${this.escapeHtml(timeShort)}</span>
+                                </div>
+                                <span class="k-opp-priority-pill">AI PRIORITY</span>
+                            </div>`;
                         grid.appendChild(card);
                     });
                 } catch (_) {}

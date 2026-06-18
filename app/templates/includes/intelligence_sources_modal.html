@@ -1,0 +1,289 @@
+{# Kaynak Yönetimi — /api/v1/sources #}
+<style>
+  .k-src-modal-overlay { position: fixed; inset: 0; z-index: 200; display: none; align-items: center; justify-content: center; padding: 16px; background: rgba(32,33,36,0.46); backdrop-filter: blur(2px); }
+  .k-src-modal-overlay.is-open { display: flex; }
+  .k-src-modal {
+    width: min(640px, 100%);
+    max-height: min(90vh, 720px);
+    display: flex;
+    flex-direction: column;
+    border-radius: 12px;
+    background: var(--k-surface, #fff);
+    box-shadow: 0 8px 24px rgba(60,64,67,0.24), 0 2px 6px rgba(60,64,67,0.12);
+    border: 1px solid var(--k-border, #dadce0);
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  .k-src-modal__head {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--k-stroke-ring, #e8eaed);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .k-src-modal__title { font-size: 16px; font-weight: 600; color: var(--k-text, #202124); margin: 0; }
+  .k-src-modal__body { padding: 16px 20px; overflow-y: auto; flex: 1; min-height: 0; }
+  .k-src-modal__close {
+    border: none; background: transparent; color: var(--k-text-secondary, #5f6368);
+    width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 22px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .k-src-modal__close:hover { background: var(--k-bg-page, #f1f3f4); color: var(--k-text, #202124); }
+  .k-src-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  @media (max-width: 520px) { .k-src-form-grid { grid-template-columns: 1fr; } }
+  .k-src-field label { display: block; font-size: 12px; font-weight: 500; color: var(--k-text-secondary, #5f6368); margin-bottom: 6px; }
+  .k-src-field input, .k-src-field select {
+    width: 100%; border-radius: 8px; border: 1px solid var(--k-border, #dadce0);
+    padding: 10px 12px; font-size: 14px; background: var(--k-surface, #fff); color: var(--k-text, #202124);
+  }
+  .k-src-btn {
+    border: none; border-radius: 999px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer;
+    background: #1a73e8; color: #fff; box-shadow: 0 1px 2px rgba(60,64,67,0.2);
+  }
+  .k-src-btn:hover { background: #1557b0; }
+  .k-src-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+  .k-src-table-wrap { border: 1px solid var(--k-border, #dadce0); border-radius: 10px; overflow: hidden; margin-top: 8px; }
+  .k-src-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .k-src-table th { text-align: left; padding: 10px 12px; background: var(--k-bg-page, #f8f9fa); color: var(--k-text-secondary, #5f6368); font-weight: 600; border-bottom: 1px solid var(--k-border, #dadce0); }
+  .k-src-table td { padding: 10px 12px; border-bottom: 1px solid var(--k-stroke-ring, #e8eaed); vertical-align: middle; color: var(--k-text, #202124); }
+  .k-src-table tr:last-child td { border-bottom: none; }
+  .k-src-toggle {
+    position: relative; width: 40px; height: 22px; border-radius: 11px; border: none; cursor: pointer;
+    background: #dadce0; transition: background 0.2s;
+  }
+  .k-src-toggle[aria-checked="true"] { background: #1a73e8; }
+  .k-src-toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform 0.2s; }
+  .k-src-toggle[aria-checked="true"]::after { transform: translateX(18px); }
+  .k-src-del { border: none; background: transparent; color: #c5221f; cursor: pointer; padding: 6px; border-radius: 8px; }
+  .k-src-del:hover { background: #fce8e6; }
+  .k-src-meta { font-size: 11px; color: var(--k-text-secondary, #5f6368); }
+  .k-src-msg { font-size: 13px; margin-top: 8px; min-height: 1.25em; }
+  .k-src-msg--err { color: #c5221f; }
+</style>
+
+<div id="k-sources-modal" class="k-src-modal-overlay" aria-hidden="true">
+  <div class="k-src-modal" role="dialog" aria-modal="true" aria-labelledby="k-sources-modal-title">
+    <div class="k-src-modal__head">
+      <div>
+        <h2 id="k-sources-modal-title" class="k-src-modal__title">Kaynak Yönetimi</h2>
+        <p class="k-src-meta" style="margin:6px 0 0">Dinamik tarama hedefleri — işçiler yalnızca aktif kaynakları kullanır.</p>
+      </div>
+      <button type="button" class="k-src-modal__close" id="k-sources-modal-close" aria-label="Kapat">×</button>
+    </div>
+    <div class="k-src-modal__body">
+      <form id="k-sources-add-form">
+        <div class="k-src-form-grid">
+          <div class="k-src-field">
+            <label for="k-src-name">Kaynak adı</label>
+            <input id="k-src-name" name="name" required maxlength="500" placeholder="Örn: Metropoll Twitter" autocomplete="off" />
+          </div>
+          <div class="k-src-field">
+            <label for="k-src-type">Tür</label>
+            <select id="k-src-type" name="source_type" required>
+              <option value="rss">RSS</option>
+              <option value="youtube">YouTube</option>
+              <option value="twitter">X (Twitter)</option>
+              <option value="scraper">Scraper</option>
+            </select>
+          </div>
+        </div>
+        <div class="k-src-field" style="margin-bottom:12px">
+          <label for="k-src-url">URL veya kullanıcı adı</label>
+          <input id="k-src-url" name="url_or_handle" required maxlength="2048" placeholder="RSS URL, kanal ID veya @kullanıcı" autocomplete="off" />
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="submit" class="k-src-btn" id="k-src-submit">Ekle</button>
+          <span id="k-src-form-msg" class="k-src-msg"></span>
+        </div>
+      </form>
+
+      <h3 class="text-sm font-semibold mt-6 mb-2" style="color:var(--k-text-secondary,#5f6368)">Kayıtlı kaynaklar</h3>
+      <div class="k-src-table-wrap">
+        <table class="k-src-table">
+          <thead>
+            <tr>
+              <th>Ad</th>
+              <th>Tür</th>
+              <th>URL / handle</th>
+              <th style="width:72px">Aktif</th>
+              <th style="width:48px"></th>
+            </tr>
+          </thead>
+          <tbody id="k-sources-tbody">
+            <tr><td colspan="5" class="k-src-meta" style="text-align:center;padding:20px">Yükleniyor…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p id="k-sources-list-msg" class="k-src-msg k-src-msg--err"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var API = '/api/v1/sources';
+  var overlay = document.getElementById('k-sources-modal');
+  var openBtn = document.getElementById('k-open-sources-modal');
+  var closeBtn = document.getElementById('k-sources-modal-close');
+  var tbody = document.getElementById('k-sources-tbody');
+  var form = document.getElementById('k-sources-add-form');
+  var formMsg = document.getElementById('k-src-form-msg');
+  var listMsg = document.getElementById('k-sources-list-msg');
+
+  function toast(msg, kind) {
+    if (window.AgendaOps && typeof window.AgendaOps.showToast === 'function') {
+      window.AgendaOps.showToast(msg, kind || 'success');
+    }
+  }
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function openModal() {
+    if (!overlay) return;
+    overlay.classList.add('is-open');
+    overlay.setAttribute('aria-hidden', 'false');
+    loadSources();
+  }
+
+  function closeModal() {
+    if (!overlay) return;
+    overlay.classList.remove('is-open');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
+
+  function renderRows(items) {
+    if (!tbody) return;
+    if (!items || !items.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="k-src-meta" style="text-align:center;padding:20px">Henüz kaynak yok.</td></tr>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < items.length; i++) {
+      var r = items[i];
+      var id = r.id;
+      var active = r.is_active !== false;
+      var url = (r.url_or_handle || '').slice(0, 64) + ((r.url_or_handle || '').length > 64 ? '…' : '');
+      html += '<tr data-source-id="' + id + '">';
+      html += '<td><strong>' + escapeHtml(r.name) + '</strong></td>';
+      html += '<td><span class="k-src-meta">' + escapeHtml(r.source_type) + '</span></td>';
+      html += '<td class="k-src-meta" title="' + escapeHtml(r.url_or_handle) + '">' + escapeHtml(url) + '</td>';
+      html += '<td><button type="button" class="k-src-toggle" data-action="toggle" data-id="' + id + '" aria-checked="' + (active ? 'true' : 'false') + '" aria-label="Aktif"></button></td>';
+      html += '<td><button type="button" class="k-src-del" data-action="delete" data-id="' + id + '" title="Sil"><svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>';
+      html += '</tr>';
+    }
+    tbody.innerHTML = html;
+  }
+
+  async function loadSources() {
+    if (listMsg) listMsg.textContent = '';
+    try {
+      var res = await fetch(API, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('Liste alınamadı');
+      var data = await res.json();
+      renderRows(Array.isArray(data) ? data : []);
+    } catch (e) {
+      if (listMsg) listMsg.textContent = 'Kaynaklar yüklenemedi.';
+      if (tbody) tbody.innerHTML = '';
+    }
+  }
+
+  async function patchActive(id, isActive) {
+    var res = await fetch(API + '/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ is_active: isActive })
+    });
+    if (!res.ok) throw new Error('Güncellenemedi');
+    return res.json();
+  }
+
+  async function deleteSource(id) {
+    var res = await fetch(API + '/' + id, { method: 'DELETE', credentials: 'same-origin' });
+    if (res.status !== 204) throw new Error('Silinemedi');
+  }
+
+  if (openBtn) openBtn.addEventListener('click', openModal);
+  if (closeBtn) closeBtn.addEventListener('click', closeModal);
+  if (overlay) {
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) closeModal();
+    });
+  }
+
+  if (tbody) {
+    tbody.addEventListener('click', async function (e) {
+      var btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      var id = parseInt(btn.getAttribute('data-id'), 10);
+      if (isNaN(id)) return;
+      if (btn.getAttribute('data-action') === 'toggle') {
+        var on = btn.getAttribute('aria-checked') === 'true';
+        try {
+          await patchActive(id, !on);
+          btn.setAttribute('aria-checked', !on ? 'true' : 'false');
+          toast(on ? 'Kaynak pasifleştirildi.' : 'Kaynak aktifleştirildi.');
+        } catch (err) {
+          toast('Durum güncellenemedi.', 'error');
+        }
+      }
+      if (btn.getAttribute('data-action') === 'delete') {
+        if (!confirm('Bu kaynağı ve bağlı içerikleri silmek istediğinize emin misiniz?')) return;
+        try {
+          await deleteSource(id);
+          toast('Kaynak silindi.');
+          loadSources();
+        } catch (err) {
+          toast('Silme başarısız.', 'error');
+        }
+      }
+    });
+  }
+
+  if (form) {
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      if (formMsg) formMsg.textContent = '';
+      var fd = new FormData(form);
+      var body = {
+        name: (fd.get('name') || '').toString().trim(),
+        source_type: (fd.get('source_type') || '').toString(),
+        url_or_handle: (fd.get('url_or_handle') || '').toString().trim(),
+        is_active: true,
+        domain: 'general',
+        source_category: 'general_agenda'
+      };
+      var submit = document.getElementById('k-src-submit');
+      if (submit) submit.disabled = true;
+      try {
+        var res = await fetch(API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(body)
+        });
+        var data = {};
+        try { data = await res.json(); } catch (_) {}
+        if (!res.ok) {
+          var detail = data.detail;
+          var errTxt = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(function (x) { return x.msg || x; }).join(' ') : (data.detail || 'Kayıt başarısız'));
+          throw new Error(errTxt);
+        }
+        form.reset();
+        if (formMsg) formMsg.textContent = 'Eklendi.';
+        toast('Kaynak eklendi.');
+        loadSources();
+      } catch (err) {
+        if (formMsg) { formMsg.textContent = err.message || 'Hata'; formMsg.classList.add('k-src-msg--err'); }
+      } finally {
+        if (submit) submit.disabled = false;
+        setTimeout(function () { if (formMsg) { formMsg.textContent = ''; formMsg.classList.remove('k-src-msg--err'); } }, 4000);
+      }
+    });
+  }
+})();
+</script>

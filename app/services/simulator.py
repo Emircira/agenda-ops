@@ -1,6 +1,9 @@
 """
 Seçim Radarı — Gelecek simülasyonu: yalnızca veritabanı + TÜİK JSON dosyasındaki sayısal alanlar.
 Tahmini veya uydurma il verisi kullanılmaz; ulusal ortalamalar aynı JSON dosyasından hesaplanır.
+
+UI simülatörü (a,b,c,d) parti adında anahtar kelime ile bloklara toplanır (iktidar / muhalefet /
+tepki-sol / diğer); blok harf sırası oy hacmine göre yeniden etiketlenmez.
 """
 
 from __future__ import annotations
@@ -9,6 +12,81 @@ import json
 import statistics
 from pathlib import Path
 from typing import Any, Optional
+
+
+def top_four_letters_from_party_shares(shares: dict[str, float]) -> dict[str, float]:
+    iktidar_keywords = ["AK PART", "ADALET VE KALKINMA", "MHP", "MİLLİYETÇİ", "YENİDEN REFAH", "YRP", "BBP", "HÜDA"]
+    muhalefet_keywords = ["CHP", "CUMHURİYET HALK", "İYİ PART", "MEMLEKET", "ZAFER"]
+    tepki_sol_keywords = ["DEM", "HDP", "YEŞİL SOL", "TİP", "SAADET", "DEVA", "GELECEK"]
+
+    blocks = {"a": 0.0, "b": 0.0, "c": 0.0, "d": 0.0}
+
+    for party, pct in shares.items():
+        p_upper = str(party).upper()
+        assigned = False
+
+        # Check İktidar (a)
+        for k in iktidar_keywords:
+            if k in p_upper:
+                blocks["a"] += float(pct)
+                assigned = True
+                break
+        if assigned:
+            continue
+
+        # Check Muhalefet (b)
+        for k in muhalefet_keywords:
+            if k in p_upper:
+                blocks["b"] += float(pct)
+                assigned = True
+                break
+        if assigned:
+            continue
+
+        # Check Tepki/Sol (c)
+        for k in tepki_sol_keywords:
+            if k in p_upper:
+                blocks["c"] += float(pct)
+                assigned = True
+                break
+        if assigned:
+            continue
+
+        # Others (d)
+        blocks["d"] += float(pct)
+
+    # Normalizasyon
+    total = sum(blocks.values())
+    if total > 0:
+        blocks = {k: round((v / total) * 100.0, 2) for k, v in blocks.items()}
+    else:
+        blocks = {"a": 0.0, "b": 0.0, "c": 0.0, "d": 0.0}
+
+    return blocks
+
+
+def bloc_shares_pct_from_party_shares(party_to_share_pct: dict[str, float]) -> dict[str, float]:
+    """Parti yüzdelerini blok (a,b,c,d) yüzdelerine döndürür; `top_four_letters_from_party_shares` kullanır."""
+    return top_four_letters_from_party_shares(party_to_share_pct or {})
+
+
+def base_votes_blocs_from_election_rows(election_rows: list[Any]) -> dict[str, float]:
+    """Ham seçim satırlarından sabit bloklara oy yüzdeleri."""
+    totals: dict[str, int] = {}
+    for row in election_rows:
+        party = str(getattr(row, "party", None) or "").strip()
+        try:
+            v = int(getattr(row, "vote_count", None) or 0)
+        except (TypeError, ValueError):
+            v = 0
+        if not party and v <= 0:
+            continue
+        totals[party] = totals.get(party, 0) + v
+    tv = sum(totals.values()) or 0
+    if tv <= 0:
+        return {"a": 0.0, "b": 0.0, "c": 0.0, "d": 0.0}
+    party_pct = {party: round(100.0 * votes / tv, 6) for party, votes in totals.items()}
+    return bloc_shares_pct_from_party_shares(party_pct)
 
 
 def app_data_dir() -> Path:
@@ -210,12 +288,5 @@ def future_radar_simulation(
     }
 
 
-def top_four_letters_from_shares(shares: dict[str, float]) -> dict[str, float]:
-    items = sorted(shares.items(), key=lambda x: -x[1])[:4]
-    letters = ["a", "b", "c", "d"]
-    out: dict[str, float] = {}
-    for i, (_, pct) in enumerate(items):
-        out[letters[i]] = round(float(pct), 2)
-    while len(out) < 4:
-        out[letters[len(out)]] = 0.0
-    return out
+# Eski isimden çağıran kodlar için
+top_four_letters_from_shares = top_four_letters_from_party_shares

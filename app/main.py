@@ -166,18 +166,6 @@ def election_category_from_ui(value: str) -> ElectionCategory:
     return ElectionCategory.local
 
 
-def base_votes_from_rows(election_rows: list) -> dict:
-    """Simülatör için ilk 4 partinin oy yüzdeleri."""
-    totals = {}
-    for row in election_rows:
-        totals[row.party] = totals.get(row.party, 0) + (row.vote_count or 0)
-    sorted_p = sorted(totals.items(), key=lambda x: -x[1])
-    tv = sum(totals.values()) or 1
-    pct = [round(100.0 * v / tv, 1) for _, v in sorted_p[:4]]
-    while len(pct) < 4:
-        pct.append(0.0)
-    return {"a": pct[0], "b": pct[1], "c": pct[2], "d": pct[3]}
-
 # --- BAĞLAM İZOLASYONU (Context Isolation) YARDIMCISI ---
 CONTEXT_ISOLATION_WARNING = """⚠️ DİKKAT — VERİ ZEHİRLENMESİ RİSKİ (CONTEXT ISOLATION):
 Sana verilen veriler Spor, Siyaset ve Ekonomi gibi FARKLI KATEGORİLERDEN gelmektedir.
@@ -322,6 +310,52 @@ from app.api.v1.endpoints import osint as osint_api
 
 app.include_router(contents_api.router, prefix="/api/v1/contents", tags=["İçerikler"])
 app.include_router(osint_api.router, prefix="/api/v1/osint", tags=["OSINT"])
+
+from app.api.v1.endpoints import macro as macro_api
+
+app.include_router(
+    macro_api.router,
+    prefix="/api/v1/macro",
+    tags=["Macro Intelligence"],
+)
+from app.api.v1.endpoints import sources as sources_api
+
+app.include_router(
+    sources_api.router,
+    prefix="/api/v1/sources",
+    tags=["Kaynak Yönetimi"],
+)
+from app.api.v1.endpoints import system as system_api
+
+app.include_router(
+    system_api.router,
+    prefix="/api/v1/system",
+    tags=["Sistem"],
+)
+
+from app.api.v1.endpoints import alerts as alerts_api
+
+app.include_router(
+    alerts_api.router,
+    prefix="/api/v1/alerts",
+    tags=["Bildirimler"],
+)
+
+from app.api.v1.endpoints import reports as reports_api
+
+app.include_router(
+    reports_api.router,
+    prefix="/api/v1/reports",
+    tags=["Raporlar"],
+)
+
+from app.api.v1.endpoints import election as election_v1_api
+
+app.include_router(
+    election_v1_api.router,
+    prefix="/api/v1/election",
+    tags=["Seçim Veritabanı"],
+)
 templates = Jinja2Templates(directory="app/templates")
 
 def get_gemini_model():
@@ -369,6 +403,8 @@ async def zorla_tablo_olustur():
         ElectionRegionArchive,
         ComplaintsRadarCache,
         ContentEmbedding,
+        SystemAlert,
+        NisanyanDemographics,
     )
 
     async with engine.begin() as conn:
@@ -403,6 +439,7 @@ async def zorla_tablo_olustur():
         "ALTER TABLE district_demographics ADD COLUMN IF NOT EXISTS source_category VARCHAR DEFAULT 'tuik_district_aggregate'",
         "ALTER TABLE election_region_trends ADD COLUMN IF NOT EXISTS election_detail VARCHAR(180)",
         "CREATE INDEX IF NOT EXISTS ix_election_region_trends_election_detail ON election_region_trends (election_detail)",
+        "ALTER TABLE sources ADD COLUMN IF NOT EXISTS last_fetched_at TIMESTAMP",
     ]
 
     for stmt in ddl_statements:
@@ -473,64 +510,6 @@ async def dashboard(request: Request, window: int = 6, db: AsyncSession = Depend
 async def secim_page(request: Request):
     return templates.TemplateResponse("secim.html", {"request": request})
 
-# =======================================================
-# KAYNAK YÖNETİMİ (Source CRUD — /api/sources)
-# =======================================================
-ALLOWED_SOURCE_CATEGORIES = frozenset(
-    {"competitor", "news_agency", "person_or_target", "general_agenda"}
-)
-
-
-class SourceCreateRequest(BaseModel):
-    name: str
-    url: str
-    type: str
-    domain: str = "general"  # politics, sports, economy, general
-    source_category: str = "general_agenda"
-
-@app.post("/api/sources", tags=["Kaynak Yönetimi"])
-async def create_source_direct(req: SourceCreateRequest, db: AsyncSession = Depends(get_db)):
-    """Yeni istihbarat kaynağı ekler (dashboard frontend'den gelen çağrılar için)."""
-    try:
-        cat = (req.source_category or "general_agenda").strip()
-        if cat not in ALLOWED_SOURCE_CATEGORIES:
-            return {
-                "success": False,
-                "error": f"Geçersiz kaynak tipi. İzin verilenler: {', '.join(sorted(ALLOWED_SOURCE_CATEGORIES))}",
-            }
-        new_source = Source(
-            name=req.name,
-            url=req.url,
-            type=req.type,
-            domain=req.domain,
-            source_category=cat,
-            active=True,
-        )
-        target_repo = TargetRepository(db)
-        await target_repo.add_and_refresh(new_source)
-        return {"success": True, "id": new_source.id, "message": f"'{req.name}' kaynağı başarıyla eklendi."}
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Kaynak ekleme hatası: {e}")
-        return {"success": False, "error": str(e)}
-
-@app.delete("/api/sources/{source_id}", tags=["Kaynak Yönetimi"])
-async def delete_source_direct(source_id: int, db: AsyncSession = Depends(get_db)):
-    """Kaynağı siler ve ilişkili içerikleri temizler."""
-    try:
-        target_repo = TargetRepository(db)
-        source = await target_repo.get_by_id(source_id)
-        if not source:
-            return {"success": False, "error": "Kaynak bulunamadı."}
-        
-        await target_repo.delete_source_cascade(source)
-        await target_repo.commit()
-        return {"success": True, "message": "Kaynak ve ilişkili veriler silindi."}
-    except Exception as e:
-        await db.rollback()
-        return {"success": False, "error": str(e)}
-
-# --- Doğrudan Veri Çekici (Celery/Redis BAĞIMSIZ) ---
 @app.post("/api/run-worker/{worker_name}", tags=["Veri Çekme"])
 async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
     """RSS/YouTube/Twitter verilerini Celery olmadan doğrudan çeker."""
@@ -542,21 +521,21 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
             target_repo = TargetRepository(db)
             content_repo = ContentRepository(db)
             sources = await target_repo.list_active_rss_maps()
-            
-            # Gömülü (Default) Kaynaklar + DB Kaynakları
-            all_sources = [{"name": "Google Haberler", "url": "https://news.google.com/rss?hl=tr&gl=TR&ceid=TR:tr", "id": None, "domain": "general"}]
-            for s in sources:
-                all_sources.append({"name": s["name"], "url": s["url"], "id": s["id"], "domain": s.get("domain") or "general"})
-            
+            if not sources:
+                return {
+                    "success": False,
+                    "error": "Aktif RSS kaynağı yok. Kaynak Yönetimi üzerinden RSS ekleyin.",
+                }
+
             total_added = 0
             total_skipped = 0
             errors = []
-            
-            for s_info in all_sources:
+
+            for s_info in sources:
                 try:
                     articles = await provider.fetch_feed(s_info["url"], s_info["name"])
                     for article in articles:
-                        article['domain'] = s_info['domain']
+                        article['domain'] = s_info.get('domain') or "general"
                         article['source_id'] = s_info['id']
                         article['is_analyzed'] = True
                         try:
@@ -568,14 +547,15 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                         except Exception as insert_err:
                             total_skipped += 1
                             logger.warning(f"İçerik kayıt hatası: {insert_err}")
+                    await target_repo.touch_last_fetched(s_info["id"], commit=False)
                 except Exception as src_err:
                     errors.append(f"{s_info['name']}: {str(src_err)}")
                     logger.error(f"RSS çekim hatası [{s_info['name']}]: {src_err}")
-            
+
             await content_repo.commit()
             from app.workers.ingest_tasks import _trigger_analysis_chain
             _trigger_analysis_chain("RSS")
-            msg = f"✅ {len(sources)} kaynak tarandı. {total_added} yeni içerik eklendi, {total_skipped} zaten mevcuttu."
+            msg = f"✅ {len(sources)} RSS kaynağı tarandı. {total_added} yeni içerik eklendi, {total_skipped} zaten mevcuttu."
             if errors:
                 msg += f" ⚠️ {len(errors)} kaynakta hata: {'; '.join(errors[:3])}"
             logger.info(msg)
@@ -618,6 +598,7 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                             rc = await content_repo.insert_one_ignore_conflict(article)
                             if rc > 0: total_added += 1
                             else: total_skipped += 1
+                    await target_repo.touch_last_fetched(source_id, commit=False)
                 except Exception as e:
                     if isinstance(e, YouTubeQuotaExceeded):
                         logger.error(f"YouTube kotası doldu [{source_name}], diğer kaynaklara geçiliyor: {e}")
@@ -669,6 +650,7 @@ async def run_worker(worker_name: str, db: AsyncSession = Depends(get_db)):
                         except Exception as e:
                             total_skipped += 1
                             logger.warning(f"Veri kayıt hatası (atlandı): {e}")
+                    await target_repo.touch_last_fetched(source_id, commit=False)
                             
                 except Exception as e:
                     errors.append(f"{source_name}: {str(e)[:50]}")
@@ -1081,6 +1063,79 @@ async def get_dashboard_hot_topics(refresh: bool = False, db: AsyncSession = Dep
     except Exception as e:
         logger.error(f"Hot topics error: {e}")
         return {"status": "error", "message": str(e)}
+
+_strategic_opps_cache = {"data": None, "timestamp": None}
+
+@app.get("/api/dashboard/strategic-opportunities", tags=["Dashboard Verileri"])
+async def get_dashboard_strategic_opportunities(force: bool = False, db: AsyncSession = Depends(get_db)):
+    """Veritabanındaki son verileri harmanlayıp Fırsat/Risk stratejik analiz kartları üretir. İstenmedikçe (force=False) önbellekten verir."""
+    try:
+        global _strategic_opps_cache
+        now = datetime.utcnow()
+
+        if not force and _strategic_opps_cache["data"] is not None:
+            return _strategic_opps_cache["data"]
+
+        time_threshold = now - timedelta(hours=24)
+        content_repo = ContentRepository(db)
+        # 100 veriyi analiz için çekelim
+        contents = await content_repo.list_hot_topics_candidates(time_threshold, 100)
+        
+        if not contents:
+            # Eğer son 24 saatte veri yoksa son 15 güne bakalım
+            fallback_threshold = now - timedelta(days=15)
+            contents = await content_repo.list_hot_topics_candidates(fallback_threshold, 100)
+            
+        if not contents:
+            return {"success": False, "error": "Son 15 güne ait veri bulunamadı. Lütfen veritabanına veri (Tweet/Haber) akışı sağlayın."}
+
+        text_blob = format_contents_by_domain(contents)
+        as_of = now.strftime("%Y-%m-%d %H:%M UTC")
+        
+        prompt = f"""Sen üst düzey bir istihbarat ve siyasi strateji analistisin.
+Aşağıdaki sosyal medya ve haber verilerini (Twitter, RSS, YouTube) analiz et ve yöneticiler için "Stratejik Fırsat" ve "Risk" kartları üret.
+
+Kurallar:
+1. Sadece 3 ila en fazla 5 önemli konuyu belirle.
+2. Her konu 'Fırsat' veya 'Risk' tipinde olmalı.
+3. Çıktı KESİNLİKLE markdown barındırmayan saf bir JSON formatında olmalı.
+
+JSON Formatı:
+{{
+    "success": true,
+    "opportunities": [
+        {{
+            "type": "Fırsat", 
+            "title": "Kısa, net ve vurucu başlık (Örn: Genç Seçmen Etkileşimi)",
+            "insight": "Veriye dayalı kısa ve net durum analizi (Örn: Son 24 saatte sosyal medyada gençlerin bu konudaki ilgisi %30 arttı.)",
+            "action": "Alınması gereken stratejik/siyasi aksiyon önerisi"
+        }}
+    ]
+}}
+
+Veriler (Rapor saati: {as_of}):
+{text_blob}
+"""
+        ai_response = await gemini_generate_content(prompt)
+        if "```json" in ai_response:
+            ai_response = ai_response.split("```json")[1].split("```")[0].strip()
+
+        try:
+            data = json.loads(ai_response)
+            if not isinstance(data.get("opportunities", []), list):
+                data["opportunities"] = []
+                
+            _strategic_opps_cache["data"] = data
+            _strategic_opps_cache["timestamp"] = now
+            return data
+        except json.JSONDecodeError:
+            if GEMINI_BLOCKED_PLAIN_MESSAGE in (ai_response or ""):
+                return {"success": False, "error": GEMINI_BLOCKED_PLAIN_MESSAGE}
+            return {"success": False, "error": "Geçersiz JSON yanıtı", "raw": ai_response}
+            
+    except Exception as e:
+        logger.error(f"Strategic opportunities error: {e}")
+        return {"success": False, "error": str(e)}
 
 # =======================================================
 # GERÇEK VERİ ANALİZ ROTALARI (4 YENİ ENDPOINT)
@@ -1714,6 +1769,23 @@ async def poll_radar(req: PollRadarRequest):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+@app.get("/api/election/news-pulse", tags=["Seçim Veritabanı"])
+async def get_news_pulse(province: str, max_items: int = 8):
+    """İl bazlı canlı saha nabzı — Google News RSS üzerinden son haberleri çeker.
+    Fail-safe: Hata durumunda ana analiz motorunu etkilemez."""
+    try:
+        from app.services.news_pulse_service import fetch_province_news_pulse
+        return await fetch_province_news_pulse(province, max_items=min(max(1, max_items), 15))
+    except Exception as e:
+        logger.warning(f"news-pulse endpoint hatası [{province}]: {e}")
+        return {
+            "ok": False,
+            "province": province,
+            "items": [],
+            "fetched_at": datetime.utcnow().isoformat(),
+            "error": f"Servis hatası: {str(e)[:120]}"
+        }
+
 @app.post("/api/election/analyze", tags=["Seçim Veritabanı"])
 async def analyze_election(province: str, election_type: str, district: str = "", force_refresh: bool = False, db: AsyncSession = Depends(get_db)):
     """YSK (election_results) + TÜİK JSON + (gerekirse) Wikipedia; tahminî oy uydurulmaz."""
@@ -1847,10 +1919,14 @@ async def analyze_election(province: str, election_type: str, district: str = ""
         future_sim = election_simulator.future_radar_simulation(
             city_row, shares_by_year, national if national else None
         )
-        if future_sim and future_sim.get("adjusted_shares_pct"):
-            base_votes = election_simulator.top_four_letters_from_shares(future_sim["adjusted_shares_pct"])
+        # UI baz çizgi: gelecek radarinin "adjusted" katmanını kullanma (TÜİK skaler+ağırlık
+        # gerçek muhafazakar/merkez dengesini Ankara vb. bölgelerde ters yüzebilir).
+        # Son seçim yılının doğrudan YSK parti yüzdeleri bloklarda toplanır.
+        ly = max(shares_by_year.keys()) if shares_by_year else None
+        if ly is not None:
+            base_votes = election_simulator.bloc_shares_pct_from_party_shares(shares_by_year[ly])
         else:
-            base_votes = base_votes_from_rows(rows_latest)
+            base_votes = election_simulator.base_votes_blocs_from_election_rows(rows_latest)
 
         footer = build_election_validation_footer(data_sources, demo_ctx, dist_key, wiki_ref)
         cache_neighborhood = election_type
@@ -1907,28 +1983,56 @@ async def analyze_election(province: str, election_type: str, district: str = ""
                 )
             )
 
-        analysis_body = await gemini_generate_content(prompt)
+        llm_error: Optional[str] = None
+        try:
+            analysis_body = await gemini_generate_content(prompt)
+        except Exception as llm_exc:
+            # DNS / API (örn. socket.gaierror [Errno -2]) seçim matematiğini çökertmesin.
+            llm_error = str(llm_exc)
+            logger.warning(f"Election analyze: LLM/API hatası (YSK + blok + simülasyon yine döner): {llm_error}")
+            sim_bits = ""
+            if future_sim:
+                sim_bits = (
+                    json.dumps(
+                        {
+                            "extrapolated_shares_pct": future_sim.get("extrapolated_shares_pct"),
+                            "adjusted_shares_pct": future_sim.get("adjusted_shares_pct"),
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+            analysis_body = (
+                "Yapay zekâ özetine şu an ulaşılamadı (ağ veya API).\n"
+                f"Hata: {llm_error}\n\n"
+                "Simülatör blok baz çizgisi (a=iktidar, b=muhalefet, c=tepki/sol, d=diğer): "
+                f"{json.dumps(base_votes, ensure_ascii=False)}\n\n"
+                + ("Gelecek simülasyonu (ham):\n" + sim_bits + "\n\n" if sim_bits else "")
+                + "Aşağıdaki tabakada YSK satırları ve kaynak dosya adları doğrulanabilir."
+            )
+
         analysis_store = analysis_body
         analysis_response = analysis_body + footer
 
-        if cached_data:
-            cached_data.ai_summary = analysis_store
-            cached_data.last_analyzed_at = datetime.utcnow()
-            cached_data.neighborhood = cache_neighborhood
-        else:
-            await election_repo.add_region_analysis(
-                RegionAnalysis(
-                    province=province,
-                    district=dist_key or None,
-                    election_year=max_year,
-                    neighborhood=cache_neighborhood,
-                    ai_summary=analysis_store,
-                    last_analyzed_at=datetime.utcnow(),
+        if llm_error is None:
+            if cached_data:
+                cached_data.ai_summary = analysis_store
+                cached_data.last_analyzed_at = datetime.utcnow()
+                cached_data.neighborhood = cache_neighborhood
+            else:
+                await election_repo.add_region_analysis(
+                    RegionAnalysis(
+                        province=province,
+                        district=dist_key or None,
+                        election_year=max_year,
+                        neighborhood=cache_neighborhood,
+                        ai_summary=analysis_store,
+                        last_analyzed_at=datetime.utcnow(),
+                    )
                 )
-            )
 
-        await election_repo.commit()
-        return {
+            await election_repo.commit()
+
+        payload: dict[str, object] = {
             "success": True,
             "analysis": analysis_response,
             "cached": False,
@@ -1936,7 +2040,11 @@ async def analyze_election(province: str, election_type: str, district: str = ""
             "data_sources": data_sources,
             "future_simulation": future_sim,
             "wiki_fallback": bool(wiki_ref),
+            "llm_ok": llm_error is None,
         }
+        if llm_error is not None:
+            payload["llm_error"] = llm_error
+        return payload
     except HTTPException:
         raise
     except Exception as e:

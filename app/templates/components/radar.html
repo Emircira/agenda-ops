@@ -1,0 +1,259 @@
+<!-- Etkilesim Radari — veri: /api/v1/radar -->
+<div id="view-radar" class="view-section flex-1 flex flex-col w-full min-h-0 p-6 z-10 relative scroll-smooth bg-[#f8f9fa]">
+
+    <!-- KONTROL PANELI -->
+    <div class="bg-panel p-5 rounded-xl border border-slate-800 shadow-lg mb-6">
+        <div class="flex justify-between items-start gap-4 flex-wrap">
+            <div class="min-w-0">
+                <h3 class="text-[#202124] font-bold text-lg flex items-center gap-2">
+                    <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v2m0 14v2m9-9h-2M5 12H3m14.95 6.95l-1.414-1.414M7.464 7.464L6.05 6.05m11.9 0l-1.414 1.414M7.464 16.536L6.05 17.95"></path><circle cx="12" cy="12" r="3" stroke-width="2"></circle></svg>
+                    Etkilesim Radari
+                </h3>
+                <p class="text-xs text-[#5f6368] mt-1 max-w-2xl leading-relaxed">Secilen pencerede en yuksek etkilesim alan hesaplar. Skor = 3&middot;alinan yorum + 1&middot;etkilesim + 2&middot;log(erisim), ardisik aktif gun serisine gore bonuslu.</p>
+                <p id="radar-meta" class="text-[11px] text-[#5f6368] mt-1 font-medium"></p>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap justify-end">
+                <div class="inline-flex rounded-full bg-[#f1f3f4] border border-[#dadce0] p-1" role="group" aria-label="Zaman penceresi">
+                    <button type="button" class="radar-win-chip text-xs font-medium px-3 py-1.5 rounded-full text-[#5f6368] transition-colors" data-win="7">7 Gun</button>
+                    <button type="button" class="radar-win-chip text-xs font-medium px-3 py-1.5 rounded-full text-[#5f6368] transition-colors" data-win="30">30 Gun</button>
+                    <button type="button" class="radar-win-chip text-xs font-medium px-3 py-1.5 rounded-full text-[#5f6368] transition-colors" data-win="90">90 Gun</button>
+                </div>
+                <select id="radar-order" class="text-xs font-medium text-[#202124] bg-white border border-[#dadce0] rounded-lg px-3 py-2 cursor-pointer">
+                    <option value="score">Skora gore</option>
+                    <option value="engagement">Etkilesime gore</option>
+                    <option value="comments">Yoruma gore</option>
+                    <option value="posts">Gonderiye gore</option>
+                    <option value="reach">Erisime gore</option>
+                </select>
+                <select id="radar-platform" class="text-xs font-medium text-[#202124] bg-white border border-[#dadce0] rounded-lg px-3 py-2 cursor-pointer">
+                    <option value="">Tum platformlar</option>
+                    <option value="twitter">Twitter / X</option>
+                    <option value="youtube">YouTube</option>
+                    <option value="rss">RSS</option>
+                </select>
+                <button id="radar-refresh" type="button" class="text-xs bg-primary/10 text-primary border border-primary/30 px-3 py-2 rounded-lg font-bold hover:bg-primary/20 transition-colors">Yenile</button>
+                <button id="radar-recompute" type="button" class="text-xs bg-[#e8f0fe] text-[#1967d2] border border-[#dadce0] px-3 py-2 rounded-lg font-bold hover:bg-[#d2e3fc] transition-colors" title="Dunun skorlarini yeniden hesapla">Yeniden Hesapla</button>
+                <button id="radar-snapshot" type="button" class="text-xs bg-white text-[#5f6368] border border-[#dadce0] px-3 py-2 rounded-lg font-bold hover:bg-[#f1f3f4] transition-colors" title="raw_json -> content_metrics backfill">Metrikleri Tazele</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LIDERLIK TABLOSU -->
+    <div class="bg-panel rounded-xl border border-slate-800 shadow-lg overflow-hidden">
+        <div id="radar-loading" class="hidden flex-col items-center justify-center py-16 text-primary">
+            <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary mb-3"></div>
+            <p class="text-sm font-medium">Radar verisi yukleniyor...</p>
+        </div>
+        <div id="radar-empty" class="hidden py-16 px-6 text-center text-[#5f6368]">
+            <p class="text-sm font-medium">Bu pencerede gosterilecek Radar verisi yok.</p>
+            <p class="text-xs mt-1">Once &laquo;Metrikleri Tazele&raquo; sonra &laquo;Yeniden Hesapla&raquo; deneyin.</p>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm" id="radar-table">
+                <thead>
+                    <tr class="bg-[#f8f9fa] border-b border-[#dadce0] text-[10px] uppercase tracking-wider text-[#5f6368]">
+                        <th class="text-left font-bold px-4 py-3">#</th>
+                        <th class="text-left font-bold px-4 py-3">Hesap</th>
+                        <th class="text-left font-bold px-4 py-3">Platform</th>
+                        <th class="text-right font-bold px-4 py-3">Skor</th>
+                        <th class="text-right font-bold px-4 py-3">Gonderi</th>
+                        <th class="text-right font-bold px-4 py-3">Yorum</th>
+                        <th class="text-right font-bold px-4 py-3">Etkilesim</th>
+                        <th class="text-right font-bold px-4 py-3">Erisim</th>
+                        <th class="text-right font-bold px-4 py-3">Seri</th>
+                    </tr>
+                </thead>
+                <tbody id="radar-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    var state = { window: 7, order: 'score', platform: '', limit: 20 };
+    var booted = false;
+
+    function fmt(n) {
+        try { return Number(n || 0).toLocaleString('tr-TR'); } catch (e) { return String(n || 0); }
+    }
+
+    function esc(v) {
+        return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c];
+        });
+    }
+
+    function toast(msg, type) {
+        try {
+            if (window.AgendaOps && typeof window.AgendaOps.showToast === 'function') {
+                window.AgendaOps.showToast(msg, type || 'info');
+                return;
+            }
+        } catch (e) {}
+        try { console.log('[Radar]', msg); } catch (e) {}
+    }
+
+    function platformBadge(p) {
+        var key = String(p || '').toLowerCase();
+        var label = p || '-';
+        var cls = 'bg-[#f1f3f4] text-[#5f6368]';
+        if (key === 'twitter' || key === 'x') { label = 'X'; cls = 'bg-[#e8f0fe] text-[#1967d2]'; }
+        else if (key === 'youtube') { label = 'YouTube'; cls = 'bg-[#fce8e6] text-[#c5221f]'; }
+        else if (key === 'rss') { label = 'RSS'; cls = 'bg-[#fef7e0] text-[#b06000]'; }
+        return '<span class="text-[10px] font-bold px-2 py-0.5 rounded ' + cls + '">' + esc(label) + '</span>';
+    }
+
+    function show(el, on) { if (el) el.classList.toggle('hidden', !on); }
+
+    function render(data) {
+        var tbody = document.getElementById('radar-tbody');
+        var meta = document.getElementById('radar-meta');
+        var empty = document.getElementById('radar-empty');
+        var table = document.getElementById('radar-table');
+        if (!tbody) return;
+
+        var rows = (data && Array.isArray(data.leaderboard)) ? data.leaderboard : [];
+        if (meta) {
+            if (data && data.start_day) {
+                meta.textContent = data.start_day + ' - ' + data.end_day + ' | ' + (data.count || 0) + ' hesap | platform: ' + (data.platform || 'all');
+            } else { meta.textContent = ''; }
+        }
+
+        if (!rows.length) {
+            tbody.innerHTML = '';
+            show(empty, true);
+            show(table, false);
+            return;
+        }
+        show(empty, false);
+        show(table, true);
+
+        tbody.innerHTML = rows.map(function (r) {
+            var rank = r.rank;
+            var rankCls = rank === 1 ? 'text-[#b06000]' : (rank <= 3 ? 'text-[#1967d2]' : 'text-[#5f6368]');
+            var medal = rank === 1 ? '#1' : ('#' + rank);
+            var streak = (r.streak_days && r.streak_days > 1) ? ('<span class="text-[10px] text-[#137333] font-bold">' + r.streak_days + ' gun</span>') : '<span class="text-[#80868b]">-</span>';
+            return '<tr class="border-b border-[#ececec] hover:bg-[#f8f9fa] transition-colors">'
+                + '<td class="px-4 py-3 font-bold ' + rankCls + '">' + esc(medal) + '</td>'
+                + '<td class="px-4 py-3 font-semibold text-[#202124]">@' + esc(r.username) + '</td>'
+                + '<td class="px-4 py-3">' + platformBadge(r.platform) + '</td>'
+                + '<td class="px-4 py-3 text-right font-bold text-[#1a73e8]">' + fmt(r.radar_score) + '</td>'
+                + '<td class="px-4 py-3 text-right text-[#5f6368]">' + fmt(r.posts) + '</td>'
+                + '<td class="px-4 py-3 text-right text-[#5f6368]">' + fmt(r.comments_received) + '</td>'
+                + '<td class="px-4 py-3 text-right text-[#202124] font-medium">' + fmt(r.engagement) + '</td>'
+                + '<td class="px-4 py-3 text-right text-[#5f6368]">' + fmt(r.reach_estimate) + '</td>'
+                + '<td class="px-4 py-3 text-right">' + streak + '</td>'
+                + '</tr>';
+        }).join('');
+    }
+
+    function fetchAndRender() {
+        var loading = document.getElementById('radar-loading');
+        var empty = document.getElementById('radar-empty');
+        show(empty, false);
+        show(loading, true);
+        var qs = new URLSearchParams({
+            window: state.window + 'd',
+            limit: String(state.limit),
+            order: state.order
+        });
+        if (state.platform) qs.set('platform', state.platform);
+        fetch('/api/v1/radar?' + qs.toString(), { credentials: 'same-origin' })
+            .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+            .then(function (data) { show(loading, false); render(data); })
+            .catch(function (e) {
+                show(loading, false);
+                var tbody = document.getElementById('radar-tbody');
+                if (tbody) tbody.innerHTML = '';
+                show(empty, true);
+                toast('Radar verisi alinamadi: ' + (e && e.message ? e.message : e), 'error');
+            });
+    }
+
+    function postAction(url, label, btn) {
+        var orig = btn ? btn.innerHTML : '';
+        if (btn) { btn.disabled = true; btn.innerHTML = '...'; }
+        fetch(url, { method: 'POST', credentials: 'same-origin' })
+            .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, d: d }; }); })
+            .then(function (res) {
+                if (!res.ok) throw new Error((res.d && res.d.detail) || 'http');
+                toast(label + ' kuyruga alindi. Sonuc birkac saniye icinde yansiyacak.', 'success');
+                setTimeout(fetchAndRender, 6000);
+            })
+            .catch(function (e) { toast(label + ' basarisiz: ' + (e && e.message ? e.message : e), 'error'); })
+            .finally(function () { if (btn) { btn.disabled = false; btn.innerHTML = orig; } });
+    }
+
+    function syncWinChips() {
+        var chips = document.querySelectorAll('.radar-win-chip');
+        chips.forEach(function (c) {
+            var on = parseInt(c.getAttribute('data-win'), 10) === state.window;
+            c.setAttribute('aria-pressed', on ? 'true' : 'false');
+            c.classList.toggle('bg-white', on);
+            c.classList.toggle('text-[#202124]', on);
+            c.classList.toggle('shadow-sm', on);
+            c.classList.toggle('text-[#5f6368]', !on);
+        });
+    }
+
+    function wire() {
+        document.querySelectorAll('.radar-win-chip').forEach(function (c) {
+            c.addEventListener('click', function () {
+                var w = parseInt(c.getAttribute('data-win'), 10);
+                if (!isNaN(w)) { state.window = w; syncWinChips(); fetchAndRender(); }
+            });
+        });
+        var order = document.getElementById('radar-order');
+        if (order) order.addEventListener('change', function () { state.order = order.value; fetchAndRender(); });
+        var plat = document.getElementById('radar-platform');
+        if (plat) plat.addEventListener('change', function () { state.platform = plat.value; fetchAndRender(); });
+        var refresh = document.getElementById('radar-refresh');
+        if (refresh) refresh.addEventListener('click', fetchAndRender);
+        var recompute = document.getElementById('radar-recompute');
+        if (recompute) recompute.addEventListener('click', function () { postAction('/api/v1/radar/recompute', 'Yeniden hesaplama', recompute); });
+        var snapshot = document.getElementById('radar-snapshot');
+        if (snapshot) snapshot.addEventListener('click', function () { postAction('/api/v1/radar/snapshot-metrics', 'Metrik tazeleme', snapshot); });
+    }
+
+    function relocate() {
+        var scroll = document.getElementById('main-scroll');
+        var view = document.getElementById('view-radar');
+        if (scroll && view && view.parentNode !== scroll) { scroll.appendChild(view); }
+    }
+
+    function injectNav() {
+        if (document.getElementById('nav-radar')) return;
+        var nav = document.querySelector('aside nav');
+        if (!nav) return;
+        var btn = document.createElement('button');
+        btn.id = 'nav-radar';
+        btn.className = 'w-full flex items-center gap-3 text-slate-400 hover:bg-[#f1f3f4] px-4 py-3 rounded-lg font-medium transition-colors nav-btn';
+        btn.setAttribute('onclick', "window.AgendaOps.switchTab('radar', 'Etkilesim Radari')");
+        btn.innerHTML = '<svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v2m0 14v2m9-9h-2M5 12H3"></path><circle cx="12" cy="12" r="3" stroke-width="2"></circle></svg> Etkilesim Radari <span class="ml-auto bg-primary/20 text-primary text-[10px] px-2 py-0.5 rounded font-bold">YENI</span>';
+        var anchor = document.getElementById('nav-newsradar');
+        if (anchor && anchor.parentNode) { anchor.insertAdjacentElement('afterend', btn); }
+        else { nav.appendChild(btn); }
+        btn.addEventListener('click', function () { setTimeout(fetchAndRender, 50); });
+    }
+
+    function boot() {
+        if (booted) return; booted = true;
+        try { relocate(); } catch (e) {}
+        try { injectNav(); } catch (e) {}
+        try { wire(); } catch (e) {}
+        try { syncWinChips(); } catch (e) {}
+        try { fetchAndRender(); } catch (e) {}
+    }
+
+    window.RadarWidget = { boot: boot, fetchAndRender: fetchAndRender };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot);
+    } else {
+        setTimeout(boot, 0);
+    }
+})();
+</script>

@@ -1,0 +1,356 @@
+<script>
+(function () {
+  'use strict';
+
+  var API = '/api/v1/macro/historical-data';
+
+  var chartMacro = null;
+  var chartGriev = null;
+  var currentDays = 30;
+
+  function safeDestroyOne(ch) {
+    if (!ch || typeof ch.destroy !== 'function') return;
+    try {
+      ch.destroy();
+    } catch (e) {}
+  }
+
+  function destroyCharts() {
+    safeDestroyOne(chartMacro);
+    chartMacro = null;
+    safeDestroyOne(chartGriev);
+    chartGriev = null;
+  }
+
+  function getEls() {
+    return {
+      macroCanvas: document.getElementById('k-macro-trends-chart-macro'),
+      grievCanvas: document.getElementById('k-macro-trends-chart-griev'),
+      wrapMacro: document.getElementById('k-macro-trends-macro-wrap'),
+      wrapGriev: document.getElementById('k-macro-trends-griev-wrap'),
+      emptyMacro: document.getElementById('k-macro-trends-macro-empty'),
+      emptyGriev: document.getElementById('k-macro-trends-griev-empty'),
+    };
+  }
+
+  function theme() {
+    var dark = document.documentElement.classList.contains('dark-mode');
+    return {
+      text: dark ? '#e8eaed' : '#5f6368',
+      grid: dark ? 'rgba(255,255,255,0.08)' : 'rgba(60,64,67,0.12)',
+    };
+  }
+
+  function baseChartOptions() {
+    var t = theme();
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          labels: { color: t.text, boxWidth: 10, usePointStyle: true },
+        },
+        tooltip: {
+          backgroundColor: 'rgba(32,33,36,0.92)',
+          titleColor: '#fff',
+          bodyColor: '#e8eaed',
+          padding: 10,
+          cornerRadius: 8,
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: t.text, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
+          grid: { color: t.grid },
+        },
+        y: {
+          ticks: { color: t.text },
+          grid: { color: t.grid },
+        },
+      },
+    };
+  }
+
+  function countNumeric(arr) {
+    if (!arr || !arr.length) return 0;
+    var n = 0;
+    for (var i = 0; i < arr.length; i++) {
+      if (arr[i] != null && !isNaN(Number(arr[i]))) n++;
+    }
+    return n;
+  }
+
+  function setPaneEmpty(show, emptyEl, wrapEl) {
+    try {
+      if (emptyEl) emptyEl.classList.toggle('is-visible', !!show);
+      if (wrapEl) wrapEl.classList.toggle('is-hidden', !!show);
+    } catch (e) {}
+  }
+
+  function setChartEmptyMessage(macroShow, grievShow) {
+    var els = getEls();
+    setPaneEmpty(macroShow, els.emptyMacro, els.wrapMacro);
+    setPaneEmpty(grievShow, els.emptyGriev, els.wrapGriev);
+  }
+
+  function formatLabels(isoDates) {
+    if (!isoDates || !isoDates.length) return [];
+    return isoDates.map(function (d) {
+      if (!d) return '';
+      var parts = String(d).split('-');
+      if (parts.length !== 3) return d;
+      return parts[2] + '.' + parts[1];
+    });
+  }
+
+  function get2dContext(canvas) {
+    if (!canvas || !canvas.getContext) return null;
+    try {
+      return canvas.getContext('2d');
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function applyPayload(data) {
+    var els = getEls();
+    var macroCanvas = els.macroCanvas;
+    var grievCanvas = els.grievCanvas;
+
+    if (typeof Chart === 'undefined') {
+      setChartEmptyMessage(true, true);
+      return;
+    }
+
+    try {
+      if (!data || data.success !== true) {
+        destroyCharts();
+        setChartEmptyMessage(true, true);
+        return;
+      }
+
+      var dates = Array.isArray(data.dates) ? data.dates : [];
+      var series = data.macro_series && typeof data.macro_series === 'object' ? data.macro_series : {};
+      var infl = Array.isArray(series.inflation_tuik) ? series.inflation_tuik : [];
+      var rate = Array.isArray(series.interest_rate) ? series.interest_rate : [];
+      var griev = (data.grievances_karargah && Array.isArray(data.grievances_karargah.values))
+        ? data.grievances_karargah.values : [];
+
+      var macroOk = dates.length > 0 && (countNumeric(infl) >= 2 || countNumeric(rate) >= 2);
+      var grievOk = dates.length > 0 && countNumeric(griev) >= 2;
+
+      if (!macroOk && !grievOk) {
+        destroyCharts();
+        setChartEmptyMessage(true, true);
+        return;
+      }
+
+      setChartEmptyMessage(!macroOk, !grievOk);
+
+      var labels = formatLabels(dates);
+      var opts = baseChartOptions();
+
+      if (macroOk && macroCanvas) {
+        var ctxM = get2dContext(macroCanvas);
+        if (!ctxM) {
+          safeDestroyOne(chartMacro);
+          chartMacro = null;
+          setPaneEmpty(true, els.emptyMacro, els.wrapMacro);
+        } else {
+          try {
+            if (chartMacro && chartMacro.data && chartMacro.data.datasets && chartMacro.data.datasets.length > 1) {
+              chartMacro.data.labels = labels;
+              chartMacro.data.datasets[0].data = infl;
+              chartMacro.data.datasets[1].data = rate;
+              chartMacro.update();
+            } else {
+              safeDestroyOne(chartMacro);
+              chartMacro = null;
+              chartMacro = new Chart(ctxM, {
+                type: 'line',
+                data: {
+                  labels: labels,
+                  datasets: [
+                    {
+                      label: 'Enflasyon (TÜİK %)',
+                      data: infl,
+                      borderColor: '#e8710a',
+                      backgroundColor: 'rgba(232,113,10,0.12)',
+                      tension: 0.25,
+                      spanGaps: false,
+                      pointRadius: 2,
+                      borderWidth: 2,
+                    },
+                    {
+                      label: 'Politika faizi (%)',
+                      data: rate,
+                      borderColor: '#1a73e8',
+                      backgroundColor: 'rgba(26,115,232,0.12)',
+                      tension: 0.25,
+                      spanGaps: false,
+                      pointRadius: 2,
+                      borderWidth: 2,
+                    },
+                  ],
+                },
+                options: opts,
+              });
+            }
+          } catch (e) {
+            safeDestroyOne(chartMacro);
+            chartMacro = null;
+            setPaneEmpty(true, els.emptyMacro, els.wrapMacro);
+          }
+        }
+      } else {
+        safeDestroyOne(chartMacro);
+        chartMacro = null;
+      }
+
+      if (grievOk && grievCanvas) {
+        var ctxG = get2dContext(grievCanvas);
+        if (!ctxG) {
+          safeDestroyOne(chartGriev);
+          chartGriev = null;
+          setPaneEmpty(true, els.emptyGriev, els.wrapGriev);
+        } else {
+          try {
+            var gOpts = baseChartOptions();
+            if (chartGriev && chartGriev.data && chartGriev.data.datasets && chartGriev.data.datasets[0]) {
+              chartGriev.data.labels = labels;
+              chartGriev.data.datasets[0].data = griev;
+              chartGriev.update();
+            } else {
+              safeDestroyOne(chartGriev);
+              chartGriev = null;
+              chartGriev = new Chart(ctxG, {
+                type: 'line',
+                data: {
+                  labels: labels,
+                  datasets: [
+                    {
+                      label: 'Karargah şikâyet (günlük ort.)',
+                      data: griev,
+                      borderColor: '#9334e6',
+                      backgroundColor: 'rgba(147,52,230,0.1)',
+                      tension: 0.25,
+                      spanGaps: false,
+                      pointRadius: 2,
+                      borderWidth: 2,
+                      fill: true,
+                    },
+                  ],
+                },
+                options: gOpts,
+              });
+            }
+          } catch (e2) {
+            safeDestroyOne(chartGriev);
+            chartGriev = null;
+            setPaneEmpty(true, els.emptyGriev, els.wrapGriev);
+          }
+        }
+      } else {
+        safeDestroyOne(chartGriev);
+        chartGriev = null;
+      }
+    } catch (eTop) {
+      try {
+        destroyCharts();
+        setChartEmptyMessage(true, true);
+      } catch (eIgnore) {}
+    }
+  }
+
+  function fetchAndRender(days) {
+    currentDays = days;
+    var url = API + '?days=' + encodeURIComponent(String(days));
+    fetch(url, { credentials: 'same-origin' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('http');
+        return r.json();
+      })
+      .then(function (payload) {
+        applyPayload(payload);
+      })
+      .catch(function () {
+        try {
+          destroyCharts();
+          setChartEmptyMessage(true, true);
+        } catch (e) {}
+      });
+  }
+
+  function syncChips(activeDays) {
+    try {
+      var chips = document.querySelectorAll('[data-k-macro-trend-days]');
+      chips.forEach(function (btn) {
+        var d = parseInt(btn.getAttribute('data-k-macro-trend-days'), 10);
+        var on = (d === activeDays) || (activeDays === 0 && d === 0);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    } catch (e) {}
+  }
+
+  function wireChipsOnce() {
+    if (wireChipsOnce._done) return;
+    wireChipsOnce._done = true;
+    try {
+      document.querySelectorAll('[data-k-macro-trend-days]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          try {
+            var d = parseInt(btn.getAttribute('data-k-macro-trend-days'), 10);
+            if (isNaN(d)) return;
+            syncChips(d);
+            fetchAndRender(d);
+          } catch (e) {}
+        });
+      });
+    } catch (e) {}
+  }
+
+  function bootTrends() {
+    try {
+      wireChipsOnce();
+      syncChips(currentDays);
+      fetchAndRender(currentDays);
+    } catch (e) {}
+  }
+
+  window.MacroTrends = {
+    boot: bootTrends,
+    safeDestroy: destroyCharts,
+    fetchAndRender: fetchAndRender,
+  };
+
+  function scheduleTrendsBoot() {
+    function run() {
+      bootTrends();
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', run);
+    } else {
+      setTimeout(run, 0);
+    }
+  }
+
+  scheduleTrendsBoot();
+
+  try {
+    var toggle = document.querySelector('[data-karargah-theme-toggle]');
+    if (toggle) {
+      toggle.addEventListener('click', function () {
+        setTimeout(function () {
+          try {
+            destroyCharts();
+            fetchAndRender(currentDays);
+          } catch (e) {}
+        }, 80);
+      });
+    }
+  } catch (e) {}
+})();
+</script>

@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         body { background-color: var(--k-bg-page); color: var(--k-text); font-family: 'Inter', 'Segoe UI', sans-serif; }
@@ -19,6 +20,81 @@
         html.dark-mode .leaflet-bar a { background-color: #1e1e24 !important; color: #e8eaed !important; border-color: #3c4043 !important; }
         html.dark-mode .city-label { color: rgba(232, 234, 237, 0.45); }
         html.dark-mode .leaflet-interactive:hover + .leaflet-tooltip.city-label { color: #8ab4f8; }
+        html.dark-mode .geo-command-panel { background: var(--k-surface); color: var(--k-text); border-color: var(--k-border); }
+        html.dark-mode .geo-command-panel .k-tab-active { background: rgba(138, 180, 248, 0.15); color: #8ab4f8; border-color: #8ab4f8; }
+        html.dark-mode .geo-command-panel table th, html.dark-mode .geo-command-panel table td { border-color: var(--k-border); color: var(--k-text); }
+        .geo-osint-radar {
+            width: 48px; height: 48px;
+            border: 3px solid rgba(26, 115, 232, 0.25);
+            border-top-color: #1a73e8;
+            border-radius: 50%;
+            animation: geo-spin 0.9s linear infinite;
+        }
+        html.dark-mode .geo-osint-radar {
+            border-color: rgba(138, 180, 248, 0.25);
+            border-top-color: #8ab4f8;
+        }
+        @keyframes geo-spin { to { transform: rotate(360deg); } }
+        @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .k-layer-btn { background: var(--k-surface); color: var(--k-text); transition: opacity .15s, border-color .15s; }
+        .k-layer-btn.k-layer-active { border-color: #1967d2 !important; box-shadow: 0 0 0 1px #1967d2; }
+        html.dark-mode .k-layer-btn.k-layer-active { border-color: #8ab4f8 !important; box-shadow: 0 0 0 1px #8ab4f8; }
+        .k-tab-btn { background: transparent; color: var(--k-text-secondary); border-bottom: 2px solid transparent; transition: color .15s, border-color .15s; }
+        .k-tab-btn.k-tab-active { color: #1967d2; border-bottom-color: #1967d2; }
+        html.dark-mode .k-tab-btn.k-tab-active { color: #8ab4f8; border-bottom-color: #8ab4f8; }
+        .geo-wiki-report { font-size: 0.75rem; line-height: 1.55; color: var(--k-text); }
+        .geo-wiki-report .geo-wiki-title { font-weight: 700; font-size: 0.85rem; margin-bottom: 0.25rem; color: var(--k-text); }
+        .geo-wiki-report .geo-wiki-meta { font-size: 0.625rem; color: var(--k-text-secondary); margin-bottom: 1rem; }
+        .geo-wiki-report .geo-wiki-block {
+            border: 1px solid var(--k-border); border-radius: 0.5rem; padding: 0.75rem 0.85rem;
+            margin-bottom: 0.75rem; background: rgba(26, 115, 232, 0.04);
+        }
+        html.dark-mode .geo-wiki-report .geo-wiki-block { background: rgba(138, 180, 248, 0.06); }
+        .geo-wiki-report .geo-wiki-block h4 {
+            font-size: 0.65rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em;
+            color: #1967d2; margin-bottom: 0.4rem;
+        }
+        html.dark-mode .geo-wiki-report .geo-wiki-block h4 { color: #8ab4f8; }
+        .geo-wiki-report .geo-wiki-body { white-space: pre-wrap; word-break: break-word; }
+        .geo-wiki-report a { color: #1967d2; text-decoration: underline; text-underline-offset: 2px; }
+        html.dark-mode .geo-wiki-report a { color: #8ab4f8; }
+        /* --- Saha Nabzı (News Pulse) --- */
+        .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: #ea4335; display: inline-block; animation: pulse-blink 1.5s ease-in-out infinite; margin-right: 4px; vertical-align: middle; }
+        @keyframes pulse-blink { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.7); } }
+        .news-card {
+            border: 1px solid var(--k-border); border-radius: 0.5rem; padding: 0.65rem 0.75rem;
+            margin-bottom: 0.5rem; background: var(--k-surface); transition: border-color .2s, box-shadow .2s, transform .15s;
+            cursor: pointer; position: relative; overflow: hidden;
+        }
+        .news-card::before {
+            content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+            background: linear-gradient(180deg, #1967d2, #34a853); border-radius: 3px 0 0 3px;
+            opacity: 0; transition: opacity .2s;
+        }
+        .news-card:hover { border-color: #1967d2; box-shadow: 0 2px 8px rgba(25,103,210,0.10); transform: translateY(-1px); }
+        .news-card:hover::before { opacity: 1; }
+        html.dark-mode .news-card:hover { border-color: #8ab4f8; box-shadow: 0 2px 8px rgba(138,180,248,0.12); }
+        html.dark-mode .news-card::before { background: linear-gradient(180deg, #8ab4f8, #81c995); }
+        .news-card .news-title { font-size: 0.7rem; font-weight: 600; color: var(--k-text); line-height: 1.4; margin-bottom: 0.25rem; }
+        .news-card .news-snippet { font-size: 0.625rem; color: var(--k-text-secondary); line-height: 1.45; }
+        .news-card .news-meta { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.35rem; flex-wrap: wrap; }
+        .news-source-badge {
+            font-size: 0.55rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+            background: rgba(26, 115, 232, 0.08); color: #1967d2; padding: 1px 6px; border-radius: 3px;
+        }
+        html.dark-mode .news-source-badge { background: rgba(138, 180, 248, 0.12); color: #8ab4f8; }
+        .news-time { font-size: 0.55rem; color: var(--k-text-secondary); }
+        .news-pulse-empty { text-align: center; padding: 2rem 1rem; color: var(--k-text-secondary); }
+        .news-pulse-empty .empty-icon { font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.5; }
+        .news-pulse-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--k-border); }
+        .news-pulse-header h4 { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #ea4335; display: flex; align-items: center; gap: 0.25rem; }
+        html.dark-mode .news-pulse-header h4 { color: #f28b82; }
+        .news-refresh-btn {
+            font-size: 0.6rem; background: transparent; border: 1px solid var(--k-border); color: var(--k-text-secondary);
+            padding: 2px 8px; border-radius: 4px; cursor: pointer; transition: all .2s;
+        }
+        .news-refresh-btn:hover { border-color: #1967d2; color: #1967d2; }
+        html.dark-mode .news-refresh-btn:hover { border-color: #8ab4f8; color: #8ab4f8; }
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: var(--k-elevated); }
         ::-webkit-scrollbar-thumb { background: var(--k-border); border-radius: 8px; }
@@ -29,8 +105,8 @@
     <div class="max-w-screen-2xl mx-auto w-full flex-1 flex flex-col">
         <div class="flex justify-between items-center mb-8 border-b border-[#dadce0] pb-4">
             <a href="/dashboard" class="group block w-fit cursor-pointer">
-                <h1 class="text-3xl font-bold text-[#202124] tracking-tight uppercase transition-colors">STRATEJİK SEÇİM RADARI</h1>
-                <p class="text-[#5f6368] text-xs mt-1.5 tracking-[0.15em] font-semibold group-hover:text-[#3c4043] transition-colors uppercase">Strateji Kontrol Paneli</p>
+                <h1 class="text-3xl font-bold tracking-tight uppercase transition-colors text-[var(--k-text)]">STRATEJİK SEÇİM RADARI</h1>
+                <p class="text-xs mt-1.5 tracking-[0.15em] font-semibold group-hover:opacity-90 transition-colors uppercase text-[var(--k-text-secondary)]">Strateji Kontrol Paneli — Kurmay Harita + Coğrafi Sentez</p>
             </a>
             <div class="flex items-center gap-3 flex-wrap justify-end">
                 <button type="button" data-karargah-theme-toggle class="k-theme-toggle" title="Gündüz / Gece modu" aria-label="Gündüz veya gece temasına geç">
@@ -47,48 +123,80 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-12 gap-6 mb-6">
-            <div class="col-span-12 lg:col-span-9 glass-panel rounded-xl relative overflow-hidden h-[450px]">
-                <div id="map" class="w-full h-full z-0 absolute inset-0"></div>
-            </div>
-
-            <div class="col-span-12 lg:col-span-3 flex flex-col space-y-4 h-[450px] overflow-y-auto pr-2">
-                <div class="glass-panel rounded-xl p-4 flex flex-col space-y-2 shrink-0">
-                    <span class="text-[#202124] font-bold text-xs uppercase tracking-wider">📊 Analiz Türü:</span>
-                    <select id="electionTypeSelect" class="w-full bg-white border border-[#dadce0] text-[#202124] text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#1a73e8]/25">
+        <div class="flex flex-col xl:flex-row gap-6 mb-6 items-stretch min-h-[560px]">
+            <div class="flex-1 min-w-0 flex flex-col gap-3">
+                <div class="flex flex-wrap items-center gap-2 glass-panel rounded-xl px-3 py-2 border border-[var(--k-border)]">
+                    <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--k-text-secondary)]">Katman</span>
+                    <button type="button" id="layer-election" onclick="setMapLayer('election')" class="k-layer-btn k-layer-active px-3 py-1.5 rounded-lg text-xs font-bold border border-[var(--k-border)]">Seçim</button>
+                    <button type="button" id="layer-socio" onclick="setMapLayer('sociological')" class="k-layer-btn px-3 py-1.5 rounded-lg text-xs font-bold border border-[var(--k-border)] opacity-90">Sosyolojik</button>
+                </div>
+                <div class="glass-panel rounded-xl relative overflow-hidden flex-1 min-h-[340px] xl:min-h-[460px] border border-[var(--k-border)]">
+                    <div id="map" class="w-full h-full z-0 absolute inset-0"></div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div class="glass-panel rounded-xl p-4 flex flex-col space-y-2 shrink-0 border border-[var(--k-border)]">
+                        <span class="text-[var(--k-text)] font-bold text-xs uppercase tracking-wider">📊 Analiz Türü</span>
+                        <select id="electionTypeSelect" class="w-full bg-[var(--k-surface)] border border-[var(--k-border)] text-[var(--k-text)] text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#1a73e8]/25">
     <option value="local">Belediye (Yerel) Seçimleri</option>
     <option value="presidential">Cumhurbaşkanlığı Seçimleri</option>
     <option value="parliamentary">Milletvekili (Genel) Seçimleri</option>
 </select>
-                </div>
-
-                <div id="district-container" class="hidden glass-panel p-4 rounded-xl shrink-0 border-[#d2e3fc]">
-                    <label class="text-[#1967d2] text-xs font-bold mb-2 block uppercase tracking-wider">🎯 Kılcal Damar</label>
-                    <select id="districtSelect" class="w-full bg-white text-[#202124] p-2 rounded-lg border border-[#dadce0] focus:border-[#1a73e8] outline-none transition" onchange="changeDistrict()">
-                        <option value="">TÜM İL (Makro Analiz)</option>
-                    </select>
-                </div>
-
-                <div class="glass-panel p-4 rounded-xl flex flex-col shrink-0 relative overflow-hidden border-[#fad2cf]">
-                    <div class="absolute inset-0 bg-[#fce8e6]/40 pointer-events-none"></div>
-                    <div class="flex items-center gap-2 mb-3 z-10">
-                        <span class="text-xl">🚨</span>
-                        <h3 class="text-[#c5221f] font-bold text-sm tracking-wide">SAHA ANKETİ GİRİŞİ</h3>
                     </div>
-                    <div class="space-y-2 z-10">
-                        <div class="flex items-center justify-between text-xs"><span class="text-[#b06000]">İktidar/Mhfz:</span> <input type="number" id="poll-a" placeholder="%" class="w-16 bg-white border border-[#dadce0] rounded p-1 text-center text-[#202124] outline-none focus:border-[#c5221f]"></div>
-                        <div class="flex items-center justify-between text-xs"><span class="text-[#c5221f]">Ana Muhalefet:</span> <input type="number" id="poll-b" placeholder="%" class="w-16 bg-white border border-[#dadce0] rounded p-1 text-center text-[#202124] outline-none focus:border-[#c5221f]"></div>
-                        <div class="flex items-center justify-between text-xs"><span class="text-[#1967d2]">Tepki/Mllytçi:</span> <input type="number" id="poll-c" placeholder="%" class="w-16 bg-white border border-[#dadce0] rounded p-1 text-center text-[#202124] outline-none focus:border-[#c5221f]"></div>
-                        <div class="flex items-center justify-between text-xs"><span class="text-[#5f6368]">Kararsız:</span> <input type="number" id="poll-d" placeholder="%" class="w-16 bg-white border border-[#dadce0] rounded p-1 text-center text-[#202124] outline-none focus:border-[#c5221f]"></div>
+                    <div id="district-container" class="hidden glass-panel p-4 rounded-xl shrink-0 border border-[#d2e3fc] dark:border-[#3c4043]">
+                        <label class="text-[#1967d2] dark:text-[#8ab4f8] text-xs font-bold mb-2 block uppercase tracking-wider">🎯 Kılcal Damar</label>
+                        <select id="districtSelect" class="w-full bg-[var(--k-surface)] text-[var(--k-text)] p-2 rounded-lg border border-[var(--k-border)] focus:border-[#1a73e8] outline-none transition" onchange="changeDistrict()">
+                            <option value="">TÜM İL (Makro Analiz)</option>
+                        </select>
                     </div>
-                    
-                    <button onclick="fetchWikiPoll(event)" class="mt-4 w-full bg-white hover:bg-[#f8f9fa] border border-[#dadce0] text-[#202124] font-bold py-2 rounded-lg text-xs transition z-10 flex justify-center items-center gap-2">
-                        <span class="text-lg text-[#1967d2]">🕸️</span> Wikipedia'dan Çek
-                    </button>
+                    <div class="glass-panel p-4 rounded-xl flex flex-col shrink-0 relative overflow-hidden border border-[#fad2cf] md:col-span-2">
+                        <div class="absolute inset-0 bg-[#fce8e6]/40 pointer-events-none dark:bg-[#fce8e6]/10"></div>
+                        <div class="flex items-center gap-2 mb-3 z-10">
+                            <span class="text-xl">🚨</span>
+                            <h3 class="text-[#c5221f] font-bold text-sm tracking-wide">SAHA ANKETİ GİRİŞİ</h3>
+                        </div>
+                        <div class="space-y-2 z-10 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <div class="flex flex-col text-xs gap-1"><span class="text-[#b06000]">Sağ blok</span><input type="number" id="poll-a" placeholder="%" class="w-full bg-[var(--k-surface)] border border-[var(--k-border)] rounded p-1 text-center text-[var(--k-text)] outline-none" /></div>
+                            <div class="flex flex-col text-xs gap-1"><span class="text-[#c5221f]">Ana muhal.</span><input type="number" id="poll-b" placeholder="%" class="w-full bg-[var(--k-surface)] border border-[var(--k-border)] rounded p-1 text-center text-[var(--k-text)] outline-none" /></div>
+                            <div class="flex flex-col text-xs gap-1"><span class="text-[#1967d2]">Kürt/sol</span><input type="number" id="poll-c" placeholder="%" class="w-full bg-[var(--k-surface)] border border-[var(--k-border)] rounded p-1 text-center text-[var(--k-text)] outline-none" /></div>
+                            <div class="flex flex-col text-xs gap-1"><span class="text-[#5f6368]">Bağımsız</span><input type="number" id="poll-d" placeholder="%" class="w-full bg-[var(--k-surface)] border border-[var(--k-border)] rounded p-1 text-center text-[var(--k-text)] outline-none" /></div>
+                        </div>
+                        <button onclick="fetchWikiPoll(event)" class="mt-4 w-full bg-[var(--k-surface)] hover:opacity-90 border border-[var(--k-border)] text-[var(--k-text)] font-bold py-2 rounded-lg text-xs transition z-10 flex justify-center items-center gap-2">
+                            <span class="text-lg text-[#1967d2]">🕸️</span> Wikipedia'dan Çek
+                        </button>
+                        <button onclick="triggerPollRadar()" class="mt-2 w-full bg-[#c5221f] hover:bg-[#a50e0e] text-white font-bold py-2 rounded-lg text-xs transition z-10 shadow-sm">
+                            ÇAPRAZ ANALİZİ BAŞLAT
+                        </button>
+                    </div>
+                </div>
+            </div>
 
-                    <button onclick="triggerPollRadar()" class="mt-2 w-full bg-[#c5221f] hover:bg-[#a50e0e] text-white font-bold py-2 rounded-lg text-xs transition z-10 shadow-sm">
-                        ÇAPRAZ ANALİZİ BAŞLAT
-                    </button>
+            <div class="geo-command-panel w-full xl:w-[min(40vw,24rem)] shrink-0 glass-panel rounded-xl border border-[var(--k-border)] flex flex-col min-h-[340px] xl:min-h-[460px] overflow-hidden">
+                <div class="flex border-b border-[var(--k-border)] shrink-0">
+                    <button type="button" id="tab-political" class="flex-1 py-3 text-xs font-bold uppercase tracking-wide k-tab-btn k-tab-active" onclick="switchGeoTab('political')">Siyasal Dinamikler</button>
+                    <button type="button" id="tab-memory" class="flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wide k-tab-btn opacity-90 leading-tight" onclick="switchGeoTab('memory')">Hafıza (Wiki)</button>
+                    <button type="button" id="tab-newspulse" class="flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wide k-tab-btn opacity-90 leading-tight" onclick="switchGeoTab('newspulse')"><span class="pulse-dot"></span>Saha Nabzı</button>
+                </div>
+                <div id="geo-panel-political" class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                    <p class="text-[11px] text-[var(--k-text-secondary)]">YSK (2009–2024 yerel) ve TÜİK — haritadan il seçildiğinde coğrafi sentez yüklenir.</p>
+                    <div class="h-[220px] relative w-full"><canvas id="geo-ysk-chart"></canvas></div>
+                    <div id="geo-tuik-box" class="text-xs space-y-2 border border-[var(--k-border)] rounded-lg p-3 bg-[#f8f9fa] dark:bg-[#1a1a1f] text-[var(--k-text)]"></div>
+                </div>
+                <div id="geo-panel-memory" class="hidden flex-1 overflow-y-auto p-4 flex flex-col min-h-0 custom-scrollbar">
+                    <div id="geo-osint-wrap" class="hidden flex-1 flex flex-col items-center justify-center gap-3 py-10 min-h-[200px]">
+                        <div class="geo-osint-radar" aria-hidden="true"></div>
+                        <p class="text-xs font-bold uppercase tracking-widest text-[#1967d2] dark:text-[#8ab4f8] text-center">OSINT Verileri Derleniyor...</p>
+                        <p class="text-[10px] text-[var(--k-text-secondary)] text-center max-w-[17rem]">tr.wikipedia.org — giriş özeti (düz metin, kısaltılmış)</p>
+                    </div>
+                    <div id="geo-wiki-report" class="hidden geo-wiki-report flex-1 min-h-0"></div>
+                    <p id="geo-wiki-fallback" class="text-xs text-[var(--k-text-secondary)] italic py-6 text-center hidden leading-relaxed"></p>
+                </div>
+                <div id="geo-panel-newspulse" class="hidden flex-1 overflow-y-auto p-4 flex flex-col min-h-0 custom-scrollbar">
+                    <div id="news-pulse-loading" class="hidden flex-1 flex flex-col items-center justify-center gap-3 py-10 min-h-[200px]">
+                        <div class="geo-osint-radar" aria-hidden="true"></div>
+                        <p class="text-xs font-bold uppercase tracking-widest text-[#ea4335] text-center">Saha Nabzı Taranıyor...</p>
+                        <p class="text-[10px] text-[var(--k-text-secondary)] text-center max-w-[17rem]">Google News RSS — son dakika haberleri derleniyor</p>
+                    </div>
+                    <div id="news-pulse-content" class="flex-1 min-h-0"></div>
                 </div>
             </div>
         </div>
@@ -128,10 +236,10 @@
                     <div><div class="flex justify-between text-xs text-[#5f6368] mb-2"><span>Üniversite Mezunu Artışı</span><span id="val-uni" class="text-[#202124] font-bold">% 0</span></div><input type="range" id="sim-uni" min="-5" max="15" value="0" class="w-full h-1.5 bg-[#e8eaed] rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="runSimulation()"></div>
                 </div>
                 <div class="space-y-3 bg-[#f8f9fa] p-4 rounded-lg border border-[#dadce0]">
-                    <div><div class="flex justify-between text-xs font-bold mb-1"><span class="text-[#b06000]">İktidar / Muhafazakar</span><span id="vote-a" class="text-[#b06000]">% 45.0</span></div><div class="w-full bg-[#e8eaed] rounded-full h-2"><div id="bar-a" class="bg-orange-500 h-2 rounded-full transition-all duration-300" style="width: 45%"></div></div></div>
-                    <div><div class="flex justify-between text-xs font-bold mb-1"><span class="text-[#c5221f]">Ana Muhalefet</span><span id="vote-b" class="text-[#c5221f]">% 30.0</span></div><div class="w-full bg-[#e8eaed] rounded-full h-2"><div id="bar-b" class="bg-red-500 h-2 rounded-full transition-all duration-300" style="width: 30%"></div></div></div>
-                    <div><div class="flex justify-between text-xs font-bold mb-1"><span class="text-[#1967d2]">Tepki / Milliyetçi</span><span id="vote-c" class="text-[#1967d2]">% 15.0</span></div><div class="w-full bg-[#e8eaed] rounded-full h-2"><div id="bar-c" class="bg-blue-500 h-2 rounded-full transition-all duration-300" style="width: 15%"></div></div></div>
-                    <div><div class="flex justify-between text-xs font-bold mb-1"><span class="text-[#5f6368]">Kararsız / Diğer</span><span id="vote-d" class="text-[#5f6368]">% 10.0</span></div><div class="w-full bg-[#e8eaed] rounded-full h-2"><div id="bar-d" class="bg-gray-500 h-2 rounded-full transition-all duration-300" style="width: 10%"></div></div></div>
+                    <div><div class="flex justify-between text-xs font-bold mb-1"><span class="text-[#b06000]">İktidar / Sağ blok</span><span id="vote-a" class="text-[#b06000]">% 45.0</span></div><div class="w-full bg-[#e8eaed] rounded-full h-2"><div id="bar-a" class="bg-orange-500 h-2 rounded-full transition-all duration-300" style="width: 45%"></div></div></div>
+                    <div><div class="flex justify-between text-xs font-bold mb-1"><span class="text-[#c5221f]">Ana muhalefet</span><span id="vote-b" class="text-[#c5221f]">% 30.0</span></div><div class="w-full bg-[#e8eaed] rounded-full h-2"><div id="bar-b" class="bg-red-500 h-2 rounded-full transition-all duration-300" style="width: 30%"></div></div></div>
+                    <div><div class="flex justify-between text-xs font-bold mb-1"><span class="text-[#1967d2]">Kürt / Sol</span><span id="vote-c" class="text-[#1967d2]">% 15.0</span></div><div class="w-full bg-[#e8eaed] rounded-full h-2"><div id="bar-c" class="bg-blue-500 h-2 rounded-full transition-all duration-300" style="width: 15%"></div></div></div>
+                    <div><div class="flex justify-between text-xs font-bold mb-1"><span class="text-[#5f6368]">Bağımsız / Diğer</span><span id="vote-d" class="text-[#5f6368]">% 10.0</span></div><div class="w-full bg-[#e8eaed] rounded-full h-2"><div id="bar-d" class="bg-gray-500 h-2 rounded-full transition-all duration-300" style="width: 10%"></div></div></div>
                 </div>
             </div>
         </div>
@@ -141,6 +249,195 @@
         let currentSelectedProvince = "";
         let baseVotes = { a: 45.0, b: 30.0, c: 15.0, d: 10.0 };
         let lastAnalyzedState = { province: "", district: "", type: "" };
+        let mapLayerMode = "election";
+        let geoYskChart = null;
+        let geoCurrentTab = "political";
+        let newsPulseLoaded = false;
+        let newsPulseProvince = "";
+
+        function escapeGeoHtml(s) {
+            if (s == null) return "";
+            return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+        }
+
+        function setMapLayer(mode) {
+            mapLayerMode = mode === "sociological" ? "sociological" : "election";
+            const b1 = document.getElementById("layer-election");
+            const b2 = document.getElementById("layer-socio");
+            if (b1 && b2) {
+                b1.classList.toggle("k-layer-active", mapLayerMode === "election");
+                b2.classList.toggle("k-layer-active", mapLayerMode === "sociological");
+                b1.classList.toggle("opacity-90", mapLayerMode !== "election");
+                b2.classList.toggle("opacity-90", mapLayerMode !== "sociological");
+            }
+            if (geojsonLayer) {
+                geojsonLayer.setStyle(() => geoFeatureStyle());
+            }
+        }
+
+        function switchGeoTab(tab) {
+            geoCurrentTab = tab;
+            const panels = ['political', 'memory', 'newspulse'];
+            panels.forEach(function(p) {
+                const panel = document.getElementById('geo-panel-' + p);
+                const btn   = document.getElementById('tab-' + p);
+                if (panel) panel.classList.toggle('hidden', p !== tab);
+                if (btn)   btn.classList.toggle('k-tab-active', p === tab);
+            });
+            // Saha Nabzı sekmesine geçildiğinde ve il seçiliyse otomatik yükle
+            if (tab === 'newspulse' && currentSelectedProvince && !newsPulseLoaded) {
+                loadNewsPulse(currentSelectedProvince);
+            }
+        }
+
+        function wikiScopeLabel(scope) {
+            if (scope === "district") return "Hedef: ilçe maddesi";
+            return "Hedef: il maddesi";
+        }
+
+        function renderWikiHistoricalContext(hc, provinceName, districtName) {
+            const report = document.getElementById("geo-wiki-report");
+            const fallback = document.getElementById("geo-wiki-fallback");
+            if (!report || !fallback) return;
+            report.classList.add("hidden");
+            fallback.classList.add("hidden");
+            report.innerHTML = "";
+
+            const d = districtName && String(districtName).trim();
+            const regionLine = d ? (provinceName + " / " + d) : provinceName;
+
+            if (!hc || !hc.ok) {
+                var msg = "Vikipedi verisi alınamadı.";
+                var code = hc && hc.error;
+                if (code === "page_not_found") {
+                    msg = "Bu bölge için tr.wikipedia.org'da doğrudan madde bulunamadı (başlık eşleşmedi).";
+                } else if (code === "empty_content") {
+                    msg = "Madde bulundu ancak giriş özeti (extract) boş veya işlenemedi.";
+                } else if (code === "province_required") {
+                    msg = "İl bilgisi gerekli.";
+                } else if (hc && hc.error) {
+                    msg = "Kaynak hatası: " + escapeGeoHtml(String(hc.error));
+                }
+                fallback.textContent = msg;
+                fallback.classList.remove("hidden");
+                return;
+            }
+
+            var parts = [];
+            parts.push('<p class="geo-wiki-title">' + escapeGeoHtml(String(regionLine).toUpperCase()) + '</p>');
+            var metaBits = [wikiScopeLabel(hc.scope || "")];
+            if (hc.title) metaBits.push(escapeGeoHtml(hc.title));
+            parts.push('<p class="geo-wiki-meta">' + metaBits.join(" · ") + '</p>');
+            if (hc.page_url) {
+                parts.push('<p class="geo-wiki-meta mb-3"><a href="' + escapeGeoHtml(hc.page_url) + '" target="_blank" rel="noopener noreferrer">Kaynak maddeyi aç →</a></p>');
+            }
+            if (hc.summary) {
+                parts.push('<div class="geo-wiki-block"><h4>Bölge Özeti</h4><div class="geo-wiki-body">' + escapeGeoHtml(hc.summary) + '</div></div>');
+            } else {
+                fallback.textContent = "Özet metni yok.";
+                fallback.classList.remove("hidden");
+                return;
+            }
+            report.innerHTML = parts.join("");
+            report.classList.remove("hidden");
+        }
+
+        async function loadGeoSynthesis(provinceName, districtName) {
+            if (!provinceName) return;
+            const spin = document.getElementById("geo-osint-wrap");
+            const report = document.getElementById("geo-wiki-report");
+            const fallback = document.getElementById("geo-wiki-fallback");
+            if (spin) spin.classList.remove("hidden");
+            if (report) {
+                report.classList.add("hidden");
+                report.innerHTML = "";
+            }
+            if (fallback) {
+                fallback.classList.add("hidden");
+                fallback.textContent = "";
+            }
+            try {
+                const url = "/api/v1/election/geo-synthesis?province=" + encodeURIComponent(provinceName) + "&district=" + encodeURIComponent(districtName || "");
+                const res = await fetch(url, { headers: { Accept: "application/json" } });
+                const data = await res.json();
+                if (!res.ok) {
+                    const msg = (data && data.detail) ? (Array.isArray(data.detail) ? data.detail.map(function (d) { return d.msg || d; }).join(" ") : data.detail) : "HTTP " + res.status;
+                    throw new Error(msg);
+                }
+                renderYskChart(data.ysk && data.ysk.chartjs);
+                renderTuikBox(data.tuik);
+                renderWikiHistoricalContext(data.historical_context, provinceName, districtName || "");
+            } catch (e) {
+                console.warn("geo-synthesis:", e);
+                renderYskChart(null);
+                const box = document.getElementById("geo-tuik-box");
+                if (box) box.textContent = "Coğrafi sentez yüklenemedi.";
+                renderWikiHistoricalContext({ ok: false, error: String(e && e.message ? e.message : e) }, provinceName, districtName || "");
+            } finally {
+                if (spin) spin.classList.add("hidden");
+            }
+        }
+
+        function renderYskChart(chartjs) {
+            const canvas = document.getElementById("geo-ysk-chart");
+            if (!canvas || typeof Chart === "undefined") return;
+            if (geoYskChart) {
+                geoYskChart.destroy();
+                geoYskChart = null;
+            }
+            if (!chartjs || !chartjs.labels || !chartjs.labels.length) return;
+            const dark = document.documentElement.classList.contains("dark-mode");
+            const tick = dark ? "#9aa0a6" : "#5f6368";
+            const grid = dark ? "rgba(60,64,67,0.45)" : "rgba(0,0,0,0.06)";
+            geoYskChart = new Chart(canvas, {
+                type: "line",
+                data: chartjs,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: dark ? "#e8eaed" : "#202124", boxWidth: 12 } } },
+                    scales: {
+                        x: { ticks: { color: tick }, grid: { color: grid } },
+                        y: { ticks: { color: tick }, grid: { color: grid }, title: { display: true, text: "%", color: tick } },
+                    },
+                },
+            });
+        }
+
+        function renderTuikBox(tuik) {
+            const box = document.getElementById("geo-tuik-box");
+            if (!box) return;
+            if (!tuik) {
+                box.textContent = "TÜİK verisi yok.";
+                return;
+            }
+            const parts = [];
+            if (tuik.sources && tuik.sources.length) {
+                parts.push('<p class="font-bold text-[10px] uppercase tracking-wider opacity-80">Kaynak</p><p class="break-all">' + tuik.sources.map(escapeGeoHtml).join(", ") + "</p>");
+            }
+            const db = tuik.database || [];
+            if (db.length) {
+                const last = db[0];
+                parts.push('<p class="font-bold mt-2">TÜİK (veritabanı)</p><ul class="list-disc pl-4 space-y-1">');
+                parts.push("<li>Yıl: " + escapeGeoHtml(String(last.year || "")) + "</li>");
+                parts.push("<li>Nüfus: " + escapeGeoHtml(String(last.total_population)) + "</li>");
+                parts.push("<li>İşsizlik %: " + escapeGeoHtml(String(last.unemployment_rate)) + "</li>");
+                parts.push("<li>Üniversite %: " + escapeGeoHtml(String(last.university_grad_pct)) + "</li>");
+                parts.push("<li>Yabancı nüfus %: " + escapeGeoHtml(String(last.foreign_pop_pct)) + "</li>");
+                parts.push("</ul>");
+            }
+            const cj = tuik.json_files && tuik.json_files.city;
+            const dj = tuik.json_files && tuik.json_files.district;
+            if (cj) {
+                const s = JSON.stringify(cj);
+                parts.push('<p class="font-bold mt-2 text-[10px] uppercase">İl özeti (JSON)</p><pre class="text-[10px] whitespace-pre-wrap break-all max-h-28 overflow-auto opacity-90">' + escapeGeoHtml(s.slice(0, 1200)) + (s.length > 1200 ? "…" : "") + "</pre>");
+            }
+            if (dj) {
+                const s = JSON.stringify(dj);
+                parts.push('<p class="font-bold mt-2 text-[10px] uppercase">İlçe özeti (JSON)</p><pre class="text-[10px] whitespace-pre-wrap break-all max-h-28 overflow-auto opacity-90">' + escapeGeoHtml(s.slice(0, 1200)) + (s.length > 1200 ? "…" : "") + "</pre>");
+            }
+            box.innerHTML = parts.length ? parts.join("") : "TÜİK özeti bu seçim için bulunamadı.";
+        }
 
         async function loadDistricts(provinceName) {
             try {
@@ -148,14 +445,14 @@
                 const data = await res.json();
                 const distSelect = document.getElementById('districtSelect');
                 const distContainer = document.getElementById('district-container');
-                distSelect.innerHTML = '<option value="">TÜM İL (Makro Analiz)</option>'; 
-                if(data.districts && data.districts.length > 0) {
+                distSelect.innerHTML = '<option value="">TÜM İL (Makro Analiz)</option>';
+                if (data.districts && data.districts.length > 0) {
                     data.districts.forEach(d => { distSelect.innerHTML += `<option value="${d}">${d}</option>`; });
-                    distContainer.classList.remove('hidden'); 
+                    distContainer.classList.remove('hidden');
                 } else {
-                    distContainer.classList.add('hidden'); 
+                    distContainer.classList.add('hidden');
                 }
-            } catch(e) { console.error("İlçe yükleme hatası:", e); }
+            } catch (e) { console.error("İlçe yükleme hatası:", e); }
         }
         
         const turkeyBounds = L.latLngBounds([35.5, 25.5], [42.5, 45.0]);
@@ -171,6 +468,15 @@
                 ? { color: '#3c4043', weight: 1, fillColor: '#2a2a30', fillOpacity: 0.9 }
                 : { color: '#dadce0', weight: 1, fillColor: '#f1f3f4', fillOpacity: 0.85 };
         }
+        function geoSocioStyle() {
+            const dark = document.documentElement.classList.contains('dark-mode');
+            return dark
+                ? { color: '#5f6368', weight: 1, fillColor: '#1a2e1a', fillOpacity: 0.88 }
+                : { color: '#b7c9b7', weight: 1, fillColor: '#e8f5e9', fillOpacity: 0.82 };
+        }
+        function geoFeatureStyle() {
+            return mapLayerMode === 'sociological' ? geoSocioStyle() : geoBaseStyle();
+        }
         let baseLayer = L.tileLayer(mapTileUrl(document.documentElement.classList.contains('dark-mode')), { bounds: turkeyBounds }).addTo(map);
 
         let geojsonLayer;
@@ -178,20 +484,26 @@
             .then(response => response.json())
             .then(data => {
                 geojsonLayer = L.geoJSON(data, {
-                    style: function () { return geoBaseStyle(); },
+                    style: function () { return geoFeatureStyle(); },
                     onEachFeature: function (feature, layer) {
                         layer.bindTooltip(feature.properties.name, { permanent: true, direction: 'center', className: 'city-label' });
                         layer.on('mouseover', function (e) {
                             const dark = document.documentElement.classList.contains('dark-mode');
                             const l = e.target;
-                            if (dark) {
+                            if (mapLayerMode === 'sociological') {
+                                if (dark) {
+                                    l.setStyle({ fillColor: '#2d4a2d', fillOpacity: 0.95, weight: 2, color: '#81c784' });
+                                } else {
+                                    l.setStyle({ fillColor: '#c8e6c9', fillOpacity: 0.95, weight: 2, color: '#2e7d32' });
+                                }
+                            } else if (dark) {
                                 l.setStyle({ fillColor: '#303438', fillOpacity: 0.95, weight: 2, color: '#8ab4f8' });
                             } else {
                                 l.setStyle({ fillColor: '#e8f0fe', fillOpacity: 0.95, weight: 2, color: '#1967d2' });
                             }
                             l.bringToFront();
                         });
-                        layer.on('mouseout', function (e) { geojsonLayer.resetStyle(e.target); });
+                        layer.on('mouseout', function (e) { e.target.setStyle(geoFeatureStyle()); });
                         layer.on('click', function (e) { triggerAnalysis(feature.properties.name); });
                     }
                 }).addTo(map);
@@ -204,7 +516,18 @@
                 baseLayer = L.tileLayer(mapTileUrl(d), { bounds: turkeyBounds }).addTo(map);
             }
             if (geojsonLayer) {
-                geojsonLayer.setStyle(function () { return geoBaseStyle(); });
+                geojsonLayer.setStyle(function () { return geoFeatureStyle(); });
+            }
+            if (geoYskChart) {
+                const tick = d ? '#9aa0a6' : '#5f6368';
+                const grid = d ? 'rgba(60,64,67,0.45)' : 'rgba(0,0,0,0.06)';
+                geoYskChart.options.plugins.legend.labels.color = d ? '#e8eaed' : '#202124';
+                geoYskChart.options.scales.x.ticks.color = tick;
+                geoYskChart.options.scales.x.grid.color = grid;
+                geoYskChart.options.scales.y.ticks.color = tick;
+                geoYskChart.options.scales.y.grid.color = grid;
+                if (geoYskChart.options.scales.y.title) geoYskChart.options.scales.y.title.color = tick;
+                geoYskChart.update();
             }
         });
 
@@ -349,7 +672,10 @@
         }
 
         async function triggerAnalysis(provinceName, forceRefresh = false) {
-            if (currentSelectedProvince !== provinceName) await loadDistricts(provinceName);
+            if (currentSelectedProvince !== provinceName) {
+                await loadDistricts(provinceName);
+                newsPulseLoaded = false; // il de\u011fi\u015fti, saha nabz\u0131n\u0131 resetle
+            }
             currentSelectedProvince = provinceName;
             
             const electionType = document.getElementById('electionTypeSelect').value;
@@ -411,13 +737,109 @@
                 } else {
                      document.getElementById('ai-content').innerHTML = analysisHtml + '<span class="text-[#5f6368]">Analiz metni boş döndü.</span>';
                 }
-                
+
                 lastAnalyzedState = { province: provinceName, district: districtName, type: electionType };
+                try {
+                    await loadGeoSynthesis(provinceName, districtName || "");
+                } catch (geoErr) {
+                    console.warn("geo-synthesis (post-analyze):", geoErr);
+                }
+                // Saha Nabzı: bağımsız ve fail-safe (ana akışı etkilemez)
+                loadNewsPulse(provinceName).catch(function(e) { console.warn('news-pulse:', e); });
             } catch (error) {
                 loadingIndicator.classList.add('hidden');
                 document.getElementById('ai-content').classList.remove('hidden');
                 document.getElementById('ai-content').innerHTML = `<span class="text-[#c5221f]">Bağlantı hatası. API'yi kontrol edin.</span>`;
             }
+        }
+
+        /* ======================================================= */
+        /* CANLI SAHA NABZI (News Pulse)                           */
+        /* ======================================================= */
+        async function loadNewsPulse(provinceName) {
+            if (!provinceName) return;
+            // Aynı il zaten yüklüyse tekrar çekme
+            if (newsPulseProvince === provinceName && newsPulseLoaded) return;
+
+            newsPulseProvince = provinceName;
+            newsPulseLoaded = false;
+
+            var loadEl = document.getElementById('news-pulse-loading');
+            var contentEl = document.getElementById('news-pulse-content');
+            if (loadEl) loadEl.classList.remove('hidden');
+            if (contentEl) contentEl.innerHTML = '';
+
+            try {
+                var url = '/api/election/news-pulse?province=' + encodeURIComponent(provinceName) + '&max_items=8';
+                var res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                var data = await res.json();
+                renderNewsPulse(data, provinceName);
+                newsPulseLoaded = true;
+            } catch (err) {
+                console.warn('news-pulse fetch error:', err);
+                renderNewsPulse({ ok: false, items: [], error: 'Bağlantı hatası: ' + (err.message || err) }, provinceName);
+            } finally {
+                if (loadEl) loadEl.classList.add('hidden');
+            }
+        }
+
+        function renderNewsPulse(data, provinceName) {
+            var container = document.getElementById('news-pulse-content');
+            if (!container) return;
+
+            var html = [];
+
+            // Başlık
+            html.push('<div class="news-pulse-header">');
+            html.push('  <h4><span class="pulse-dot"></span> ' + escapeGeoHtml((provinceName || '').toUpperCase()) + ' SAHA NABZI</h4>');
+            html.push('  <button class="news-refresh-btn" onclick="newsPulseLoaded=false; loadNewsPulse(\'' + escapeGeoHtml(provinceName).replace(/'/g, "\\'") + '\')" title="Yenile">🔄 Yenile</button>');
+            html.push('</div>');
+
+            // Hata durumu
+            if (!data.ok && data.error) {
+                html.push('<div class="news-pulse-empty">');
+                html.push('  <div class="empty-icon">⚠️</div>');
+                html.push('  <p class="text-xs">' + escapeGeoHtml(data.error) + '</p>');
+                html.push('  <p class="text-[10px] mt-2 opacity-60">Ana analiz motoru etkilenmemiştir.</p>');
+                html.push('</div>');
+                container.innerHTML = html.join('');
+                return;
+            }
+
+            // Boş sonuç
+            if (!data.items || data.items.length === 0) {
+                html.push('<div class="news-pulse-empty">');
+                html.push('  <div class="empty-icon">📭</div>');
+                html.push('  <p class="text-xs font-medium">Bu il için güncel haber bulunamadı.</p>');
+                html.push('  <p class="text-[10px] mt-1 opacity-60">Google News RSS — son 48 saat tarandı.</p>');
+                html.push('</div>');
+                container.innerHTML = html.join('');
+                return;
+            }
+
+            // Haber kartları
+            data.items.forEach(function(item, idx) {
+                var cardUrl = item.url ? escapeGeoHtml(item.url) : '#';
+                html.push('<a href="' + cardUrl + '" target="_blank" rel="noopener noreferrer" class="news-card block" style="text-decoration:none; animation: fadeSlideIn 0.3s ease-out ' + (idx * 0.06) + 's both;">');
+                html.push('  <div class="news-title">' + escapeGeoHtml(item.title || 'Başlık yok') + '</div>');
+                if (item.snippet) {
+                    html.push('  <div class="news-snippet">' + escapeGeoHtml(item.snippet).substring(0, 200) + '</div>');
+                }
+                html.push('  <div class="news-meta">');
+                if (item.source) {
+                    html.push('    <span class="news-source-badge">' + escapeGeoHtml(item.source) + '</span>');
+                }
+                if (item.age_label) {
+                    html.push('    <span class="news-time">🕐 ' + escapeGeoHtml(item.age_label) + '</span>');
+                }
+                html.push('  </div>');
+                html.push('</a>');
+            });
+
+            // Alt bilgi
+            html.push('<p class="text-[10px] text-center mt-3 opacity-50">Kaynak: Google News RSS · ' + data.items.length + ' haber · ' + new Date().toLocaleTimeString('tr-TR') + '</p>');
+
+            container.innerHTML = html.join('');
         }
     </script>
 </body>

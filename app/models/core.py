@@ -8,6 +8,7 @@ from sqlalchemy import (
     String,
     Boolean,
     DateTime,
+    Date,
     Float,
     ForeignKey,
     Integer,
@@ -16,12 +17,12 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, synonym
 from pgvector.sqlalchemy import VECTOR
 
 from app.models.base_class import Base
 
-# Gemini models/embedding-001 çıktı boyutu (RAG / anlamsal arama)
+# Gemini gemini-embedding-001 output_dimensionality (RAG / pgvector)
 EMBEDDING_DIMENSION = 768
 
 class SourceType(str, enum.Enum):
@@ -36,16 +37,29 @@ class ContentType(str, enum.Enum):
     article = "article"
     reply = "reply"
 
-class Source(Base):
+class IntelligenceSource(Base):
+    """
+    İstihbarat / tarama kaynağı (RSS, X/Twitter, YouTube, scraper hedefi).
+    Tablo adı `sources` — içerikler `source_id` ile bağlanır.
+    """
+
     __tablename__ = "sources"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    type = Column(String, nullable=False)  # twitter_self, twitter_competitor, twitter_trend, youtube, rss
+    type = Column(String, nullable=False)  # twitter_self, rss, youtube, scraper, …
     name = Column(String, nullable=False)
     url = Column(String, nullable=False)
     domain = Column(String, default="general")  # politics, sports, economy, general
-    # Karargah: Rakip | Haber Ajansı | Şahıs-Hedef | Genel Gündem (UI / AI bağlamı)
     source_category = Column(String, nullable=False, default="general_agenda")
     active = Column(Boolean, default=True)
+    last_fetched_at = Column(DateTime, nullable=True)
+
+    source_type = synonym("type")
+    url_or_handle = synonym("url")
+    is_active = synonym("active")
+
+
+# Geriye dönük import yolu
+Source = IntelligenceSource
 
 class ElectionCategory(str, enum.Enum):
     presidential = "presidential"
@@ -354,4 +368,72 @@ class DistrictDemographics(Base):
     foreign_pop_pct = Column(Float, default=0.0)
     source_json_file = Column(String, default="district_stats.json", nullable=False)
     source_category = Column(String, default="tuik_district_aggregate", nullable=False)
+
+
+# --- FAZ 4.1: Makro veri ve anket boru hattı ---
+class MacroIndicator(Base):
+    """TCMB / TÜİK / ENAG vb. makro göstergeler (zaman serisi satırları)."""
+
+    __tablename__ = "macro_indicators"
+    __table_args__ = (
+        Index("ix_macro_indicators_type_recorded", "indicator_type", "recorded_date"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    indicator_type = Column(String, nullable=False, index=True)
+    value = Column(Float, nullable=False)
+    recorded_date = Column(DateTime, nullable=False, index=True)
+    source = Column(String, nullable=False, default="unknown")
+
+
+class PollData(Base):
+    """Saha araştırması: halkın şikâyetleri (grievances) ve talepleri (demands) dağılımı (JSONB)."""
+
+    __tablename__ = "poll_data"
+    __table_args__ = (
+        Index("ix_poll_data_published", "published_date"),
+        Index("ix_poll_data_company_type", "company", "poll_type"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company = Column(String, nullable=False, index=True)
+    topic = Column(String, nullable=False)
+    poll_type = Column(String, nullable=False, default="grievances", index=True)
+    results = Column(JSONB, nullable=False)
+    published_date = Column(Date, nullable=False)
+
+
+class SystemAlert(Base):
+    """Sistem içi bildirim — anomali ve operasyonel uyarılar (harici SMS/e-posta yok)."""
+
+    __tablename__ = "system_alerts"
+    __table_args__ = (
+        Index("ix_system_alerts_is_read_created", "is_read", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    alert_type = Column(String, nullable=False, index=True)
+    severity = Column(String, nullable=False, default="medium")  # low | medium | high | critical
+    message = Column(Text, nullable=False)
+    is_read = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class NisanyanDemographics(Base):
+    """
+    Nişanyan (Index Anatolicus) — yerleşim adı ve tarihsel/köken notları (talebe bağlı önbellek).
+    """
+
+    __tablename__ = "nisanyan_demographics"
+    __table_args__ = (
+        Index("ix_nisanyan_province_district", "province", "district"),
+        Index("ix_nisanyan_settlement", "settlement_name"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    province = Column(String, nullable=False, index=True)
+    district = Column(String, nullable=False, default="", index=True)
+    settlement_name = Column(String, nullable=False)
+    historical_name = Column(String, nullable=True)
+    cultural_origin = Column(Text, nullable=True)
 

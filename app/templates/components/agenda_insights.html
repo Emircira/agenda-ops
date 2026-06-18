@@ -1,0 +1,272 @@
+<!-- ================= GUNDEM ICGORULERI (Momentum / Kutuplasma / Naratif) =================
+     Ana sayfaya (#view-dashboard) kendini enjekte eder. LLM kullanmaz; /api/v1/pulse/*
+     istatistik uclarini okur. Ayrica tekrar eden 'Yapay Zeka Destekli Stratejik Analiz'
+     bolumunu (dedup karari geregi) gizler; 'Sistem Gundem Ozeti' kalir.
+     Satirlara tiklayinca 'Konu Analizi' sekmesi acilir (window.TopicAnalysis). -->
+<div id="agenda-insights" class="space-y-5 mb-8" style="display:none">
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <div class="flex items-center gap-2">
+      <span class="text-2xl">🧭</span>
+      <h2 class="text-lg font-bold text-[#202124] tracking-wide">GÜNDEM İÇGÖRÜLERİ</h2>
+      <span class="bg-[#e8f0fe] text-[#1967d2] text-[10px] px-2 py-0.5 rounded-full font-bold">YENİ</span>
+      <span class="text-[11px] text-[#5f6368] hidden sm:inline">• X/Twitter • LLM'siz istatistik • satıra tıkla → detay</span>
+    </div>
+    <div id="ai-window-chips" class="inline-flex rounded-full bg-[#f1f3f4] border border-[#dadce0] p-0.5 text-xs">
+      <button data-win="24h" class="ai-win px-3 py-1 rounded-full font-semibold">24s</button>
+      <button data-win="48h" class="ai-win px-3 py-1 rounded-full font-semibold">48s</button>
+      <button data-win="7d" class="ai-win px-3 py-1 rounded-full font-semibold">7g</button>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+    <!-- 1) Momentum Radari -->
+    <div class="bg-white border border-[#dadce0] rounded-xl p-4 shadow-sm">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-lg">📈</span>
+        <h3 class="font-bold text-[#202124] text-sm">Yükselen Gündem</h3>
+        <span class="text-[10px] text-[#5f6368] ml-auto">önceki döneme göre</span>
+      </div>
+      <div id="ai-momentum" class="space-y-2 text-sm text-[#5f6368]">Yükleniyor…</div>
+    </div>
+
+    <!-- 2) Kutuplasma / Catisma Haritasi -->
+    <div class="bg-white border border-[#dadce0] rounded-xl p-4 shadow-sm">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-lg">⚔️</span>
+        <h3 class="font-bold text-[#202124] text-sm">Kutuplaşma Haritası</h3>
+        <span class="text-[10px] text-[#5f6368] ml-auto">en bölücü özneler</span>
+      </div>
+      <div id="ai-polarization" class="space-y-3 text-sm text-[#5f6368]">Yükleniyor…</div>
+    </div>
+
+    <!-- 3) Naratif / Cerceve Savasi -->
+    <div class="bg-white border border-[#dadce0] rounded-xl p-4 shadow-sm">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-lg">🎭</span>
+        <h3 class="font-bold text-[#202124] text-sm">Naratif / Çerçeve Savaşı</h3>
+        <span class="text-[10px] text-[#5f6368] ml-auto">hangi çerçeveyle</span>
+      </div>
+      <div id="ai-frames" class="space-y-3 text-sm text-[#5f6368]">Yükleniyor…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var state = { window: "24h" };
+  var FRAME_COLORS = ["#1a73e8", "#ea4335", "#137333", "#b06000", "#7b1fa2", "#00897b", "#5f6368"];
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>\"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '\"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  // Bir satira tiklayinca 'Konu Analizi' sekmesini ac ve detayi yukle.
+  function openAnalysis(name, by) {
+    try {
+      if (window.AgendaOps && typeof window.AgendaOps.switchTab === "function") {
+        window.AgendaOps.switchTab("analysis", "Konu Analizi");
+      }
+      if (window.TopicAnalysis && typeof window.TopicAnalysis.open === "function") {
+        setTimeout(function () { window.TopicAnalysis.open(name, by); }, 80);
+      } else if (window.AgendaOps && typeof window.AgendaOps.showToast === "function") {
+        window.AgendaOps.showToast("Konu Analizi sekmesi henüz yüklenmedi.", "info");
+      }
+    } catch (e) {}
+  }
+
+  // innerHTML sonrasi [data-subject] satirlarina tiklama davranisi ekle.
+  function bindRows(containerId) {
+    var c = document.getElementById(containerId);
+    if (!c) return;
+    c.querySelectorAll("[data-subject]").forEach(function (row) {
+      row.classList.add("cursor-pointer");
+      row.addEventListener("click", function () {
+        openAnalysis(row.getAttribute("data-subject"), row.getAttribute("data-by") || "topic");
+      });
+    });
+  }
+
+  function sparkline(arr) {
+    if (!arr || arr.length < 2) return "";
+    var w = 84, h = 24, max = Math.max.apply(null, arr) || 1;
+    var step = w / (arr.length - 1);
+    var pts = arr.map(function (v, i) {
+      var x = (i * step).toFixed(1);
+      var y = (h - 2 - (v / max) * (h - 4)).toFixed(1);
+      return x + "," + y;
+    }).join(" ");
+    var last = arr[arr.length - 1], prev = arr[arr.length - 2];
+    var col = last >= prev ? "#137333" : "#c5221f";
+    return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" class="shrink-0">' +
+      '<polyline fill="none" stroke="' + col + '" stroke-width="1.6" points="' + pts + '"/></svg>';
+  }
+
+  function deltaBadge(t) {
+    if (t.trend === "new") {
+      return '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#e8f0fe] text-[#1967d2]">YENİ</span>';
+    }
+    if (t.delta_pct == null) return "";
+    var up = t.delta_pct >= 0;
+    var cls = up ? "bg-[#e6f4ea] text-[#137333]" : "bg-[#fce8e6] text-[#c5221f]";
+    var arrow = up ? "▲" : "▼";
+    return '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded ' + cls + '">' + arrow + " %" + Math.abs(t.delta_pct) + "</span>";
+  }
+
+  function api(path) {
+    return fetch("/api/v1/pulse/" + path + "?window=" + encodeURIComponent(state.window))
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+  }
+
+  function empty(msg) {
+    return '<div class="text-xs text-[#9aa0a6] py-3 text-center">' + esc(msg) + "</div>";
+  }
+
+  // ---- Momentum ----
+  function loadMomentum() {
+    var el = document.getElementById("ai-momentum");
+    if (!el) return;
+    el.innerHTML = "Yükleniyor…";
+    api("momentum").then(function (d) {
+      var rows = (d && d.topics) || [];
+      if (!rows.length) { el.innerHTML = empty("Bu pencerede yeterli veri yok."); return; }
+      el.innerHTML = rows.map(function (t) {
+        return '<div data-subject="' + esc(t.topic) + '" data-by="topic" class="flex items-center gap-2 py-1 border-b border-[#f1f3f4] last:border-0 hover:bg-[#f8f9fa] rounded">' +
+          '<div class="min-w-0 flex-1">' +
+            '<div class="flex items-center gap-1.5">' +
+              '<span class="font-semibold text-[#202124] text-[13px] truncate">' + esc(t.topic) + "</span>" + deltaBadge(t) +
+            "</div>" +
+            '<div class="text-[11px] text-[#5f6368]">' + t.current + " mention</div>" +
+          "</div>" +
+          sparkline(t.spark) +
+        "</div>";
+      }).join("");
+      bindRows("ai-momentum");
+    }).catch(function () { el.innerHTML = empty("Momentum verisi alınamadı."); });
+  }
+
+  // ---- Kutuplasma (target bazli, stance + sentiment) ----
+  function loadPolarization() {
+    var el = document.getElementById("ai-polarization");
+    if (!el) return;
+    el.innerHTML = "Yükleniyor…";
+    api("polarization").then(function (d) {
+      var rows = (d && d.topics) || [];
+      if (!rows.length) { el.innerHTML = empty("Net bir kutuplaşma tespit edilmedi."); return; }
+      el.innerHTML = rows.map(function (t) {
+        var lp = t.left_pct || 0, rp = (t.right_pct != null ? t.right_pct : Math.max(0, 100 - lp));
+        var basisBadge = (t.basis === "sentiment")
+          ? '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#fef7e0] text-[#b06000]" title="Tutum sinyali zayıf; duygu yarılmasına bakıldı">duygu</span>'
+          : '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#e8f0fe] text-[#1967d2]" title="Destek/karşı tutum yarılması">tutum</span>';
+        var crisis = (t.crisis_score && t.crisis_score >= 60)
+          ? '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#fce8e6] text-[#c5221f]">KRİZ</span>' : '';
+        return '<div data-subject="' + esc(t.subject) + '" data-by="target" class="hover:bg-[#f8f9fa] rounded p-1 -m-1">' +
+          '<div class="flex items-center justify-between mb-1 gap-2">' +
+            '<span class="font-semibold text-[#202124] text-[13px] truncate pr-1">' + esc(t.subject) + "</span>" +
+            '<span class="flex items-center gap-1 shrink-0">' + basisBadge + crisis +
+              '<span class="text-[10px] font-bold text-[#c5221f]">gerilim ' + t.polarization + "</span>" +
+            "</span>" +
+          "</div>" +
+          '<div class="flex h-2.5 rounded-full overflow-hidden bg-[#f1f3f4]">' +
+            '<div style="width:' + lp + '%" class="bg-[#34a853]" title="' + esc(t.left_label) + ' %' + lp + '"></div>' +
+            '<div style="width:' + rp + '%" class="bg-[#ea4335]" title="' + esc(t.right_label) + ' %' + rp + '"></div>' +
+          "</div>" +
+          '<div class="flex justify-between text-[10px] text-[#5f6368] mt-0.5">' +
+            '<span class="text-[#137333] font-medium">' + esc(t.left_label) + " %" + lp + "</span>" +
+            '<span class="text-[#9aa0a6]">' + t.mention_count + " gönderi</span>" +
+            '<span class="text-[#c5221f] font-medium">' + esc(t.right_label) + " %" + rp + "</span>" +
+          "</div>" +
+        "</div>";
+      }).join("");
+      bindRows("ai-polarization");
+    }).catch(function () { el.innerHTML = empty("Kutuplaşma verisi alınamadı."); });
+  }
+
+  // ---- Naratif / Cerceve ----
+  function loadFrames() {
+    var el = document.getElementById("ai-frames");
+    if (!el) return;
+    el.innerHTML = "Yükleniyor…";
+    api("frames").then(function (d) {
+      var rows = (d && d.topics) || [];
+      if (!rows.length) { el.innerHTML = empty("Çerçeve (frame) verisi bulunamadı."); return; }
+      el.innerHTML = rows.map(function (t) {
+        var bar = t.frames.map(function (f, i) {
+          var c = FRAME_COLORS[i % FRAME_COLORS.length];
+          return '<div style="width:' + f.pct + "%;background:" + c + '" title="' + esc(f.frame) + " %" + f.pct + '"></div>';
+        }).join("");
+        var legend = t.frames.map(function (f, i) {
+          var c = FRAME_COLORS[i % FRAME_COLORS.length];
+          return '<span class="inline-flex items-center gap-1 text-[10px] text-[#5f6368]">' +
+            '<span style="background:' + c + '" class="inline-block w-2 h-2 rounded-sm"></span>' +
+            esc(f.frame) + " %" + f.pct + "</span>";
+        }).join("");
+        return '<div data-subject="' + esc(t.topic) + '" data-by="topic" class="hover:bg-[#f8f9fa] rounded p-1 -m-1">' +
+          '<div class="font-semibold text-[#202124] text-[13px] truncate mb-1">' + esc(t.topic) + "</div>" +
+          '<div class="flex h-2.5 rounded-full overflow-hidden bg-[#f1f3f4]">' + bar + "</div>" +
+          '<div class="flex flex-wrap gap-x-2 gap-y-0.5 mt-1">' + legend + "</div>" +
+        "</div>";
+      }).join("");
+      bindRows("ai-frames");
+    }).catch(function () { el.innerHTML = empty("Çerçeve verisi alınamadı."); });
+  }
+
+  function loadAll() { loadMomentum(); loadPolarization(); loadFrames(); }
+
+  function syncChips() {
+    document.querySelectorAll("#ai-window-chips .ai-win").forEach(function (b) {
+      var on = b.getAttribute("data-win") === state.window;
+      b.classList.toggle("bg-white", on);
+      b.classList.toggle("shadow-sm", on);
+      b.classList.toggle("text-[#1a73e8]", on);
+      b.classList.toggle("text-[#5f6368]", !on);
+    });
+  }
+
+  function wireChips() {
+    document.querySelectorAll("#ai-window-chips .ai-win").forEach(function (b) {
+      b.addEventListener("click", function () {
+        state.window = b.getAttribute("data-win");
+        syncChips();
+        loadAll();
+      });
+    });
+  }
+
+  // Tekrar eden 'Yapay Zeka Destekli Stratejik Analiz' bolumunu gizle (dedup).
+  function hideStrategic() {
+    var s = document.getElementById("strategic-opportunities-section");
+    if (s) s.style.display = "none";
+  }
+
+  // Blogu ana sayfaya, eski stratejik bolumun yerine tasi.
+  function relocate() {
+    var block = document.getElementById("agenda-insights");
+    var dash = document.getElementById("view-dashboard");
+    if (!block || !dash) return false;
+    var anchor = document.getElementById("strategic-opportunities-section");
+    if (anchor && anchor.parentNode === dash) {
+      dash.insertBefore(block, anchor);
+    } else if (block.parentNode !== dash) {
+      dash.insertBefore(block, dash.firstChild);
+    }
+    block.style.display = "";
+    return true;
+  }
+
+  function boot() {
+    relocate();
+    hideStrategic();
+    syncChips();
+    wireChips();
+    loadAll();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+})();
+</script>

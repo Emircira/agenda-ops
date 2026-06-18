@@ -1,0 +1,410 @@
+<!-- ================= KONU ANALIZI (drill-down) =================
+     Ayri bir SPA sekmesi olarak kendini enjekte eder (#view-analysis / #nav-analysis).
+     Sol panel: en cok konusulan konular (topic) + ozneler (target).
+     Sag panel: secilen konu/ozne icin tutum, duygu, naratif, ornek gonderiler, hacim.
+     Veri: /api/v1/pulse/subjects ve /api/v1/pulse/subject. LLM kullanmaz.
+     Ek: detay yuklenince /api/v1/pulse/subject-account otomatik cagrilir (LLM hesap analizi).
+     Disa acik API: window.TopicAnalysis.open(name, by) ve .boot(). -->
+<div id="view-analysis" class="view-section flex-1 flex flex-col w-full min-h-0 p-6 z-10 relative scroll-smooth bg-[#f8f9fa]">
+
+  <!-- KONTROL PANELI -->
+  <div class="bg-white p-5 rounded-xl border border-[#dadce0] shadow-sm mb-5">
+    <div class="flex justify-between items-start gap-4 flex-wrap">
+      <div class="min-w-0">
+        <h3 class="text-[#202124] font-bold text-lg flex items-center gap-2">🔎 Konu Analizi</h3>
+        <p class="text-xs text-[#5f6368] mt-1 max-w-2xl leading-relaxed">Bir konu ya da özne seçin; o başlık altında kim ne diyor — tutum, duygu, naratif dağılımı ve örnek gönderiler. Kutuplaşma Haritası'ndaki bir satıra tıklayınca da buraya gelirsiniz.</p>
+      </div>
+      <div class="inline-flex rounded-full bg-[#f1f3f4] border border-[#dadce0] p-1" role="group">
+        <button type="button" class="ta-win text-xs font-medium px-3 py-1.5 rounded-full text-[#5f6368]" data-win="24h">24 Saat</button>
+        <button type="button" class="ta-win text-xs font-medium px-3 py-1.5 rounded-full text-[#5f6368]" data-win="48h">48 Saat</button>
+        <button type="button" class="ta-win text-xs font-medium px-3 py-1.5 rounded-full text-[#5f6368]" data-win="7d">7 Gün</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 flex-1 min-h-0">
+    <!-- SOL: konu/ozne listesi -->
+    <div class="bg-white rounded-xl border border-[#dadce0] shadow-sm overflow-hidden flex flex-col">
+      <div class="p-3 border-b border-[#e8eaed]">
+        <input id="ta-search" type="text" placeholder="Konu / özne ara…" class="w-full text-sm px-3 py-2 rounded-lg border border-[#dadce0] focus:outline-none focus:ring-2 focus:ring-[#1a73e8]/30" />
+      </div>
+      <div class="px-3 pt-3 pb-1 flex items-center gap-2">
+        <span class="text-[11px] font-bold text-[#5f6368]">ÖZNELER</span>
+        <span class="text-[10px] text-[#9aa0a6]">(kişi / kurum)</span>
+      </div>
+      <div id="ta-targets" class="px-2 space-y-1 text-sm"></div>
+      <div class="px-3 pt-3 pb-1"><span class="text-[11px] font-bold text-[#5f6368]">KONULAR</span></div>
+      <div id="ta-topics" class="px-2 pb-3 space-y-1 text-sm overflow-y-auto"></div>
+    </div>
+
+    <!-- SAG: detay -->
+    <div class="lg:col-span-2 bg-white rounded-xl border border-[#dadce0] shadow-sm overflow-hidden flex flex-col">
+      <div id="ta-detail" class="p-5 overflow-y-auto">
+        <div class="h-full flex flex-col items-center justify-center text-center text-[#9aa0a6] py-20">
+          <span class="text-4xl mb-3">👈</span>
+          <p class="text-sm font-medium">Soldan bir konu veya özne seçin.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var state = { window: "24h", subjects: { topics: [], targets: [] }, current: null };
+  var booted = false;
+  var FRAME_COLORS = ["#1a73e8", "#ea4335", "#137333", "#b06000", "#7b1fa2", "#00897b", "#5f6368"];
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>\"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '\"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function fmt(n) { try { return Number(n || 0).toLocaleString("tr-TR"); } catch (e) { return String(n || 0); } }
+  function show(el, on) { if (el) el.style.display = on ? "" : "none"; }
+
+  function sparkline(arr) {
+    if (!arr || arr.length < 2) return "";
+    var w = 220, h = 40, max = Math.max.apply(null, arr) || 1;
+    var step = w / (arr.length - 1);
+    var pts = arr.map(function (v, i) {
+      return (i * step).toFixed(1) + "," + (h - 3 - (v / max) * (h - 6)).toFixed(1);
+    }).join(" ");
+    return '<svg width="100%" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+      '<polyline fill="none" stroke="#1a73e8" stroke-width="1.8" points="' + pts + '"/></svg>';
+  }
+
+  function triBar(a, b, c, la, lb, lc) {
+    return '<div class="flex h-2.5 rounded-full overflow-hidden bg-[#f1f3f4]">' +
+      '<div style="width:' + a + '%" class="bg-[#34a853]"></div>' +
+      '<div style="width:' + c + '%" class="bg-[#dadce0]"></div>' +
+      '<div style="width:' + b + '%" class="bg-[#ea4335]"></div>' +
+      '</div>' +
+      '<div class="flex justify-between text-[10px] text-[#5f6368] mt-1">' +
+      '<span class="text-[#137333] font-medium">' + esc(la) + ' %' + a + '</span>' +
+      '<span>' + esc(lc) + ' %' + c + '</span>' +
+      '<span class="text-[#c5221f] font-medium">' + esc(lb) + ' %' + b + '</span>' +
+      '</div>';
+  }
+
+  function api(path) {
+    return fetch("/api/v1/pulse/" + path, { credentials: "same-origin" })
+      .then(function (r) { if (!r.ok) throw new Error("http " + r.status); return r.json(); });
+  }
+
+  function toast(msg, type) {
+    try { if (window.AgendaOps && window.AgendaOps.showToast) { window.AgendaOps.showToast(msg, type || "info"); } } catch (e) {}
+  }
+
+  // ---- Sol liste ----
+  function listItem(name, count, by) {
+    return '<button type="button" data-name="' + esc(name) + '" data-by="' + by + '" ' +
+      'class="ta-item w-full text-left flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-[#f1f3f4] transition-colors">' +
+      '<span class="truncate text-[#202124]">' + esc(name) + '</span>' +
+      '<span class="shrink-0 text-[10px] font-bold text-[#5f6368] bg-[#f1f3f4] px-1.5 py-0.5 rounded">' + fmt(count) + '</span>' +
+      '</button>';
+  }
+
+  function renderLists() {
+    var q = (document.getElementById("ta-search") || {}).value || "";
+    q = q.trim().toLowerCase();
+    function flt(arr) {
+      return arr.filter(function (x) { return !q || String(x.name).toLowerCase().indexOf(q) !== -1; });
+    }
+    var tg = document.getElementById("ta-targets");
+    var tp = document.getElementById("ta-topics");
+    if (tg) {
+      var ts = flt(state.subjects.targets);
+      tg.innerHTML = ts.length ? ts.map(function (x) { return listItem(x.name, x.count, "target"); }).join("")
+        : '<div class="text-[11px] text-[#9aa0a6] px-2 py-1">Özne bulunamadı.</div>';
+    }
+    if (tp) {
+      var tps = flt(state.subjects.topics);
+      tp.innerHTML = tps.length ? tps.map(function (x) { return listItem(x.name, x.count, "topic"); }).join("")
+        : '<div class="text-[11px] text-[#9aa0a6] px-2 py-1">Konu bulunamadı.</div>';
+    }
+    document.querySelectorAll("#view-analysis .ta-item").forEach(function (b) {
+      b.addEventListener("click", function () { open(b.getAttribute("data-name"), b.getAttribute("data-by")); });
+    });
+  }
+
+  function loadSubjects() {
+    return api("subjects?window=" + encodeURIComponent(state.window) + "&limit=14").then(function (d) {
+      state.subjects = { topics: (d && d.topics) || [], targets: (d && d.targets) || [] };
+      renderLists();
+    }).catch(function () {
+      var tg = document.getElementById("ta-targets");
+      if (tg) tg.innerHTML = '<div class="text-[11px] text-[#c5221f] px-2 py-1">Liste alınamadı.</div>';
+    });
+  }
+
+  // ---- Detay ----
+  function moodBadge(mood, avg) {
+    var cls = "bg-[#f1f3f4] text-[#5f6368]";
+    if (mood === "olumlu") cls = "bg-[#e6f4ea] text-[#137333]";
+    else if (mood === "olumsuz") cls = "bg-[#fce8e6] text-[#c5221f]";
+    else if (mood === "karışık") cls = "bg-[#fef7e0] text-[#b06000]";
+    var sc = (avg == null) ? "" : " (" + (avg > 0 ? "+" : "") + avg + ")";
+    return '<span class="text-[11px] font-bold px-2 py-0.5 rounded ' + cls + '">' + esc(mood || "nötr") + esc(sc) + '</span>';
+  }
+
+  function sampleCard(s) {
+    var st = (s.stance || "").toLowerCase();
+    var dot = "#9aa0a6";
+    if (/(support|destek|lehte|olumlu|pro)/.test(st)) dot = "#34a853";
+    else if (/(oppose|karş|karsi|aleyhte|olumsuz|anti)/.test(st)) dot = "#ea4335";
+    var meta = [];
+    if (s.author) meta.push(esc(s.author));
+    if (s.published_at) meta.push(esc(String(s.published_at).slice(0, 16).replace("T", " ")));
+    var link = s.url ? '<a href="' + esc(s.url) + '" target="_blank" rel="noopener" class="text-[#1a73e8] hover:underline text-[11px] font-medium shrink-0">aç↗</a>' : "";
+    return '<div class="border border-[#e8eaed] rounded-lg p-3 bg-white">' +
+      '<div class="flex items-start justify-between gap-2 mb-1">' +
+        '<div class="flex items-center gap-1.5 min-w-0">' +
+          '<span class="inline-block w-2 h-2 rounded-full shrink-0" style="background:' + dot + '"></span>' +
+          '<span class="text-[11px] text-[#5f6368] truncate">' + (meta.join(" · ") || "") + '</span>' +
+        '</div>' + link +
+      '</div>' +
+      '<p class="text-[13px] text-[#202124] leading-relaxed">' + esc(s.text) + '</p>' +
+    '</div>';
+  }
+
+  // ---- Hesap analizi (LLM) ----
+  function accountAnalysisLoadingHtml() {
+    return '<div class="border border-[#e1d5f0] rounded-lg p-3 bg-[#faf7ff]">' +
+      '<div class="flex items-center gap-2 text-[#6a1b9a] text-[12px] font-medium">' +
+      '<span class="inline-block animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-[#7b1fa2]"></span>' +
+      '🧠 Öne çıkan orta seviye bir hesap seçilip yapay zeka ile analiz ediliyor…</div></div>';
+  }
+
+  function riskBadge(label, level) {
+    var lv = String(level || "").toLowerCase();
+    var cls = "bg-[#f1f3f4] text-[#5f6368]";
+    if (/yüksek|yuksek|high/.test(lv)) cls = "bg-[#fce8e6] text-[#c5221f]";
+    else if (/orta|med/.test(lv)) cls = "bg-[#fef7e0] text-[#b06000]";
+    else if (/düşük|dusuk|low/.test(lv)) cls = "bg-[#e6f4ea] text-[#137333]";
+    return '<span class="text-[11px] px-2 py-0.5 rounded ' + cls + '">' + esc(label) + ': ' + esc(level || "—") + '</span>';
+  }
+
+  function renderAccountAnalysis(d) {
+    var box = document.getElementById("ta-account");
+    if (!box) return;
+    if (!d || !d.found || !d.account) { box.innerHTML = ""; return; }
+    var a = d.account || {};
+    var an = d.analysis || {};
+    var args = an.key_arguments || [];
+    if (!Array.isArray(args)) args = [];
+    var argsHtml = args.length ? '<ul class="list-disc list-inside text-[12px] text-[#202124] space-y-0.5 mb-2">' +
+      args.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join("") + '</ul>' : "";
+    var risks = [];
+    if (an.manipulation_risk) risks.push(riskBadge("Manipülasyon", an.manipulation_risk));
+    if (an.bot_risk) risks.push(riskBadge("Bot", an.bot_risk));
+    var stance = an.stance_label ? '<span class="text-[11px] px-2 py-0.5 rounded bg-[#ede7f6] text-[#5e35b1] font-medium">' + esc(an.stance_label) + '</span>' : "";
+    var hasAnalysis = an.profile || args.length || an.influence;
+    var bodyHtml = hasAnalysis
+      ? (an.profile ? '<p class="text-[13px] text-[#202124] leading-relaxed mb-2">' + esc(an.profile) + '</p>' : '') +
+        argsHtml +
+        (an.influence ? '<p class="text-[12px] text-[#5f6368] mb-2"><b>Etki:</b> ' + esc(an.influence) + '</p>' : '') +
+        (risks.length ? '<div class="flex flex-wrap gap-2 mb-1">' + risks.join("") + '</div>' : '') +
+        (an.credibility_note ? '<p class="text-[11px] text-[#9aa0a6] italic">' + esc(an.credibility_note) + '</p>' : '')
+      : '<p class="text-[12px] text-[#9aa0a6]">Bu hesap için yapay zeka analizi şu an üretilemedi.</p>';
+    var medianNote = a.median_engagement ? ' · medyan ~' + fmt(a.median_engagement) : "";
+    var lowData = (Number(a.candidate_count) || 0) < 4;
+    var lowDataHtml = lowData
+      ? '<div class="text-[11px] text-[#b06000] bg-[#fef7e0] border border-[#fde293] rounded px-2 py-1 mb-2">⚠️ Az veri: bu pencerede yalnızca ' + fmt(a.candidate_count || 0) + ' aday hesap bulundu; seçim güvenilir olmayabilir. Daha geniş bir pencere (7g) deneyin.</div>'
+      : "";
+    box.innerHTML =
+      '<div class="border border-[#e1d5f0] rounded-lg p-3 bg-[#faf7ff]">' +
+        '<div class="flex items-center justify-between gap-2 mb-1 flex-wrap">' +
+          '<span class="text-[11px] font-bold text-[#6a1b9a]">🧠 Hesap analizi (yapay zeka) — öne çıkan orta seviye hesap</span>' +
+          stance +
+        '</div>' +
+        '<div class="text-[12px] text-[#202124] font-medium mb-1">' + esc(a.author) + ' · ' + fmt(a.post_count) + ' gönderi · ~' + fmt(a.engagement) + ' etkileşim' + medianNote + '</div>' +
+        lowDataHtml +
+        bodyHtml +
+      '</div>';
+  }
+
+  function loadAccountAnalysis(name, by) {
+    var box = document.getElementById("ta-account");
+    if (box) box.innerHTML = accountAnalysisLoadingHtml();
+    api("subject-account?name=" + encodeURIComponent(name) + "&by=" + encodeURIComponent(by || "topic") + "&window=" + encodeURIComponent(state.window))
+      .then(function (d) {
+        // Kullanici bu sirada baska bir konuya gectiyse eski sonucu basma.
+        if (!state.current || state.current.name !== name) return;
+        renderAccountAnalysis(d);
+      })
+      .catch(function () {
+        var b = document.getElementById("ta-account");
+        if (b) b.innerHTML = "";
+      });
+  }
+
+  function renderDetail(d) {
+    var el = document.getElementById("ta-detail");
+    if (!el) return;
+    if (!d || !d.found) {
+      el.innerHTML = '<div class="py-16 text-center text-[#9aa0a6]"><p class="text-sm font-medium">Bu pencerede “' + esc(d ? d.subject : "") + '” için yeterli veri yok.</p><p class="text-xs mt-1">Farklı bir zaman penceresi deneyin.</p></div>';
+      return;
+    }
+    var st = d.stance || {}, se = d.sentiment || {};
+    var byLabel = d.by === "target" ? "Özne" : "Konu";
+    var crisis = (d.crisis_score && d.crisis_score >= 60)
+      ? '<span class="text-[11px] font-bold px-2 py-0.5 rounded bg-[#fce8e6] text-[#c5221f]">KRİZ ' + d.crisis_score + '</span>' : "";
+    var frames = (d.frames || []);
+    var frameBar = frames.length ? frames.map(function (f, i) {
+      return '<div style="width:' + f.pct + '%;background:' + FRAME_COLORS[i % FRAME_COLORS.length] + '" title="' + esc(f.frame) + ' %' + f.pct + '"></div>';
+    }).join("") : "";
+    var frameLegend = frames.length ? frames.map(function (f, i) {
+      return '<span class="inline-flex items-center gap-1 text-[11px] text-[#5f6368]"><span class="inline-block w-2 h-2 rounded-sm" style="background:' + FRAME_COLORS[i % FRAME_COLORS.length] + '"></span>' + esc(f.frame) + ' %' + f.pct + '</span>';
+    }).join("") : '<span class="text-[11px] text-[#9aa0a6]">Naratif verisi yok.</span>';
+    var samples = (d.samples || []);
+
+    var tp = d.top_post;
+    var topPostHtml = "";
+    if (tp && tp.text) {
+      var engParts = [];
+      engParts.push('❤️ ' + fmt(tp.likes || 0));
+      engParts.push('🔁 ' + fmt(tp.reposts || 0));
+      engParts.push('💬 ' + fmt(tp.replies || 0));
+      if (tp.views) engParts.push('👁️ ' + fmt(tp.views));
+      var tpLink = tp.url ? '<a href="' + esc(tp.url) + '" target="_blank" rel="noopener" class="text-[#1a73e8] hover:underline text-[11px] font-medium shrink-0">aç↗</a>' : "";
+      var tpMeta = [];
+      if (tp.author) tpMeta.push(esc(tp.author));
+      if (tp.published_at) tpMeta.push(esc(String(tp.published_at).slice(0, 16).replace("T", " ")));
+      topPostHtml =
+        '<div class="mb-4 border border-[#d2e3fc] rounded-lg p-3 bg-[#f8fbff]">' +
+          '<div class="flex items-center justify-between gap-2 mb-1">' +
+            '<span class="text-[11px] font-bold text-[#1967d2]">⭐ Öne çıkan gönderi (en yüksek etkileşim)</span>' + tpLink +
+          '</div>' +
+          (tpMeta.length ? '<div class="text-[11px] text-[#5f6368] mb-1">' + tpMeta.join(" · ") + '</div>' : '') +
+          '<p class="text-[13px] text-[#202124] leading-relaxed mb-2">' + esc(tp.text) + '</p>' +
+          '<div class="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[#5f6368]">' +
+            engParts.map(function (e) { return '<span>' + e + '</span>'; }).join("") +
+          '</div>' +
+        '</div>';
+    }
+
+    el.innerHTML =
+      '<div class="flex items-start justify-between gap-3 flex-wrap mb-1">' +
+        '<div class="min-w-0">' +
+          '<div class="text-[11px] font-bold text-[#5f6368] uppercase tracking-wide">' + byLabel + '</div>' +
+          '<h2 class="text-xl font-bold text-[#202124] leading-tight">' + esc(d.subject) + '</h2>' +
+        '</div>' +
+        '<div class="flex items-center gap-2 flex-wrap">' + moodBadge(d.mood, d.avg_sentiment) + crisis +
+          '<span class="text-[11px] font-bold px-2 py-0.5 rounded bg-[#e8f0fe] text-[#1967d2]">' + fmt(d.mention_count) + ' gönderi</span>' +
+        '</div>' +
+      '</div>' +
+      ((d.manipulation_pct || d.bot_pct) ? '<div class="flex gap-3 text-[11px] text-[#5f6368] mb-3">' +
+        '<span>Manipülasyon: <b class="text-[#b06000]">%' + (d.manipulation_pct || 0) + '</b></span>' +
+        '<span>Bot olasılığı: <b class="text-[#b06000]">%' + (d.bot_pct || 0) + '</b></span></div>' : '<div class="mb-3"></div>') +
+
+      topPostHtml +
+
+      '<div id="ta-account" class="mb-4"></div>' +
+
+      '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">' +
+        '<div><div class="text-[11px] font-bold text-[#5f6368] mb-1">Tutum (destek / karşı / nötr)</div>' + triBar(st.support_pct || 0, st.oppose_pct || 0, st.neutral_pct || 0, "Destek", "Karşı", "Nötr") + '</div>' +
+        '<div><div class="text-[11px] font-bold text-[#5f6368] mb-1">Duygu (olumlu / olumsuz / nötr)</div>' + triBar(se.pos_pct || 0, se.neg_pct || 0, se.neu_pct || 0, "Olumlu", "Olumsuz", "Nötr") + '</div>' +
+      '</div>' +
+
+      '<div class="mb-4"><div class="text-[11px] font-bold text-[#5f6368] mb-1">Saatlik hacim</div>' +
+        '<div class="border border-[#e8eaed] rounded-lg p-2 bg-[#fafbfc]">' + (sparkline(d.spark) || '<span class="text-[11px] text-[#9aa0a6]">Yetersiz veri</span>') + '</div></div>' +
+
+      '<div class="mb-4"><div class="text-[11px] font-bold text-[#5f6368] mb-1">Naratif / çerçeve</div>' +
+        (frameBar ? '<div class="flex h-2.5 rounded-full overflow-hidden bg-[#f1f3f4] mb-1">' + frameBar + '</div>' : '') +
+        '<div class="flex flex-wrap gap-x-3 gap-y-1">' + frameLegend + '</div></div>' +
+
+      '<div><div class="text-[11px] font-bold text-[#5f6368] mb-2">Örnek gönderiler</div>' +
+        '<div class="space-y-2">' + (samples.length ? samples.map(sampleCard).join("") : '<span class="text-[11px] text-[#9aa0a6]">Örnek gönderi yok.</span>') + '</div></div>';
+  }
+
+  function open(name, by) {
+    if (!name) return;
+    state.current = { name: name, by: by || "topic" };
+    var el = document.getElementById("ta-detail");
+    if (el) el.innerHTML = '<div class="py-16 flex flex-col items-center justify-center text-[#1a73e8]"><div class="animate-spin rounded-full h-7 w-7 border-t-2 border-b-2 border-[#1a73e8] mb-3"></div><p class="text-sm">Yükleniyor…</p></div>';
+    api("subject?name=" + encodeURIComponent(name) + "&by=" + encodeURIComponent(by || "topic") + "&window=" + encodeURIComponent(state.window))
+      .then(function (d) {
+        renderDetail(d);
+        if (d && d.found && state.current && state.current.name === name) {
+          loadAccountAnalysis(name, by || "topic");
+        }
+      })
+      .catch(function (e) {
+        if (el) el.innerHTML = '<div class="py-16 text-center text-[#c5221f] text-sm">Detay alınamadı.</div>';
+        toast("Konu detayı alınamadı: " + (e && e.message ? e.message : e), "error");
+      });
+  }
+
+  function syncWinChips() {
+    document.querySelectorAll("#view-analysis .ta-win").forEach(function (c) {
+      var on = c.getAttribute("data-win") === state.window;
+      c.classList.toggle("bg-white", on);
+      c.classList.toggle("text-[#202124]", on);
+      c.classList.toggle("shadow-sm", on);
+      c.classList.toggle("text-[#5f6368]", !on);
+    });
+  }
+
+  function wire() {
+    document.querySelectorAll("#view-analysis .ta-win").forEach(function (c) {
+      c.addEventListener("click", function () {
+        state.window = c.getAttribute("data-win") || "24h";
+        syncWinChips();
+        loadSubjects().then(function () { if (state.current) open(state.current.name, state.current.by); });
+      });
+    });
+    var search = document.getElementById("ta-search");
+    if (search) search.addEventListener("input", renderLists);
+  }
+
+  function relocate() {
+    var scroll = document.getElementById("main-scroll");
+    var view = document.getElementById("view-analysis");
+    if (scroll && view && view.parentNode !== scroll) { scroll.appendChild(view); }
+  }
+
+  function injectNav() {
+    if (document.getElementById("nav-analysis")) return;
+    var nav = document.querySelector("aside nav");
+    if (!nav) return;
+    var btn = document.createElement("button");
+    btn.id = "nav-analysis";
+    btn.className = "w-full flex items-center gap-3 text-slate-400 hover:bg-[#f1f3f4] px-4 py-3 rounded-lg font-medium transition-colors nav-btn";
+    btn.setAttribute("onclick", "window.AgendaOps.switchTab('analysis', 'Konu Analizi')");
+    btn.innerHTML = '<svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6h6v6m2 4H7a2 2 0 01-2-2V5a2 2 0 012-2h10a2 2 0 012 2v14a2 2 0 01-2 2z"></path></svg> Konu Analizi <span class="ml-auto bg-primary/20 text-primary text-[10px] px-2 py-0.5 rounded font-bold">YENİ</span>';
+    var anchor = document.getElementById("nav-pulse");
+    if (anchor && anchor.parentNode) { anchor.insertAdjacentElement("afterend", btn); }
+    else { nav.appendChild(btn); }
+    btn.addEventListener("click", function () { setTimeout(function () { if (!state.subjects.topics.length && !state.subjects.targets.length) loadSubjects(); }, 50); });
+  }
+
+  function boot() {
+    if (booted) return; booted = true;
+    try { relocate(); } catch (e) {}
+    try { injectNav(); } catch (e) {}
+    try { wire(); } catch (e) {}
+    try { syncWinChips(); } catch (e) {}
+    try { loadSubjects(); } catch (e) {}
+  }
+
+  window.TopicAnalysis = {
+    boot: boot,
+    open: function (name, by) {
+      try { relocate(); } catch (e) {}
+      if (!state.subjects.topics.length && !state.subjects.targets.length) {
+        loadSubjects().then(function () { open(name, by); });
+      } else {
+        open(name, by);
+      }
+    }
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    setTimeout(boot, 0);
+  }
+})();
+</script>
